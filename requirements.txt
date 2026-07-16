@@ -1,0 +1,7 @@
+# Pinned runtime dependencies (mirror of pyproject.toml [project.dependencies]).
+# Install: pip install -r requirements.txt   (dev extras: pip install -e ".[dev]")
+fastapi==0.139.2
+uvicorn==0.51.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+httpx==0.28.1

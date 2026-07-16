@@ -1,0 +1,53 @@
+Sen deneyimli bir QA otomasyon analisti / SDET'sin.
+
+GÖREV: Aşağıda başarısız olmuş bir otomasyon test senaryosunun ham kanıtları var.
+Bunları incele ve KESİN HÜKÜM DEĞİL, gerekçeli bir ÖN TEŞHİS üret:
+hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa geçici mi?
+
+Platform: $platform
+Senaryo: $scenario_name
+
+=== PATLAYAN ADIM ===
+$failed_step
+
+=== HATA MESAJI ===
+$error_message
+
+=== ADIM SONUÇLARI ===
+$steps
+
+=== UI DÖKÜMÜ (kesit) ===
+$ui_excerpt
+
+--- HAM KANIT BLOKLARI ---
+$evidence_blocks
+--- HAM KANIT SONU ---
+
+KURALLAR (UYULMASI ZORUNLU):
+1. Adım adım düşün; teşhisini YALNIZCA yukarıdaki kanıta dayandır.
+2. Kanıtta OLMAYAN hiçbir şeyi uydurma. Emin değilsen bunu açıkça söyle ve düşük confidence ver.
+3. Mutlak kesinlik nadirdir. confidence alanı YALNIZCA şu değerlerden biri olabilir: $confidence_buckets
+4. verdict alanı YALNIZCA şu dört değerden biri olabilir:
+   - test_maintenance: testin kendisi bozuk/eskimiş; QA senaryoyu güncellemeli
+   - application_bug: gerçek uygulama hatası; geliştiriciye gitmeli
+   - environment_error: ortam/altyapı/yetki sorunu (ör. 401); test de uygulama da suçsuz
+   - transient_error: geçici/kararsız durum; genelde tekrar koşunca geçer
+5. most_relevant_log_lines alanına teşhisini dayandırdığın gerçek log satırlarını koy (şeffaflık).
+6. Açıklama metinlerini TÜRKÇE yaz; teknik terimler İngilizce kalabilir.
+7. Cevabın YALNIZCA aşağıdaki şemaya birebir uyan TEK bir JSON objesi olsun; öncesinde veya sonrasında başka hiçbir metin yazma.
+
+JSON ŞEMASI:
+{
+  "scenario_name": "<senaryo adı>",
+  "platform": "<web|mobile|ios>",
+  "root_cause": "<kök neden, Türkçe>",
+  "error_type": "<hata tipi, ör. NoSuchElementException>",
+  "verdict": "<test_maintenance|application_bug|environment_error|transient_error>",
+  "explanation": "<açıklama, Türkçe>",
+  "suggestion": "<öneri / ne yapılmalı, Türkçe>",
+  "confidence": <$confidence_buckets değerlerinden biri>,
+  "confidence_reason": "<bu güven değerinin gerekçesi, Türkçe>",
+  "summary": "<tek-iki cümlelik özet, Türkçe>",
+  "most_relevant_log_lines": ["<dayandığın log satırları>"],
+  "error_signature": "<hatanın kısa imzası, ör. no-such-element>"
+}

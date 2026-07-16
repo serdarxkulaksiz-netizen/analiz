@@ -1,0 +1,24 @@
+# environments & secrets
+.venv/
+venv/
+.env
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+
+# DB simulation content is runtime data; keep the folder via .gitkeep
+database/*
+!database/.gitkeep

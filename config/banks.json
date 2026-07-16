@@ -1,0 +1,10 @@
+{
+  "banks": [
+    {
+      "name": "demo",
+      "visiumgo_base_url": "https://visiumgo.example.local",
+      "jenkins_base_url": "https://jenkins.example.local",
+      "extra": {}
+    }
+  ]
+}
