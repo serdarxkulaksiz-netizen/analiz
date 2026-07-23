@@ -9,10 +9,12 @@ from pydantic import BaseModel
 
 from app.domain.enums import Platform, StepStatus
 
-# Labeled evidence block names (plan.md A5) — contract constants, not config.
+# Labeled evidence block names (plan.md A6) — contract constants, not config.
+# BROWSER LOG = browser.default.log; CONSOLE.LOG = Jenkins console.log (job-level).
 BLOCK_STEPS = "ADIMLAR"
-BLOCK_ERROR = "HATA (stack trace)"
+BLOCK_ERROR = "HATA"
 BLOCK_DOM = "DOM"
+BLOCK_BROWSER = "BROWSER LOG"
 BLOCK_CONSOLE = "CONSOLE.LOG"
 
 
@@ -31,14 +33,20 @@ class EvidenceBlock(BaseModel):
 
 
 class Findings(BaseModel):
-    """Fixed contract between Halka 2 (Extraction) and Halka 3 (Prompt Building)."""
+    """Fixed contract between Halka 2 (Extraction) and Halka 3 (Prompt Building).
+
+    plan.md A6. UI/DOM content is NOT a separate field — it travels inside
+    `evidence_blocks` (e.g. the `=== DOM ===` block), so the contract stays
+    platform-independent (no web-smelling `dom_excerpt`/`ui_excerpt`).
+    """
 
     platform: Platform
+    bank: str = ""
     scenario_name: str
     failed_step: str = ""
     error_message: str = ""
     steps: list[Step] = []
-    ui_excerpt: str = ""
     evidence_blocks: list[EvidenceBlock] = []
-    screenshot_path: str = ""
+    missing_evidence: list[str] = []
+    screenshot_paths: list[str] = []
     retry_info: str = ""

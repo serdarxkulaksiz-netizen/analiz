@@ -3,13 +3,16 @@
 import pytest
 
 from app.config import Settings
+from app.domain.enums import Platform
+from app.evidence.registry import EvidenceRegistry
+from app.extraction.mock import MockExtractor
 from app.llm.provider import LLMError, LLMProvider, LLMResponse
 from app.main import build_service
 from app.persistence.file_repository import FileRepository
+from app.precheck.noop import NoOpPreCheck
 from app.prompting.builder import PromptBuilder
 from app.service import AnalyzerService
 from app.source.mock import MockSource
-from app.extraction.mock import MockExtractor
 
 
 class GarbageLLMProvider(LLMProvider):
@@ -31,11 +34,12 @@ def _service(settings: Settings, llm: LLMProvider) -> AnalyzerService:
         settings=settings,
         repository=FileRepository(settings.database_dir),
         source=MockSource(),
-        extractor=MockExtractor(),
+        extractor=MockExtractor(EvidenceRegistry(settings.evidence_flags)),
         prompt_builder=PromptBuilder(
             settings.prompt_template_path, settings.confidence_buckets
         ),
         llm_provider=llm,
+        precheck=NoOpPreCheck(),
     )
 
 
@@ -44,7 +48,7 @@ async def test_garbage_llm_marks_scenarios_failed_but_job_finishes(
     settings: Settings,
 ) -> None:
     service = _service(settings, GarbageLLMProvider())
-    run_id = service.create_run("demo", "job-1")
+    run_id = service.create_run("demo", "job-1", Platform.WEB)
 
     await service.run_analysis(run_id)
 
@@ -53,7 +57,7 @@ async def test_garbage_llm_marks_scenarios_failed_but_job_finishes(
     assert run["status"] == "done"
     assert run["completed_count"] == run["scenario_count"] == 2
     for result in run["results"]:
-        assert result["analysis_failed"] is True
+        assert result["status"] == "analysis_failed"
         assert result["verdict"] is None
         assert "ÜZGÜNÜM" in result["raw_llm_response"]  # raw answer kept
         assert result["explanation"] == ""  # no fabricated default text
@@ -65,7 +69,7 @@ async def test_llm_timeout_marks_scenarios_failed_but_job_finishes(
     settings: Settings,
 ) -> None:
     service = _service(settings, TimeoutLLMProvider())
-    run_id = service.create_run("demo", "job-1")
+    run_id = service.create_run("demo", "job-1", Platform.WEB)
 
     await service.run_analysis(run_id)
 
@@ -73,7 +77,7 @@ async def test_llm_timeout_marks_scenarios_failed_but_job_finishes(
     assert run is not None
     assert run["status"] == "done"
     for result in run["results"]:
-        assert result["analysis_failed"] is True
+        assert result["status"] == "analysis_failed"
         assert "ReadTimeout" in result["raw_llm_response"]
 
 
@@ -81,7 +85,7 @@ async def test_llm_timeout_marks_scenarios_failed_but_job_finishes(
 async def test_source_failure_finishes_run_with_note(settings: Settings) -> None:
     settings = settings.model_copy(update={"source_provider": "visiumgo"})
     service = build_service(settings)  # VisiumGoSource stub raises
-    run_id = service.create_run("demo", "job-1")
+    run_id = service.create_run("demo", "job-1", Platform.WEB)
 
     await service.run_analysis(run_id)
 

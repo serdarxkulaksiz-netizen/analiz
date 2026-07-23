@@ -33,15 +33,21 @@ class PromptBuilder:
             for block in findings.evidence_blocks
             if block.content
         )
+        missing_text = (
+            "\n".join(f"- {name}" for name in findings.missing_evidence)
+            if findings.missing_evidence
+            else "(eksik kanıt yok)"
+        )
         buckets_text = " / ".join(str(bucket) for bucket in self._confidence_buckets)
 
         return self._template.safe_substitute(
             platform=findings.platform.value,
+            bank=findings.bank,
             scenario_name=findings.scenario_name,
             failed_step=findings.failed_step,
             error_message=findings.error_message,
             steps=steps_text,
-            ui_excerpt=findings.ui_excerpt,
+            missing_evidence=missing_text,
             evidence_blocks=evidence_text,
             confidence_buckets=buckets_text,
         )

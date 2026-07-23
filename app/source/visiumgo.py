@@ -9,6 +9,7 @@
 #   - Jenkins console.log comes from a separate API (method still unknown)
 """
 
+from app.domain.enums import Platform
 from app.source.banks import BankRegistry
 from app.source.base import Source
 from app.source.models import JobData
@@ -20,7 +21,7 @@ class VisiumGoSource(Source):
     def __init__(self, registry: BankRegistry) -> None:
         self._registry = registry
 
-    async def fetch_job(self, bank: str, job_id: str) -> JobData:
+    async def fetch_job(self, bank: str, job_id: str, platform: Platform) -> JobData:
         connection = self._registry.get(bank)
         # TODO(work-pc): call the VisiumGo API at connection.visiumgo_base_url,
         # download the job report + per-scenario attachments (test.log,

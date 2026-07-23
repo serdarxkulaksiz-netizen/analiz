@@ -1,20 +1,21 @@
-"""Output JSON contract (plan.md A8) — flat, fixed schema.
+"""Output JSON contract (plan.md A10) — flat, fixed schema.
 
 `LLMAnalysis` = fields the LLM must return (field names English, text content
 Turkish). `AnalysisResult` = the stored row: the same flat fields plus
-system-side metadata the code attaches (the LLM never produces these).
+system-side metadata the code attaches (the LLM never produces these — notably
+`platform`/`bank`, which come from the request/Findings, not the model).
 
-No fabricated defaults for text fields (plan.md B3.9): if the LLM leaves a
+No fabricated defaults for text fields (plan.md A10): if the LLM leaves a
 field out, it stays empty.
 """
 
 from pydantic import BaseModel
 
-from app.domain.enums import Verdict
+from app.domain.enums import AnalysisStatus, Verdict
 
 
 class AnalysisMeta(BaseModel):
-    """System-side call metadata (plan.md A8 `meta`)."""
+    """System-side call metadata (plan.md A10 `meta`)."""
 
     llm_model: str = ""
     input_tokens: int | None = None
@@ -24,15 +25,15 @@ class AnalysisMeta(BaseModel):
 
 
 class LLMAnalysis(BaseModel):
-    """Exactly what the LLM is required to return (plan.md A8).
+    """Exactly what the LLM is required to return (plan.md A10).
 
     `verdict` and `confidence` are mandatory: if missing or invalid the
     response is rejected and the scenario is marked `analysis_failed`
-    (plan.md A9). `confidence` is stored as returned — no mapping.
+    (plan.md A9). `confidence` is stored as returned — no mapping. `platform`
+    is NOT here — the system attaches it (A10 system-side meta).
     """
 
     scenario_name: str = ""
-    platform: str = ""
     root_cause: str = ""
     error_type: str = ""
     verdict: Verdict
@@ -48,18 +49,18 @@ class LLMAnalysis(BaseModel):
 class AnalysisResult(BaseModel):
     """Stored analysis row: LLM fields (flat) + system-side meta.
 
-    On `analysis_failed`, LLM analysis fields stay empty/None; only
-    `scenario_name`/`platform` are filled by the system from Findings
-    (factual identity, not fabricated analysis) so the row stays traceable.
+    On `status=analysis_failed`, LLM analysis fields stay empty/None; only
+    `scenario_name`/`platform`/`bank` are filled by the system from the
+    request/Findings (factual identity, not fabricated analysis) so the row
+    stays traceable.
     """
 
     # --- persistence keys (system) ---
     result_id: str
     analyzer_run_id: str
 
-    # --- LLM fields (plan.md A8) ---
+    # --- LLM fields (plan.md A10) ---
     scenario_name: str = ""
-    platform: str = ""
     root_cause: str = ""
     error_type: str = ""
     verdict: Verdict | None = None
@@ -71,10 +72,13 @@ class AnalysisResult(BaseModel):
     most_relevant_log_lines: list[str] = []
     error_signature: str = ""
 
-    # --- system-side meta (plan.md A8; code attaches, LLM never produces) ---
+    # --- system-side meta (plan.md A10; code attaches, LLM never produces) ---
+    platform: str = ""
+    bank: str = ""
     truncated: bool = False
     truncated_note: str = ""
-    screenshot_path: str = ""
+    screenshot_paths: list[str] = []
+    missing_evidence: list[str] = []
     raw_llm_response: str = ""
-    analysis_failed: bool = False
+    status: AnalysisStatus = AnalysisStatus.OK
     meta: AnalysisMeta = AnalysisMeta()

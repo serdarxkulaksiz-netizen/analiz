@@ -1,12 +1,12 @@
-"""Analysis orchestration (plan.md A11) — the whole chain wired together.
+"""Analysis orchestration (plan.md A13) — the whole chain wired together.
 
-Redis-ready boundaries (plan.md A11):
+Redis-ready boundaries (plan.md A13):
   1. `run_analysis(analyzer_run_id)` is THE single trigger call — when a real
      queue replaces BackgroundTasks, only the call site changes.
   2. Status/results are always read from disk (Repository), never from
      in-memory state.
 
-Full trace (plan.md A10): raw evidence -> `evidence`, prompt + raw answer ->
+Full trace (plan.md A12): raw evidence -> `evidence`, prompt + raw answer ->
 `prompts`, parsed diagnosis -> `analysis_results`, run status -> `runs`.
 The same row id links a scenario's rows across evidence/prompts/analysis_results.
 """
@@ -19,13 +19,14 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.domain.enums import RunStatus
+from app.domain.enums import AnalysisStatus, Platform, RunStatus
+from app.domain.findings import Findings
 from app.domain.result import AnalysisMeta, AnalysisResult, LLMAnalysis
 from app.extraction.base import Extractor
-from app.extraction.truncation import estimate_tokens, truncate_findings
 from app.llm.provider import LLMProvider
 from app.parsing.json_parser import _try_json
 from app.persistence.repository import Repository
+from app.precheck.base import PreCheck
 from app.prompting.builder import PromptBuilder
 from app.source.base import Source
 from app.source.models import RawScenario
@@ -36,7 +37,7 @@ def _utcnow_iso() -> str:
 
 
 class AnalyzerService:
-    """Coordinates Source -> Extraction -> Prompt -> LLM -> Parse -> Persist."""
+    """Coordinates Source -> Extraction -> PreCheck -> Prompt -> LLM -> Parse -> Persist."""
 
     def __init__(
         self,
@@ -46,6 +47,7 @@ class AnalyzerService:
         extractor: Extractor,
         prompt_builder: PromptBuilder,
         llm_provider: LLMProvider,
+        precheck: PreCheck,
     ) -> None:
         self._settings = settings
         self._repo = repository
@@ -53,12 +55,13 @@ class AnalyzerService:
         self._extractor = extractor
         self._builder = prompt_builder
         self._llm = llm_provider
+        self._precheck = precheck
         # Serializes read-modify-write of the run row (completed_count).
         self._run_row_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ runs
 
-    def create_run(self, bank: str, job_id: str) -> str:
+    def create_run(self, bank: str, job_id: str, platform: Platform) -> str:
         """Persist a pending run row and return its analyzer_run_id."""
         analyzer_run_id = str(uuid4())
         now = _utcnow_iso()
@@ -69,7 +72,7 @@ class AnalyzerService:
                 "analyzer_run_id": analyzer_run_id,
                 "bank": bank,
                 "job_id": job_id,
-                "platform": "",
+                "platform": platform.value,
                 "status": RunStatus.PENDING.value,
                 "scenario_count": 0,
                 "completed_count": 0,
@@ -110,7 +113,7 @@ class AnalyzerService:
     # -------------------------------------------------------------- analysis
 
     async def run_analysis(self, analyzer_run_id: str) -> None:
-        """THE single trigger entry point (queue-swap boundary, plan.md A11)."""
+        """THE single trigger entry point (queue-swap boundary, plan.md A13)."""
         run = self._repo.get(self._settings.table_runs, analyzer_run_id)
         if run is None:
             return
@@ -135,7 +138,6 @@ class AnalyzerService:
                 self._update_run(
                     run,
                     status=RunStatus.DONE.value,
-                    platform=cached.get("platform", ""),
                     scenario_count=cached.get("scenario_count", 0),
                     completed_count=cached.get("completed_count", 0),
                     total_scenario_count=cached.get("total_scenario_count", 0),
@@ -144,10 +146,10 @@ class AnalyzerService:
                 )
                 return
 
-        job = await self._source.fetch_job(run["bank"], run["job_id"])
+        platform = Platform(run["platform"])
+        job = await self._source.fetch_job(run["bank"], run["job_id"], platform)
         self._update_run(
             run,
-            platform=job.platform.value,
             scenario_count=len(job.failed_scenarios),
             total_scenario_count=job.total_scenario_count,
         )
@@ -161,7 +163,13 @@ class AnalyzerService:
         semaphore = asyncio.Semaphore(settings.max_concurrency)
         await asyncio.gather(
             *(
-                self._analyze_scenario(run["analyzer_run_id"], scenario, semaphore)
+                self._analyze_scenario(
+                    run["analyzer_run_id"],
+                    scenario,
+                    bank=job.bank,
+                    jenkins_console_log=job.jenkins_console_log,
+                    semaphore=semaphore,
+                )
                 for scenario in job.failed_scenarios
             ),
             return_exceptions=True,
@@ -183,10 +191,20 @@ class AnalyzerService:
                 return row
         return None
 
+    def _screenshot_paths(self, scenario: RawScenario) -> list[str]:
+        return [
+            path
+            for path in (scenario.web_screenshot_path, scenario.mobile_screenshot_path)
+            if path
+        ]
+
     async def _analyze_scenario(
         self,
         analyzer_run_id: str,
         scenario: RawScenario,
+        *,
+        bank: str,
+        jenkins_console_log: str,
         semaphore: asyncio.Semaphore,
     ) -> None:
         """Analyze one failed scenario; never raises (plan.md A9)."""
@@ -194,7 +212,7 @@ class AnalyzerService:
             settings = self._settings
             result_id = str(uuid4())
 
-            # Full trace, part 1: raw evidence as received.
+            # Full trace, part 1: raw evidence as received (all raw paths).
             self._repo.save(
                 settings.table_evidence,
                 result_id,
@@ -203,54 +221,58 @@ class AnalyzerService:
                     "analyzer_run_id": analyzer_run_id,
                     "scenario_name": scenario.scenario_name,
                     "platform": scenario.platform.value,
-                    "screenshot_path": scenario.screenshot_path,
+                    "screenshot_paths": self._screenshot_paths(scenario),
                     "raw_scenario": scenario.model_dump(mode="json"),
                 },
             )
 
             prompt = ""
             raw_response = ""
-            truncated = False
-            truncated_note = ""
             meta = AnalysisMeta()
             analysis: LLMAnalysis | None = None
+            findings: Findings | None = None
 
             try:
-                findings = self._extractor.extract(scenario)
-                prompt = self._builder.build(findings)
-
-                threshold = settings.truncation_threshold_tokens
-                if threshold > 0:
-                    estimated = estimate_tokens(prompt, settings.token_chars_ratio)
-                    if estimated > threshold:
-                        overflow_chars = (estimated - threshold) * settings.token_chars_ratio
-                        findings, truncated_note = truncate_findings(
-                            findings, overflow_chars
-                        )
-                        truncated = True
-                        prompt = self._builder.build(findings)
-
-                response = await self._llm.complete(prompt)
-                raw_response = response.content
-                meta = AnalysisMeta(
-                    llm_model=response.model,
-                    input_tokens=response.input_tokens,
-                    output_tokens=response.output_tokens,
-                    duration_ms=response.duration_ms,
-                    analyzed_at=_utcnow_iso(),
+                findings = self._extractor.extract(
+                    scenario, bank=bank, jenkins_console_log=jenkins_console_log
                 )
 
-                parsed = _try_json(raw_response)
-                if parsed is not None:
-                    try:
-                        analysis = LLMAnalysis.model_validate(parsed)
-                    except ValidationError:
-                        analysis = None
+                # PreCheck (plan.md A7): may short-circuit before the LLM.
+                precheck_result = self._precheck.check(findings)
+                if precheck_result is not None:
+                    analysis = precheck_result
+                    raw_response = ""
+                    meta = AnalysisMeta(llm_model="precheck", analyzed_at=_utcnow_iso())
+                else:
+                    prompt = self._builder.build(findings)
+                    # Size management (plan.md A11): tokens are measured on the
+                    # combined prompt; trimming (when threshold is exceeded) is
+                    # delegated to each Evidence's content selector — passthrough
+                    # today, so nothing is cut. Real limit tuned on the work PC.
+                    response = await self._llm.complete(prompt)
+                    raw_response = response.content
+                    meta = AnalysisMeta(
+                        llm_model=response.model,
+                        input_tokens=response.input_tokens,
+                        output_tokens=response.output_tokens,
+                        duration_ms=response.duration_ms,
+                        analyzed_at=_utcnow_iso(),
+                    )
+                    parsed = _try_json(raw_response)
+                    if parsed is not None:
+                        try:
+                            analysis = LLMAnalysis.model_validate(parsed)
+                        except ValidationError:
+                            analysis = None
             except Exception as exc:
                 # Timeout / transport / stub NotImplementedError / anything:
                 # mark this scenario failed, keep the job going.
                 if not raw_response:
                     raw_response = f"<no response — {type(exc).__name__}: {exc}>"
+
+            # Platform-appropriate (registry-filtered) stored screenshots.
+            missing_evidence = findings.missing_evidence if findings else []
+            result_screenshots = findings.screenshot_paths if findings else []
 
             # Full trace, part 2: exact prompt + raw answer.
             self._repo.save(
@@ -271,26 +293,27 @@ class AnalyzerService:
                     result_id=result_id,
                     analyzer_run_id=analyzer_run_id,
                     **analysis.model_dump(),
-                    truncated=truncated,
-                    truncated_note=truncated_note,
-                    screenshot_path=scenario.screenshot_path,
+                    platform=scenario.platform.value,
+                    bank=bank,
+                    screenshot_paths=result_screenshots,
+                    missing_evidence=missing_evidence,
                     raw_llm_response=raw_response,
-                    analysis_failed=False,
+                    status=AnalysisStatus.OK,
                     meta=meta,
                 )
             else:
-                # No fabricated analysis text (plan.md B3.9): only factual
+                # No fabricated analysis text (plan.md A10): only factual
                 # identity fields are filled by the system.
                 result = AnalysisResult(
                     result_id=result_id,
                     analyzer_run_id=analyzer_run_id,
                     scenario_name=scenario.scenario_name,
                     platform=scenario.platform.value,
-                    truncated=truncated,
-                    truncated_note=truncated_note,
-                    screenshot_path=scenario.screenshot_path,
+                    bank=bank,
+                    screenshot_paths=result_screenshots,
+                    missing_evidence=missing_evidence,
                     raw_llm_response=raw_response,
-                    analysis_failed=True,
+                    status=AnalysisStatus.ANALYSIS_FAILED,
                     meta=meta,
                 )
 

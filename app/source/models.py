@@ -11,18 +11,21 @@ from app.domain.enums import Platform
 
 
 class RawScenario(BaseModel):
-    """One failed scenario's raw evidence bundle (contents vary by platform).
+    """One failed scenario's raw evidence bundle (plan.md A4.3).
 
-    web: test_log + browser_log + dom_html + screenshot;
-    mobile: test_log + screenshot (browser_log/dom_html stay empty).
+    Any field may be empty ("missing evidence" is tolerated, A5.4). Typical
+    combos: web = test_log + dom_html + browser_log + web_screenshot;
+    mobile = test_log + mobile_screenshot; hybrid = web files + mobile
+    screenshot + test_log. `platform` is set from the job/request, not guessed.
     """
 
     scenario_name: str
     platform: Platform
     test_log: str = ""
-    browser_log: str = ""
     dom_html: str = ""
-    screenshot_path: str = ""
+    browser_log: str = ""
+    web_screenshot_path: str = ""
+    mobile_screenshot_path: str = ""
     retry_info: str = ""
 
 

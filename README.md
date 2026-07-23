@@ -1,25 +1,33 @@
 # VisiumGo Test Analyzer
 
-Başarısız otomasyon test koşumlarının (web/Selenium + mobil/Android) ham kanıtını
+Başarısız otomasyon test koşumlarının (`web` / `mobile` / `hybrid`) ham kanıtını
 (test.log, DOM, browser.log, ekran görüntüsü) lokal bir LLM'e yorumlatan FastAPI
 backend. Çıktı: **güven seviyeli, gerekçeli ön teşhis** — "test hatası mı,
-uygulama hatası mı, ortam mı, geçici mi?"
+uygulama hatası mı, ortam mı, geçici mi (yoksa unknown/inconclusive mı)?"
 
-Mimari ve tüm kararlar için tek doğru kaynak: [`plan.md`](plan.md).
+Mimari ve tüm kararlar için tek doğru kaynak: [`plan.md`](plan.md) (v2).
 Yapım geçmişi ve açık noktalar: [`CHANGELOG.md`](CHANGELOG.md).
 
-## Mimari (6 tak-çıkar halka)
+## Mimari (tak-çıkar halkalar)
 
 ```
-Source (VisiumGo) → Extraction (Findings) → Prompt → LLM (tek atış) → Parse (JSON) → Persist + API
+Source (VisiumGo) → Extraction (Evidence → Findings) → PreCheck → Prompt → LLM (tek atış) → Parse (JSON) → Persist + API
 ```
 
+- **Davranış dallanması YOK:** `if mock` / `if platform ==` / `if type ==` yerine
+  ayrı sınıf + arayüz + registry + DI. Yeni varyant = registry'ye bir satır.
 - **Agentless / tek-atış:** senaryo başına tek prompt, tek LLM çağrısı; tool-calling yok.
 - **Parse-minimal:** ham kanıt etiketli bloklar halinde LLM'e gider; alan-parser yok.
+- **Evidence mimarisi:** 5 kanıt sınıfı + registry; `goes_to_llm`/`goes_to_store`
+  bayrakları config'ten; her kanıtın content selector'ı (bugün passthrough); eksik
+  kanıt tolere edilir. Beklenen kanıt seti platforma göre registry'den gelir.
+- **PreCheck kancası:** bugün `NoOpPreCheck` (her zaman LLM'e gider); kural listesi yok.
 - **DB simülasyonu:** `database/<tablo>/<id>.json`; Repository arayüzü arkasında
   (ileride SQLite/Oracle tak-çıkar).
 - **Halka 1-2 stub:** gerçek VisiumGo erişimi iş bilgisayarında doldurulacak
   (`# TODO(work-pc)` işaretli); MacBook'ta mock'larla uçtan uca çalışır.
+- **Mock etiketleme:** tüm mock çıktıları `MOCK_` ile başlar (gerçek veriyle karışmasın).
+- **Docker yok** (iş bilgisayarında mevcut değil).
 
 ## Kurulum
 
@@ -53,9 +61,10 @@ uvicorn app.main:app --reload
 
 ```bash
 # analizi başlat (hemen analyzer_run_id döner, arka planda çalışır)
+# platform GİRDİDİR (tahmin edilmez): web | mobile | hybrid
 curl -X POST http://127.0.0.1:8000/analyze/visiumgo \
   -H "Content-Type: application/json" \
-  -d '{"bank": "demo", "job_id": "job-42"}'
+  -d '{"bank": "demo", "job_id": "job-42", "platform": "web"}'
 
 # durumu / sonuçları sorgula
 curl http://127.0.0.1:8000/analyze/visiumgo/<analyzer_run_id>
@@ -73,7 +82,8 @@ Mock kolaylığı: `job_id` sonu `-clean` biterse job hatasız kabul edilir
 |---|---|
 | Gerçek lokal LLM | `LLM_PROVIDER=openai_compatible`, `LLM_API_URL=<tam chat-completions URL>`, `LLM_MODEL=...` |
 | Gerçek VisiumGo | `SOURCE_PROVIDER=visiumgo`, `EXTRACTOR_PROVIDER=visiumgo` + `config/banks.json` doldur (*iş bilgisayarında gerçeklenecek stub*) |
-| Kırpma eşiği | `TRUNCATION_THRESHOLD_TOKENS=<model context'ine göre>` (0 = kesme yok) |
+| Kırpma eşiği | `TRUNCATION_THRESHOLD_TOKENS=<model context'ine göre>` (0 = kesme yok; kırpma Evidence içi) |
+| Kanıt akışı | `EVIDENCE_FLAGS=<JSON>` → hangi kanıt LLM'e/depoya gider (varsayılan koddadır) |
 | Paralellik | `MAX_CONCURRENCY=<n>` |
 | Önbellek | `CACHE_ENABLED=false` → aynı job tekrar analiz edilir |
 
@@ -83,5 +93,6 @@ Mock kolaylığı: `job_id` sonu `-clean` biterse job hatasız kabul edilir
 pytest
 ```
 
-Sözleşme-bazlı testler (Findings/A6, çıktı şeması/A8, Repository, parsing,
-kırpma önceliği, hata dayanıklılığı) + mock'larla uçtan uca smoke testi.
+Sözleşme-bazlı testler (Findings/A6, çıktı şeması/A10, Repository, parsing,
+Evidence mimarisi/registry, eksik kanıt toleransı, PreCheck, hata dayanıklılığı)
++ mock'larla uçtan uca smoke testi.
