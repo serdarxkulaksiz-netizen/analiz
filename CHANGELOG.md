@@ -569,3 +569,19 @@ Kullanıcı push öncesi atık/ölü kod incelemesi istedi; tek tek konuşuldu, 
   (url/model/messages)+`raw_response`(tam zarf); `raw_llm_response` tam zarf; status=ok.
 - **Kapsam dışı bulgu (bildirim, düzeltmedim):** Transport hatasında (hiç cevap yok) `prompts.request`
   boş kalır — kaydedilecek istek/zarf yok; istenirse ileride provider isteği exception'a iliştirebilir.
+
+## [LLM cevabı ayrı klasör] — TAMAM (2026-07-23)
+- **İstek:** LLM'in ham cevabını görebilmek için `database/` altına ayrı bir klasör.
+- **Dosyalar:**
+  - `app/config.py` — `table_llm_responses: str = "llm_responses"` (tablo adı config'ten, hardcode yok).
+  - `.env.example` — `TABLE_LLM_RESPONSES=llm_responses`.
+  - `app/service.py` — her senaryo için `database/llm_responses/{result_id}.json` yazılıyor:
+    `request` (gönderilen tam istek) + `raw_response` (LLM'in döndürdüğü tam ham zarf) + `content`
+    (çıkarılan mesaj içeriği, okunur) + `model`/`input_tokens`/`output_tokens`/`duration_ms`. Parse
+    başarılı olsun olmasın yazılır → boş/kısmi cevap da görünür.
+  - `tests/test_api_smoke.py` — yeni klasörde satır + `raw_response`/`content`/`model` doğrulanır.
+- **Geri alınan:** Önceki turdaki geçici debug `print`'ler (`[LLM RAW]`) kaldırıldı; teşhis artık
+  terminal yerine `database/llm_responses/` üzerinden yapılır.
+- **Doğrulama:** `pytest` → 55/55; canlı smoke: `database/llm_responses/` yazıldı (raw zarf + content + meta).
+- **Not:** Bu klasör, `raw_llm_response`'un boş göründüğü durumda LLM'in gerçekte ne döndürdüğünü
+  (boş gövde mi, farklı yapı mı) diske kalıcı yazar — iş-pc'de o satırı açıp bakabilirsin.

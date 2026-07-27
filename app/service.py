@@ -243,6 +243,7 @@ class AnalyzerService:
             prompt = ""
             raw_response = ""  # full LLM envelope (kept even if parsing fails)
             llm_request: dict = {}
+            llm_content = ""  # extracted message content (may be empty)
             meta = AnalysisMeta()
             analysis: LLMAnalysis | None = None
             findings: Findings | None = None
@@ -266,6 +267,7 @@ class AnalyzerService:
                     # today, so nothing is cut. Real limit tuned on the work PC.
                     response = await self._llm.complete(prompt)
                     llm_request = response.request
+                    llm_content = response.content
                     # Save the FULL envelope (fallback to content for simple
                     # providers that don't populate it); parse the diagnosis
                     # from the message content only.
@@ -304,6 +306,25 @@ class AnalyzerService:
                     "prompt": prompt,
                     "request": llm_request,
                     "raw_response": raw_response,
+                },
+            )
+
+            # Full trace, part 2b: the LLM's answer in its own folder
+            # (database/llm_responses/) — exactly what the LLM returned.
+            self._repo.save(
+                settings.table_llm_responses,
+                result_id,
+                {
+                    "result_id": result_id,
+                    "analyzer_run_id": analyzer_run_id,
+                    "scenario_name": scenario.scenario_name,
+                    "request": llm_request,
+                    "raw_response": raw_response,
+                    "content": llm_content,
+                    "model": meta.llm_model,
+                    "input_tokens": meta.input_tokens,
+                    "output_tokens": meta.output_tokens,
+                    "duration_ms": meta.duration_ms,
                 },
             )
 

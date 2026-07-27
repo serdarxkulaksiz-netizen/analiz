@@ -59,6 +59,7 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     assert len(list((db / settings.table_evidence).glob("*.json"))) == 2
     assert len(list((db / settings.table_prompts).glob("*.json"))) == 2
     assert len(list((db / settings.table_analysis_results).glob("*.json"))) == 2
+    assert len(list((db / settings.table_llm_responses).glob("*.json"))) == 2
 
     # prompts row carries the full request + full raw envelope (plan.md A12).
     prompt_row = json.loads(
@@ -67,6 +68,14 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     assert prompt_row["prompt"]
     assert prompt_row["request"]["messages"]  # full sent request
     assert '"choices"' in prompt_row["raw_response"]  # full raw envelope
+
+    # dedicated llm_responses folder: exactly what the LLM returned.
+    llm_row = json.loads(
+        next((db / settings.table_llm_responses).glob("*.json")).read_text("utf-8")
+    )
+    assert '"choices"' in llm_row["raw_response"]  # full raw envelope
+    assert llm_row["content"]  # extracted message content
+    assert llm_row["model"] and llm_row["duration_ms"] is not None
 
 
 def test_clean_job_returns_nothing_to_analyze(settings: Settings) -> None:

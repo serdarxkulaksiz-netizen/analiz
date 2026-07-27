@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     table_analysis_results: str = "analysis_results"
     table_evidence: str = "evidence"
     table_prompts: str = "prompts"
+    table_llm_responses: str = "llm_responses"  # raw LLM answer per scenario
 
     # --- source / Halka 1 (plan.md A4) — value = registry key ---
     source_provider: str = "mock"  # mock | visiumgo
