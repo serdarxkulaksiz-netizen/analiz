@@ -537,3 +537,35 @@ Kullanıcı push öncesi atık/ölü kod incelemesi istedi; tek tek konuşuldu, 
 - **Kullanım:** iş-pc'de gerekiyorsa `.env`'de `VISIUMGO_VERIFY_SSL=false` / `LLM_VERIFY_SSL=false`.
   Daha güvenli alternatif (ileride): iç CA bundle yolunu `verify`'a vermek — bugün eklenmedi (kapsam).
 - **Doğrulama:** `pytest` → 53/53; `compileall` temiz.
+
+---
+---
+
+# [LLM ham cevap + parse düzeltmesi] — TAMAM (2026-07-23)
+
+> İki sorun: (1) `TypeError: string indices...` → `analysis_failed`; (2) parse patlayınca LLM'in ham
+> cevabı kayboluyordu. Kök neden: ara katman (`/api/v1/extension/send`) zarfı **çift kodlanmış** JSON
+> string döndürüyor → `response.json()` bir `str` veriyor → `data["choices"]` string'i index'liyor →
+> TypeError → LLMError → ham kayıp. Onaylı plan uygulandı.
+
+- **Dosyalar:**
+  - `app/llm/provider.py` — `LLMResponse`'a `raw_response: str` (tam zarf) + `request: dict` (gönderilen
+    tam istek) eklendi. `content` = teşhis JSON'u (parse için); `raw_response` = tam zarf (kayıt için).
+  - `app/llm/openai_compatible.py` — `complete()`: HTTP cevabı gelir gelmez **parse'tan ÖNCE**
+    `response.text` `raw_response`'a alınır. `_extract()`: `response.json()` `str` ise `json.loads` ile
+    **çift kodlama açılır**, sonra `choices[0].message.content`. Parse/erişim patlarsa **LLMError
+    FIRLATMAZ** → `content=""` + dolu `raw_response` döner (ham korunur). Yalnız **transport hatası**
+    (timeout/bağlantı yok) LLMError. `raise_for_status` kaldırıldı (500 gövdesi de saklanır).
+  - `app/service.py` — `raw_llm_response` = `response.raw_response` (zarf boşsa `content`'e düşer);
+    teşhis parse'ı **`response.content`'ten**; `database/prompts` satırına **`request`** (tam istek)
+    eklendi (mevcut `prompt` + `raw_response` yanına). Parse başarılı olsun olmasın tam iz.
+  - `app/llm/mock.py` — Mock artık gerçek `chat.completion` zarfını taklit ediyor: `raw_response`=tam
+    MOCK zarf (id/choices/message/usage), `request`=MOCK istek, `content`=teşhis. Ham-kaydetme akışı
+    mock'ta da aynı (A14).
+- **Testler:** `test_openai_compatible` — çift-kodlanmış string zarf **açılır**; 500/bozuk zarf
+  **fırlatmaz, ham korunur**; transport hatası → LLMError; ilk testte `raw_response`+`request` doğrulanır.
+  `test_api_smoke` — `raw_llm_response` tam zarf; `prompts` satırında `request.messages` + tam zarf.
+- **Doğrulama:** `pytest` → **55/55**; canlı mock smoke: `prompts/{id}.json` = `prompt`+`request`
+  (url/model/messages)+`raw_response`(tam zarf); `raw_llm_response` tam zarf; status=ok.
+- **Kapsam dışı bulgu (bildirim, düzeltmedim):** Transport hatasında (hiç cevap yok) `prompts.request`
+  boş kalır — kaydedilecek istek/zarf yok; istenirse ileride provider isteği exception'a iliştirebilir.

@@ -62,6 +62,11 @@ async def test_request_shape_and_response_parsing() -> None:
     assert result.model == "qwen3-coder-next"
     assert result.input_tokens == 15
     assert result.output_tokens == 3
+    # Full raw envelope + full request are captured for the trace.
+    assert '"choices"' in result.raw_response and '"usage"' in result.raw_response
+    assert result.request["url"].endswith("/api/v1/extension/send")
+    assert result.request["model"] == "qwen3-coder-next"
+    assert result.request["max_tokens"] == 8000
 
     # Request shape.
     req = _CAPTURED[0]
@@ -82,19 +87,51 @@ async def test_api_key_adds_bearer_header_when_set() -> None:
 
 
 @pytest.mark.asyncio
-async def test_empty_choices_raises_llm_error() -> None:
+async def test_malformed_envelope_keeps_raw_and_does_not_raise() -> None:
+    # A received-but-unparseable body must NOT raise and must keep the raw.
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [], "model": "m"})
 
     provider = _provider(handler)
-    with pytest.raises(LLMError):
-        await provider.complete("x")
+    result = await provider.complete("x")
+    assert result.content == ""  # parse failed -> empty content (analysis_failed)
+    assert '"choices"' in result.raw_response  # but the raw envelope is kept
 
 
 @pytest.mark.asyncio
-async def test_http_error_raises_llm_error() -> None:
+async def test_http_error_body_is_kept_not_lost() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, text="boom")
+
+    provider = _provider(handler)
+    result = await provider.complete("x")
+    assert result.content == ""
+    assert result.raw_response == "boom"  # server error body preserved
+
+
+@pytest.mark.asyncio
+async def test_double_encoded_body_is_unwrapped() -> None:
+    # The intermediary may return the envelope as a JSON *string* (the cause of
+    # the "string indices" TypeError). It must be unwrapped, not lost.
+    envelope = {
+        "choices": [{"message": {"content": "DIAG", "role": "assistant"}}],
+        "model": "m",
+        "usage": {"prompt_tokens": 1, "completion_tokens": 2},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=json.dumps(envelope))  # a JSON string
+
+    provider = _provider(handler)
+    result = await provider.complete("x")
+    assert result.content == "DIAG"
+    assert result.input_tokens == 1 and result.output_tokens == 2
+
+
+@pytest.mark.asyncio
+async def test_transport_failure_raises_llm_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route to host")
 
     provider = _provider(handler)
     with pytest.raises(LLMError):

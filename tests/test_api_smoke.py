@@ -5,6 +5,8 @@ POST /analyze/visiumgo -> background analysis -> full trace under database/
 BackgroundTasks before returning the response, so no polling loop is needed.
 """
 
+import json
+
 from fastapi.testclient import TestClient
 
 from app.config import Settings
@@ -47,7 +49,8 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
         assert row["platform"] == "web"
         assert row["screenshot_paths"] == [row["screenshot_paths"][0]]
         assert row["screenshot_paths"][0].startswith("MOCK_")
-        assert row["raw_llm_response"]
+        # raw_llm_response is the FULL envelope (not just content).
+        assert '"choices"' in row["raw_llm_response"]
         assert row["meta"]["llm_model"] == f"MOCK_{settings.llm_model}"
 
     # Full trace on disk (plan.md A12): one row per table per scenario + run row.
@@ -56,6 +59,14 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     assert len(list((db / settings.table_evidence).glob("*.json"))) == 2
     assert len(list((db / settings.table_prompts).glob("*.json"))) == 2
     assert len(list((db / settings.table_analysis_results).glob("*.json"))) == 2
+
+    # prompts row carries the full request + full raw envelope (plan.md A12).
+    prompt_row = json.loads(
+        next((db / settings.table_prompts).glob("*.json")).read_text("utf-8")
+    )
+    assert prompt_row["prompt"]
+    assert prompt_row["request"]["messages"]  # full sent request
+    assert '"choices"' in prompt_row["raw_response"]  # full raw envelope
 
 
 def test_clean_job_returns_nothing_to_analyze(settings: Settings) -> None:

@@ -13,6 +13,7 @@ All call parameters (base URL, path, temperature, timeout, max_tokens) come
 from config — nothing hardcoded. A custom transport can be injected for tests.
 """
 
+import json
 import time
 from typing import Any
 
@@ -61,6 +62,8 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             "temperature": self._temperature,
             "max_tokens": self._max_tokens,
         }
+        # Full request for the trace (model is logged here but NOT sent in body).
+        request = {"url": self._url, "model": self._model, **payload}
 
         client_kwargs: dict[str, Any] = {"timeout": self._timeout_seconds}
         # A custom transport (tests) handles its own connection; `verify` only
@@ -71,26 +74,50 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             client_kwargs["verify"] = self._verify_ssl
 
         started = time.perf_counter()
+        # A transport-level failure (timeout / no connection) yields no envelope
+        # to keep — only that raises LLMError.
         try:
             async with httpx.AsyncClient(**client_kwargs) as client:
                 response = await client.post(
                     self._url, json=payload, headers=self._headers()
                 )
-                response.raise_for_status()
-                data = response.json()
-            content = data["choices"][0]["message"]["content"]
         except Exception as exc:
             raise LLMError(f"{type(exc).__name__}: {exc}") from exc
 
-        if not content:
-            raise LLMError("LLM returned empty content.")
+        # We HAVE a response: capture the full raw envelope BEFORE any parsing,
+        # so it is never lost even if the body is malformed (plan.md A9/A10).
+        raw_response = response.text
         duration_ms = int((time.perf_counter() - started) * 1000)
 
-        usage = data.get("usage") or {}
+        content, model, input_tokens, output_tokens = self._extract(response, raw_response)
         return LLMResponse(
             content=content,
-            model=data.get("model", self._model),
-            input_tokens=usage.get("prompt_tokens"),
-            output_tokens=usage.get("completion_tokens"),
+            raw_response=raw_response,
+            request=request,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             duration_ms=duration_ms,
         )
+
+    def _extract(
+        self, response: httpx.Response, raw_response: str
+    ) -> tuple[str, str, int | None, int | None]:
+        """Best-effort extraction; on failure return empty content (raw is kept)."""
+        try:
+            data: Any = response.json()
+            # The intermediary may double-encode (a JSON string of JSON).
+            if isinstance(data, str):
+                data = json.loads(data)
+            content = data["choices"][0]["message"]["content"]
+            usage = data.get("usage") or {}
+            return (
+                content or "",
+                data.get("model", self._model),
+                usage.get("prompt_tokens"),
+                usage.get("completion_tokens"),
+            )
+        except Exception:
+            # Malformed / unexpected envelope: leave content empty; the caller
+            # marks the scenario analysis_failed but the raw envelope is saved.
+            return "", self._model, None, None

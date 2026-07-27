@@ -49,11 +49,40 @@ class MockLLMProvider(LLMProvider):
             "error_signature": "MOCK_example-signature",
         }
         content = json.dumps(payload, ensure_ascii=False, indent=2)
+        input_tokens = len(prompt) // 4
+        output_tokens = len(content) // 4
+
+        # Mimic the real chat.completion envelope so the raw-saving flow is
+        # identical to the real provider (plan.md A14: mock mirrors real).
+        envelope = {
+            "id": "MOCK_chatcmpl-0000",
+            "object": "chat.completion",
+            "model": self._model,
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": content},
+                }
+            ],
+            "usage": {
+                "prompt_tokens": input_tokens,
+                "completion_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+            },
+        }
+        request = {
+            "url": "MOCK_llm",
+            "model": self._model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
         duration_ms = int((time.perf_counter() - started) * 1000)
         return LLMResponse(
             content=content,
+            raw_response=json.dumps(envelope, ensure_ascii=False, indent=2),
+            request=request,
             model=self._model,
-            input_tokens=len(prompt) // 4,
-            output_tokens=len(content) // 4,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             duration_ms=duration_ms,
         )

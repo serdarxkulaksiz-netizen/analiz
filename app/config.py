@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     visiumgo_base_url: str = ""  # e.g. https://visiumgo.fintek.local
     visiumgo_token: str = ""  # JWT (eyJ...); code only puts it in the Bearer header
     visiumgo_timeout_seconds: float = 60.0
-    # Secure by default; set false in .env for internal self-signed certs.
-    visiumgo_verify_ssl: bool = True
+    # SSL verification off (internal self-signed certs); true to enable via .env.
+    visiumgo_verify_ssl: bool = False
 
     # --- extraction & size management / Halka 2 (plan.md A5, A11) ---
     # Reserved for later (plan.md A11): the single "when to trim" threshold.
@@ -79,12 +79,13 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.0
     llm_timeout_seconds: float = 120.0
     llm_max_tokens: int = 8000
-    # Secure by default; set false in .env for internal self-signed certs.
-    llm_verify_ssl: bool = True
+    # SSL verification off (internal self-signed certs); true to enable via .env.
+    llm_verify_ssl: bool = False
 
     # --- API & background processing (plan.md A11) ---
     max_concurrency: int = 2  # asyncio.Semaphore size
-    cache_enabled: bool = True  # reuse previous analysis of same bank+job_id
+    # Run cache off: the same job is always re-analyzed (no reuse of prior runs).
+    cache_enabled: bool = False
 
 
 @lru_cache

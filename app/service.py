@@ -241,7 +241,8 @@ class AnalyzerService:
             )
 
             prompt = ""
-            raw_response = ""
+            raw_response = ""  # full LLM envelope (kept even if parsing fails)
+            llm_request: dict = {}
             meta = AnalysisMeta()
             analysis: LLMAnalysis | None = None
             findings: Findings | None = None
@@ -264,7 +265,11 @@ class AnalyzerService:
                     # delegated to each Evidence's content selector — passthrough
                     # today, so nothing is cut. Real limit tuned on the work PC.
                     response = await self._llm.complete(prompt)
-                    raw_response = response.content
+                    llm_request = response.request
+                    # Save the FULL envelope (fallback to content for simple
+                    # providers that don't populate it); parse the diagnosis
+                    # from the message content only.
+                    raw_response = response.raw_response or response.content
                     meta = AnalysisMeta(
                         llm_model=response.model,
                         input_tokens=response.input_tokens,
@@ -272,7 +277,7 @@ class AnalyzerService:
                         duration_ms=response.duration_ms,
                         analyzed_at=_utcnow_iso(),
                     )
-                    parsed = _try_json(raw_response)
+                    parsed = _try_json(response.content)
                     if parsed is not None:
                         try:
                             analysis = LLMAnalysis.model_validate(parsed)
@@ -288,7 +293,7 @@ class AnalyzerService:
             missing_evidence = findings.missing_evidence if findings else []
             result_screenshots = findings.screenshot_paths if findings else []
 
-            # Full trace, part 2: exact prompt + raw answer.
+            # Full trace, part 2: exact prompt + full request + full raw answer.
             self._repo.save(
                 settings.table_prompts,
                 result_id,
@@ -297,6 +302,7 @@ class AnalyzerService:
                     "analyzer_run_id": analyzer_run_id,
                     "scenario_name": scenario.scenario_name,
                     "prompt": prompt,
+                    "request": llm_request,
                     "raw_response": raw_response,
                 },
             )
