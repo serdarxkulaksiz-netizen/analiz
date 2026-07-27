@@ -61,7 +61,9 @@ class AnalyzerService:
 
     # ------------------------------------------------------------------ runs
 
-    def create_run(self, bank: str, job_id: str, platform: Platform) -> str:
+    def create_run(
+        self, bank: str, job_id: str, platform: Platform, run_id: str = ""
+    ) -> str:
         """Persist a pending run row and return its analyzer_run_id."""
         analyzer_run_id = str(uuid4())
         now = _utcnow_iso()
@@ -72,11 +74,15 @@ class AnalyzerService:
                 "analyzer_run_id": analyzer_run_id,
                 "bank": bank,
                 "job_id": job_id,
+                "run_id": run_id,  # requested; resolved value filled after fetch
                 "platform": platform.value,
                 "status": RunStatus.PENDING.value,
                 "scenario_count": 0,
                 "completed_count": 0,
                 "total_scenario_count": 0,
+                "job_name": "",
+                "run_result": {},
+                "raw_run_response": {},
                 "note": "",
                 "cached_from": "",
                 "created_at": now,
@@ -147,9 +153,15 @@ class AnalyzerService:
                 return
 
         platform = Platform(run["platform"])
-        job = await self._source.fetch_job(run["bank"], run["job_id"], platform)
+        job = await self._source.fetch_job(
+            run["bank"], run.get("job_id", ""), platform, run.get("run_id", "")
+        )
         self._update_run(
             run,
+            run_id=job.run_id,  # resolved run id (real source may derive it)
+            job_name=job.job_name,
+            run_result=job.run_result,
+            raw_run_response=job.raw_run_response,  # full raw trace (plan.md A12)
             scenario_count=len(job.failed_scenarios),
             total_scenario_count=job.total_scenario_count,
         )
@@ -192,10 +204,12 @@ class AnalyzerService:
         return None
 
     def _screenshot_paths(self, scenario: RawScenario) -> list[str]:
+        """Raw screenshot references from image attachments (for the trace row)."""
         return [
-            path
-            for path in (scenario.web_screenshot_path, scenario.mobile_screenshot_path)
-            if path
+            attachment.stored_path or attachment.file_name
+            for attachment in scenario.attachments
+            if attachment.mime_type.startswith("image/")
+            and (attachment.stored_path or attachment.file_name)
         ]
 
     async def _analyze_scenario(

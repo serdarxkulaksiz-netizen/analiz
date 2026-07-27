@@ -1,25 +1,24 @@
 """FastAPI app — async start/poll API (plan.md A13).
 
 Endpoints (names frozen, plan.md B3.2):
-  POST /analyze/visiumgo {bank, job_id, platform} -> analyzer_run_id (immediately)
+  POST /analyze/visiumgo {bank, platform, job_id?/run_id?} -> analyzer_run_id
   GET  /analyze/visiumgo/{analyzer_run_id} -> status + finished diagnoses (from disk)
 
-Every pluggable backend (source, extractor, LLM, precheck) is chosen from
-config via a REGISTRY (name -> factory) and injected here — no `if provider ==`
-branching (plan.md A0.1). Switching mock -> real is a `.env` change, not code.
+Every pluggable backend (source, LLM, precheck) is chosen from config via a
+REGISTRY (name -> factory) and injected here — no `if provider ==` branching
+(plan.md A0.1). Extraction is a single source-agnostic implementation. Switching
+mock -> real VisiumGo is a `.env` change, not code.
 """
 
 from collections.abc import Callable
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from app.config import Settings, get_settings
 from app.domain.enums import Platform, RunStatus
 from app.evidence.registry import EvidenceRegistry
-from app.extraction.base import Extractor
-from app.extraction.mock import MockExtractor
-from app.extraction.visiumgo import VisiumGoExtractor
+from app.extraction.evidence_extractor import EvidenceExtractor
 from app.llm.mock import MockLLMProvider
 from app.llm.openai_compatible import OpenAICompatibleLLMProvider
 from app.llm.provider import LLMProvider
@@ -28,34 +27,43 @@ from app.precheck.base import PreCheck
 from app.precheck.noop import NoOpPreCheck
 from app.prompting.builder import PromptBuilder
 from app.service import AnalyzerService
-from app.source.banks import BankRegistry
 from app.source.base import Source
 from app.source.mock import MockSource
 from app.source.visiumgo import VisiumGoSource
+from app.source.visiumgo_client import VisiumGoClient
 
 
 class AnalyzeRequest(BaseModel):
-    """Body of POST /analyze/visiumgo (plan.md A13). `platform` is input (A4.2)."""
+    """Body of POST /analyze/visiumgo (plan.md A13 + real-spec Adım A).
+
+    `platform` is input (A4.2). Either `job_id` or `run_id` must be given
+    (run_id wins if both are present).
+    """
 
     bank: str
-    job_id: str
     platform: Platform
+    job_id: str = ""
+    run_id: str = ""
+
+    @model_validator(mode="after")
+    def _require_job_or_run(self) -> "AnalyzeRequest":
+        if not self.job_id and not self.run_id:
+            raise ValueError("Either job_id or run_id is required.")
+        return self
 
 
-def _build_evidence_registry(settings: Settings) -> EvidenceRegistry:
-    return EvidenceRegistry(settings.evidence_flags)
+def _attachments_dir(settings: Settings):
+    return settings.database_dir / "attachments"
 
 
 # --- Registries (plan.md A0.1): name -> factory. A new variant = one row. -----
 
 SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
     "mock": lambda s: MockSource(),
-    "visiumgo": lambda s: VisiumGoSource(BankRegistry(s.banks_config_path)),
-}
-
-EXTRACTOR_REGISTRY: dict[str, Callable[[Settings], Extractor]] = {
-    "mock": lambda s: MockExtractor(_build_evidence_registry(s)),
-    "visiumgo": lambda s: VisiumGoExtractor(_build_evidence_registry(s)),
+    "visiumgo": lambda s: VisiumGoSource(
+        VisiumGoClient(s.visiumgo_base_url, s.visiumgo_token, s.visiumgo_timeout_seconds),
+        _attachments_dir(s),
+    ),
 }
 
 LLM_REGISTRY: dict[str, Callable[[Settings], LLMProvider]] = {
@@ -76,24 +84,22 @@ PRECHECK_REGISTRY: dict[str, Callable[[Settings], PreCheck]] = {
 
 
 def _select(registry: dict[str, Callable[[Settings], object]], key: str, kind: str):
-    """Look a factory up in a registry and build it, or fail with a clear error."""
+    """Look a factory up in a registry, or fail with a clear error."""
     try:
-        factory = registry[key]
+        return registry[key]
     except KeyError:
         known = ", ".join(sorted(registry)) or "<none>"
         raise ValueError(f"Unknown {kind} provider {key!r}. Known: {known}") from None
-    return factory
 
 
 def build_service(settings: Settings) -> AnalyzerService:
     """Wire the whole chain from config (dependency injection root)."""
+    registry = EvidenceRegistry(settings.evidence_flags)
     return AnalyzerService(
         settings=settings,
         repository=FileRepository(settings.database_dir),
         source=_select(SOURCE_REGISTRY, settings.source_provider, "source")(settings),
-        extractor=_select(EXTRACTOR_REGISTRY, settings.extractor_provider, "extractor")(
-            settings
-        ),
+        extractor=EvidenceExtractor(registry),
         prompt_builder=PromptBuilder(
             settings.prompt_template_path, settings.confidence_buckets
         ),
@@ -109,7 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     service = build_service(settings)
 
-    app = FastAPI(title="VisiumGo Test Analyzer", version="0.2.0")
+    app = FastAPI(title="VisiumGo Test Analyzer", version="0.3.0")
     app.state.service = service
 
     @app.post("/analyze/visiumgo")
@@ -117,7 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: AnalyzeRequest, background_tasks: BackgroundTasks
     ) -> dict[str, str]:
         analyzer_run_id = service.create_run(
-            request.bank, request.job_id, request.platform
+            request.bank, request.job_id, request.platform, request.run_id
         )
         # Single trigger call — swapping BackgroundTasks for a real queue
         # (Redis) only changes this line (plan.md A13).

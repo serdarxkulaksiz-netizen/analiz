@@ -43,12 +43,17 @@ class Settings(BaseSettings):
 
     # --- source / Halka 1 (plan.md A4) — value = registry key ---
     source_provider: str = "mock"  # mock | visiumgo
-    banks_config_path: Path = Path("config") / "banks.json"
+
+    # --- VisiumGo connection (plan.md A4; real source) — from .env, never code ---
+    visiumgo_base_url: str = ""  # e.g. https://visiumgo.fintek.local
+    visiumgo_token: str = ""  # JWT (eyJ...); code only puts it in the Bearer header
+    visiumgo_timeout_seconds: float = 60.0
 
     # --- extraction & size management / Halka 2 (plan.md A5, A11) ---
-    extractor_provider: str = "mock"  # mock | visiumgo
-    truncation_threshold_tokens: int = 0  # 0 = passthrough (default)
-    token_chars_ratio: int = 4  # rough chars-per-token estimate
+    # Reserved for later (plan.md A11): the single "when to trim" threshold.
+    # Not wired yet — today everything is passthrough; real Evidence-level
+    # trimming + real token counting land on the work PC. 0 = passthrough.
+    truncation_threshold_tokens: int = 0
     # Per-evidence-type flags (A5.2): goes_to_llm / goes_to_store.
     evidence_flags: dict[str, dict[str, bool]] = Field(
         default_factory=lambda: _DEFAULT_EVIDENCE_FLAGS

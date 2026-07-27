@@ -357,3 +357,120 @@ Doğrulama: `pytest` → **36/36 geçti, 0 uyarı**.
   dallanma yok; sözleşme testleri geçer).
 - **İş bilgisayarı (A16) bekleyenler:** `VisiumGoSource`/`VisiumGoExtractor` gerçeklemesi, Jenkins
   console.log API'si, gerçek context penceresi → `TRUNCATION_THRESHOLD_TOKENS`, çoklu banka `banks.json`.
+
+---
+---
+
+# [VisiumGo entegrasyonu] Halka 1-2 gerçek gerçekleme (2026-07-23)
+
+> Kullanıcı gerçek VisiumGo API sözleşmesini verdi; Halka 1 (Source) + Halka 2 (Extraction/Evidence)
+> stub'ları gerçeğe bağlanıyor. **Onaylı tasarım kararları (3× A):**
+> A1 = attachment-tabanlı `RawScenario`; A2 = tek paylaşılan extractor (mock/visiumgo extractor
+> ayrımı + `EXTRACTOR_PROVIDER` emekli); A3 = global `.env` (`VISIUMGO_BASE_URL`/`TOKEN`), `bank` etiket,
+> `banks.json`/`BankRegistry` emekli.
+
+## [VG Adım 1] Config + Domain + Evidence + tek Extractor — TAMAM (2026-07-23)
+- **Dosyalar (değişen):**
+  - `app/config.py` — `VISIUMGO_BASE_URL`/`VISIUMGO_TOKEN`/`VISIUMGO_TIMEOUT_SECONDS` eklendi;
+    `extractor_provider` (A2) ve `banks_config_path` (A3) kaldırıldı.
+  - `app/source/models.py` — attachment-tabanlı model: `Attachment{file_name, mime_type, device_id,
+    content, stored_path}`, `RawScenario{scenario_name, platform, scenario_id, error_text,
+    steps: list[Step], attachments, retry_info}`, `JobData`(+`run_id`, `job_name`, `run_result`,
+    `raw_run_response`). Tipli test_log/dom_html/... alanları kaldırıldı.
+  - `app/evidence/base.py` — `from_scenario` → `from_attachment`; her Evidence `mime_type`+`device_id`
+    ile `matches()` (device_id tam ya da noktalı prefix → mobil tek sınıf).
+  - `app/evidence/types.py` — 5 sınıfa `mime_type`/`device_id` eklendi (text/plain+test=TestLog,
+    text/plain+browser.default=BrowserLog, text/html+browser.default=Html, image/png+browser.default=
+    WebScreenshot, image/png+mobile=MobileScreenshot).
+  - `app/evidence/registry.py` — attachment→sınıf eşleme (`_class_for`/`matches`); `build_for` artık
+    attachment'lardan üretir; `expected_names`/`missing_names` platform beklenen setinden eksik hesaplar.
+- **Dosyalar (yeni/silinen):** `app/extraction/evidence_extractor.py` (`EvidenceExtractor` — tek,
+  kaynaktan bağımsız); `app/extraction/mock.py` + `app/extraction/visiumgo.py` **silindi**.
+- **Karar:** HATA bloğu = `error_text`; CONSOLE.LOG = job-seviyesi jenkins; failed_step = FAILED adım;
+  parse-minimal (alan-çıkaran parser yok).
+- **Eksik/kapsam-dışı (sonraki adımlarda):** `VisiumGoClient`+`VisiumGoSource` yok; `MockSource`/
+  `source/base.py` eski imza+model; `banks.py`/`banks.json` hâlâ duruyor (silinecek); `main.py`
+  EXTRACTOR_REGISTRY+BankRegistry; `service` run_id; testler; .env.example/README. (Şu an kod tutarsız.)
+- **Sıradaki adım:** VG Adım 2 — Source katmanı (`VisiumGoClient`, `VisiumGoSource`, `MockSource` yeni
+  model, `source/base.py` imza +run_id, `banks.py`/`banks.json` sil).
+
+## [VG Adım 2] Source katmanı — TAMAM (2026-07-23)
+- **Dosyalar (yeni):** `app/source/visiumgo_client.py` (`VisiumGoClient`: Bearer header, timeout,
+  `get_json/get_text/get_bytes`, `encode_segment` URL-encode; test için `transport` enjekte edilebilir).
+- **Dosyalar (değişen):** `app/source/base.py` (`fetch_job(bank, job_id, platform, run_id="")`),
+  `app/source/visiumgo.py` (gerçek: Adım A run_id çözümle [run_id öncelik / job_id→startTime max],
+  B FAILED filtrele, C detay errorText+stepResults+attachments, D attachment indir+diske kaydet;
+  hata→boş attachment=eksik; job devam), `app/source/mock.py` (yeni attachment modeli; platform→
+  attachment dict lookup, `if platform` yok; hepsi `MOCK_`).
+- **Dosyalar (silinen):** `app/source/banks.py`, `config/banks.json` (A3: BankRegistry emekli).
+- **Karar:** İnen dosyalar `database/attachments/{run_id}/{file}` altına (pathlib, ad sanitize);
+  ham run/detay response'ları JobData'da taşınıp service tarafından `runs`/`evidence`'a yazılacak (SRP:
+  Source indirir, Service kalıcılaştırır).
+- **Eksik/kapsam-dışı:** `main.py` hâlâ `BankRegistry`+`EXTRACTOR_REGISTRY` (kırık import); `service`
+  run_id + fetch_job imzası + ham response persistı yok; conftest `banks_config_path`; testler. → VG Adım 3-4.
+- **Sıradaki adım:** VG Adım 3 — `main.py` (registry'ler: tek extractor, VisiumGo client enjekte,
+  AnalyzeRequest +run_id) + `service.py` (create_run run_id, fetch_job çağrısı, ham response persist).
+
+## [VG Adım 3] API + Service — TAMAM (2026-07-23)
+- **Dosyalar:** `app/main.py` (EXTRACTOR_REGISTRY kaldırıldı → tek `EvidenceExtractor(registry)`;
+  `SOURCE_REGISTRY` visiumgo = `VisiumGoSource(VisiumGoClient(.env), database_dir/"attachments")`;
+  BankRegistry kaldırıldı; `AnalyzeRequest`'e `job_id`/`run_id` opsiyonel + "en az biri" validator),
+  `app/service.py` (`create_run(..., run_id="")` + run satırına run_id/job_name/run_result;
+  `fetch_job(..., run_id)`; fetch sonrası çözülen run_id/job_name/run_result run'a yazılır;
+  `_screenshot_paths` attachment'lardan üretir).
+- **Sıradaki adım:** VG Adım 4 — testler.
+
+## [VG Adım 4] Testler — TAMAM (2026-07-23)
+- **Dosyalar:** `tests/conftest.py` (banks_config_path/extractor_provider kaldırıldı; `extractor`
+  fixture=`EvidenceExtractor`), `tests/test_evidence.py` (attachment→sınıf eşleme, iki text/plain
+  deviceId ile ayrım, mobil prefix, bayrak override, missing, bilinmeyen atlanır),
+  `tests/test_extraction.py` (yeni; EvidenceExtractor RawScenario→Findings), `tests/test_resilience.py`
+  (EvidenceExtractor; source hatası artık `FailingSource` ile — ağ yok), `tests/test_api_smoke.py`
+  (mevcut, geçerli). `tests/test_extraction_mock.py` silindi.
+- **Yeni:** `tests/test_visiumgo_source.py` — enjekte `httpx.MockTransport` ile Adım A-D: run çözümleme
+  (startTime max), FAILED filtre, detay steps/errorText, attachment indir+diske kaydet, run_id önceliği,
+  Bearer header + segment encode (%2F/%3A). **Dış servise bağımlılık yok.**
+- **Bug düzeltildi:** `service._screenshot_paths` eski RawScenario alanlarına erişiyordu → senaryolar
+  sessizce düşüyordu (gather return_exceptions); attachment tabanlıya çevrildi.
+- **Sıradaki adım:** VG Adım 5 — .env.example + README.
+
+## [VG Adım 5] Taşınabilirlik & docs — TAMAM (2026-07-23)
+- **Dosyalar:** `.env.example` (`VISIUMGO_BASE_URL/TOKEN/TIMEOUT_SECONDS`; `BANKS_CONFIG_PATH` +
+  `EXTRACTOR_PROVIDER` kaldırıldı), `README.md` (POST'a run_id notu; Halka 1-2 artık "gerçek";
+  geçiş tablosunda VisiumGo satırı .env'e göre; extractor kaynaktan bağımsız).
+
+---
+
+## [VisiumGo entegrasyonu SONUÇ] Halka 1-2 gerçek — TAMAM (2026-07-23)
+- **Doğrulama:** `pytest` → **47/47 geçti**; `compileall` temiz; statik grep → gerçek `if mock/
+  platform==/type==` yok, ölü modül importu yok, eski RawScenario alanı yok. Canlı mock smoke (web/
+  mobile/hybrid) → doğru screenshot registry ile seçildi, tam iz `database/`'e yazıldı. VisiumGo zinciri
+  sahte HTTP transport ile testlerde uçtan uca doğrulandı.
+- **Bitmiş ölçütü (real-spec Bölüm 7):** `.env`'e gerçek URL+token yazılıp `SOURCE_PROVIDER=visiumgo`
+  seçilince gerçek zincir çalışır (kod değişmeden); `.env` boşken mock ile uçtan uca çalışır (`MOCK_`);
+  token/URL hardcode yok; `if mock/platform/type` yok.
+- **İş bilgisayarında kalan (A16):** gerçek `.env` (URL+token) ile canlı doğrulama; gerçek `stepResults`/
+  attachment alan adları beklendiği gibi mi (stepLine/errorText/fileName/mimeType/deviceId) — sapma olursa
+  yalnızca `VisiumGoSource` içinde alan adı ayarı; Jenkins console.log alımı (hâlâ açık); gerçek context
+  penceresine göre `TRUNCATION_THRESHOLD_TOKENS`.
+- **Kapsam dışı / not:** VisiumGo run **özet** endpoint'i (run_id doğrudan verildiğinde job_name/
+  run_result) spec'te tanımlı olmadığından, run_id doğrudan verilince bu alanlar boş kalır (job_id ile
+  gelince dolu). Gerekirse iş-pc'de tek satırla run-detay çağrısı eklenebilir.
+
+## [Atık kod incelemesi] Push öncesi temizlik — TAMAM (2026-07-23)
+Kullanıcı push öncesi atık/ölü kod incelemesi istedi; tek tek konuşuldu, kararlar:
+- **`token_chars_ratio` SİLİNDİ** (`config.py` + `.env.example`): silinen global trimmer'ın
+  `estimate_tokens` yardımcı değeriydi, yetim kalmıştı. "Neden iki kırpma düğmesi var?" tutarsızlığı giderildi.
+- **`truncation_threshold_tokens` KALDI** (tek eşik, A11): "ileride Evidence-içi kırpma için ayrılmış,
+  bugün passthrough" yorumu eklendi.
+- **`raw_run_response` artık `runs` satırına yazılıyor** (`service.py`): toplanıp çöpe gidiyordu; A12
+  "tam iz" gereği kalıcılaştırıldı. `create_run` başlangıç satırına da eklendi.
+- **`retry_info`**: karar = yalnızca kayıtta kalsın, prompt'a eklenmedi (değişiklik yok; ileride
+  `transient_error` isabeti için tek satırla eklenebilir).
+- **Küçük temizlik:** `tests/test_visiumgo_source.py` kullanılmayan `import json` silindi;
+  `tests/test_extraction.py` çift `app.domain.findings` importu birleştirildi.
+- **Ölü olmadığı için bırakılanlar:** `truncated`/`truncated_note` (A10, passthrough), `error_signature`
+  (A8, ileri için ayrılmış), `jenkins_console_log` (bağlı ama Jenkins alımı A16'da — bilinçli boş plumbing).
+- **Doğrulama:** `pytest` → 47/47; `compileall` temiz.
+- **Genel yön (kullanıcı):** Bundan sonra `# TODO(work-pc)` işlerinin çoğu BURADA yapılacak; iş
+  bilgisayarına çok az iş bırakılacak (Jenkins console.log, Evidence-içi kırpma vb. sırada).

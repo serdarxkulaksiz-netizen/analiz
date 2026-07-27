@@ -1,10 +1,11 @@
 """Evidence interface + two families (plan.md A5).
 
 This is the project's flexibility backbone. Each evidence:
+  - declares what it matches: a `mime_type` + `device_id` (plan.md real spec),
   - knows whether it goes to the LLM / to the store (flags from config, A5.2),
   - carries its own content selector — passthrough today (A5.3),
   - reports presence so missing evidence is tolerated, not fatal (A5.4),
-  - builds itself from a RawScenario (`from_scenario`) so no `if type ==`
+  - builds itself from an Attachment (`from_attachment`) so no `if type ==`
     branching is needed anywhere (A0.1 / SOLID).
 
 Two families avoid type-branching (SRP/OCP): text evidence produces a labeled
@@ -16,7 +17,7 @@ from abc import ABC, abstractmethod
 from typing import ClassVar
 
 from app.domain.findings import EvidenceBlock
-from app.source.models import RawScenario
+from app.source.models import Attachment
 
 
 class Evidence(ABC):
@@ -24,10 +25,28 @@ class Evidence(ABC):
 
     #: Registry key = class name; also the label used in `missing_evidence`.
     evidence_name: ClassVar[str]
+    #: Attachment identity this evidence matches (plan.md real spec, Bölüm 3).
+    mime_type: ClassVar[str]
+    device_id: ClassVar[str]
 
     def __init__(self, *, goes_to_llm: bool, goes_to_store: bool) -> None:
         self.goes_to_llm = goes_to_llm
         self.goes_to_store = goes_to_store
+
+    @classmethod
+    def matches(cls, attachment: Attachment) -> bool:
+        """True if this evidence type handles the given attachment.
+
+        `device_id` is matched exactly or by dotted prefix, so mobile pngs
+        (`mobile.ios...`, `mobile.android...`) all map to one class via
+        `device_id = "mobile"` — without any file-name `if`s.
+        """
+        if attachment.mime_type != cls.mime_type:
+            return False
+        return (
+            attachment.device_id == cls.device_id
+            or attachment.device_id.startswith(cls.device_id + ".")
+        )
 
     @property
     @abstractmethod
@@ -49,10 +68,10 @@ class Evidence(ABC):
 
     @classmethod
     @abstractmethod
-    def from_scenario(
-        cls, scenario: RawScenario, *, goes_to_llm: bool, goes_to_store: bool
+    def from_attachment(
+        cls, attachment: Attachment, *, goes_to_llm: bool, goes_to_store: bool
     ) -> "Evidence":
-        """Build this evidence from its own field of the raw scenario."""
+        """Build this evidence from a matching attachment."""
 
 
 class TextEvidence(Evidence):
@@ -78,6 +97,14 @@ class TextEvidence(Evidence):
             return EvidenceBlock(label=self.block_label, content=self.select_content())
         return None
 
+    @classmethod
+    def from_attachment(
+        cls, attachment: Attachment, *, goes_to_llm: bool, goes_to_store: bool
+    ) -> "TextEvidence":
+        return cls(
+            attachment.content, goes_to_llm=goes_to_llm, goes_to_store=goes_to_store
+        )
+
 
 class ScreenshotEvidence(Evidence):
     """Screenshot evidence: a stored path only; never sent to the text LLM."""
@@ -93,3 +120,11 @@ class ScreenshotEvidence(Evidence):
     @property
     def screenshot_path(self) -> str:
         return self._path
+
+    @classmethod
+    def from_attachment(
+        cls, attachment: Attachment, *, goes_to_llm: bool, goes_to_store: bool
+    ) -> "ScreenshotEvidence":
+        # A screenshot's reference is its stored path (fallback: file name).
+        path = attachment.stored_path or attachment.file_name
+        return cls(path, goes_to_llm=goes_to_llm, goes_to_store=goes_to_store)

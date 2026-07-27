@@ -1,75 +1,87 @@
 """MockSource — deterministic fake VisiumGo data for local development.
 
-Keeps the whole chain runnable on the MacBook (plan.md A15). Every produced
-identifier (scenario names, screenshot paths) is `MOCK_`-prefixed (plan.md
-A14.2) so mock data is unmistakable in `database/`.
+Keeps the whole chain runnable on the MacBook (plan.md A15). Produces the same
+attachment-based `RawScenario` as the real source, so extraction is identical.
+Every produced identifier/content is `MOCK_`-prefixed (plan.md A14.2).
 
-No platform branching (plan.md A0.1): each scenario is filled with ALL raw
-fields and tagged with the requested platform. Which of those fields count as
-"expected" evidence is decided downstream by the EvidenceRegistry's platform
-map — mobile simply never looks at the html/browser fields, etc.
+No platform branching (plan.md A0.1): the per-platform attachment set is a
+data lookup in `_ATTACHMENTS_BY_PLATFORM` (a dict = registry, not an `if`).
 
 Mock convenience: a `job_id` ending with `-clean` returns a job with zero
-failures, to exercise the "nothing to analyze" path (a data condition, not a
-variant switch).
+failures (a data condition, not a variant switch).
 """
 
-from app.domain.enums import Platform
+from app.domain.enums import Platform, StepStatus
+from app.domain.findings import Step
 from app.source.base import Source
-from app.source.models import JobData, RawScenario
+from app.source.models import Attachment, JobData, RawScenario
 
 CLEAN_JOB_SUFFIX = "-clean"
 
-_TEST_LOG_1 = """2026-07-16 10:00:01 STEP MOCK_Login sayfasını aç | PASSED
-2026-07-16 10:00:03 STEP MOCK_Kullanıcı adını gir | PASSED
-2026-07-16 10:00:05 STEP MOCK_Şifreyi gir | PASSED
+_TEST_LOG = """2026-07-16 10:00:01 STEP MOCK_Login sayfasını aç | PASSED
 2026-07-16 10:00:07 STEP MOCK_Giriş butonuna tıkla | FAILED
-2026-07-16 10:00:07 ERROR MOCK_NoSuchElementException: Unable to locate element: {"selector":"#login-submit"}
-2026-07-16 10:00:07 ERROR   at LoginPage.clickSubmit(LoginPage.java:42)"""
+2026-07-16 10:00:07 ERROR MOCK_NoSuchElementException: #login-submit"""
 
-_BROWSER_LOG_1 = """2026-07-16 10:00:02 INFO [console] MOCK_Page loaded: /login
-2026-07-16 10:00:07 INFO [console] MOCK_Form validation initialized"""
+_BROWSER_LOG = "2026-07-16 10:00:07 INFO [console] MOCK_Form validation initialized"
 
-_DOM_HTML_1 = """<html>
-  <body>
-    <form id="login-form">
-      <button id="btn-login-submit" type="submit">MOCK_Giriş</button>
-    </form>
-  </body>
-</html>"""
+_HTML = "<html><body><button id='btn-login-submit'>MOCK_Giriş</button></body></html>"
 
-_TEST_LOG_2 = """2026-07-16 10:05:01 STEP MOCK_Hesap özeti sayfasını aç | PASSED
-2026-07-16 10:05:04 STEP MOCK_Hesap hareketlerini listele | FAILED
-2026-07-16 10:05:04 ERROR MOCK_HttpClientErrorException: 401 Unauthorized on GET /api/transactions
-2026-07-16 10:05:05 STEP MOCK_Hareketi doğrula | SKIPPED"""
+_STEPS = [
+    Step(name="MOCK_Login sayfasını aç", status=StepStatus.PASSED),
+    Step(name="MOCK_Giriş butonuna tıkla", status=StepStatus.FAILED),
+]
 
-_BROWSER_LOG_2 = """2026-07-16 10:05:04 ERROR [console] MOCK_GET /api/transactions 401 (Unauthorized)
-2026-07-16 10:05:04 ERROR [console] MOCK_Session token expired or invalid"""
-
-_DOM_HTML_2 = """<html>
-  <body>
-    <div class="error-banner">MOCK_Oturum doğrulanamadı</div>
-  </body>
-</html>"""
+_ERROR_TEXT = "MOCK_NoSuchElementException: Unable to locate element #login-submit"
 
 
-def _scenario(
-    name: str,
-    platform: Platform,
-    test_log: str,
-    browser_log: str,
-    dom_html: str,
-    retry_info: str = "",
-) -> RawScenario:
-    """Build a scenario with all raw fields filled; registry selects per platform."""
+def _text(file_name: str, device_id: str, content: str, mime: str = "text/plain") -> Attachment:
+    return Attachment(
+        file_name=f"MOCK_{file_name}",
+        mime_type=mime,
+        device_id=device_id,
+        content=content,
+        stored_path=f"MOCK_attachments/{file_name}",
+    )
+
+
+def _png(file_name: str, device_id: str) -> Attachment:
+    return Attachment(
+        file_name=f"MOCK_{file_name}",
+        mime_type="image/png",
+        device_id=device_id,
+        stored_path=f"MOCK_attachments/{file_name}",
+    )
+
+
+# Per-platform attachment set (dict lookup, not an `if platform ==`).
+_ATTACHMENTS_BY_PLATFORM: dict[Platform, list[Attachment]] = {
+    Platform.WEB: [
+        _text("test.log", "test", _TEST_LOG),
+        _text("browser.default.log", "browser.default", _BROWSER_LOG),
+        _text("browser.default.html", "browser.default", _HTML, mime="text/html"),
+        _png("browser.default.png", "browser.default"),
+    ],
+    Platform.MOBILE: [
+        _text("test.log", "test", _TEST_LOG),
+        _png("mobile.android.samsung.png", "mobile.android.samsung"),
+    ],
+    Platform.HYBRID: [
+        _text("test.log", "test", _TEST_LOG),
+        _text("browser.default.log", "browser.default", _BROWSER_LOG),
+        _text("browser.default.html", "browser.default", _HTML, mime="text/html"),
+        _png("mobile.ios.iPhone.png", "mobile.ios.iPhone"),
+    ],
+}
+
+
+def _scenario(name: str, platform: Platform, retry_info: str = "") -> RawScenario:
     return RawScenario(
         scenario_name=name,
         platform=platform,
-        test_log=test_log,
-        dom_html=dom_html,
-        browser_log=browser_log,
-        web_screenshot_path=f"MOCK_attachments/{name}/browser.default.png",
-        mobile_screenshot_path=f"MOCK_attachments/{name}/mobile.android.samsung.png",
+        scenario_id=f"MOCK_{name}",
+        error_text=_ERROR_TEXT,
+        steps=_STEPS,
+        attachments=_ATTACHMENTS_BY_PLATFORM.get(platform, []),
         retry_info=retry_info,
     )
 
@@ -77,36 +89,31 @@ def _scenario(
 class MockSource(Source):
     """Returns a canned job with two failed scenarios (out of 100)."""
 
-    async def fetch_job(self, bank: str, job_id: str, platform: Platform) -> JobData:
+    async def fetch_job(
+        self, bank: str, job_id: str, platform: Platform, run_id: str = ""
+    ) -> JobData:
         if job_id.endswith(CLEAN_JOB_SUFFIX):
             return JobData(
                 bank=bank,
                 job_id=job_id,
+                run_id=run_id or "MOCK_run",
                 platform=platform,
                 total_scenario_count=100,
                 failed_scenarios=[],
             )
 
         failed = [
-            _scenario(
-                "MOCK_Login - geçerli kullanıcı ile giriş",
-                platform,
-                _TEST_LOG_1,
-                _BROWSER_LOG_1,
-                _DOM_HTML_1,
-            ),
+            _scenario("MOCK_Login - geçerli kullanıcı ile giriş", platform),
             _scenario(
                 "MOCK_Hesap özeti - hareket listesi görüntüleme",
                 platform,
-                _TEST_LOG_2,
-                _BROWSER_LOG_2,
-                _DOM_HTML_2,
-                retry_info="MOCK_1. koşum: FAILED, tekrar koşulmadı",
+                retry_info="MOCK_1. koşum: FAILED",
             ),
         ]
         return JobData(
             bank=bank,
             job_id=job_id,
+            run_id=run_id or "MOCK_run",
             platform=platform,
             total_scenario_count=100,
             failed_scenarios=failed,

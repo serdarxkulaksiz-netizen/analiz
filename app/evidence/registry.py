@@ -1,10 +1,10 @@
-"""Evidence registry (plan.md A4.2 / A5).
+"""Evidence registry (plan.md A4.2 / A5 / real-spec Bölüm 3).
 
-Maps evidence names to classes, and each platform to its expected evidence
-set. Building evidence for a scenario goes through here, so there is no
-`if platform ==` anywhere: the expected set is a registry lookup, and adding a
-platform (or splitting mobile into android/ios later) is a new row here, not a
-code change upstream (A4.2).
+Maps attachments to Evidence classes by `(mime_type, device_id)` — no file-name
+`if`s (real-spec Bölüm 3). Also holds each platform's expected evidence set, so
+missing evidence is detected without any `if platform ==`: adding a platform
+(or splitting mobile into android/ios later) is a new row here, not a code
+change upstream (A4.2).
 
 The platform → evidence-types map is architectural structure (which files a
 platform produces), so it lives in the registry — not a tunable business value.
@@ -21,12 +21,12 @@ from app.evidence.types import (
     TestLogEvidence,
     WebScreenshotEvidence,
 )
-from app.source.models import RawScenario
+from app.source.models import Attachment, RawScenario
 
 _EVIDENCE_CLASSES: tuple[type[Evidence], ...] = (
     TestLogEvidence,
-    HtmlEvidence,
     BrowserLogEvidence,
+    HtmlEvidence,
     WebScreenshotEvidence,
     MobileScreenshotEvidence,
 )
@@ -53,7 +53,7 @@ _DEFAULT_PLATFORM_EVIDENCE: dict[Platform, list[str]] = {
 
 
 class EvidenceRegistry:
-    """Builds the expected evidence instances for a scenario's platform."""
+    """Maps attachments to Evidence and reports the expected set per platform."""
 
     def __init__(
         self,
@@ -64,23 +64,56 @@ class EvidenceRegistry:
         self._flags = evidence_flags
         self._platform_evidence = platform_evidence or _DEFAULT_PLATFORM_EVIDENCE
 
-    def build_for(self, scenario: RawScenario) -> list[Evidence]:
-        """Return one Evidence instance per expected type for this platform.
+    def _flags_for(self, name: str) -> dict[str, bool]:
+        return self._flags.get(name, {"goes_to_llm": True, "goes_to_store": True})
 
-        Instances are always built (even when the underlying field is empty),
-        so a missing file surfaces as `evidence.is_missing` rather than being
-        silently skipped (A5.4).
+    def _class_for(self, attachment: Attachment) -> type[Evidence] | None:
+        for cls in _EVIDENCE_CLASSES:
+            if cls.matches(attachment):
+                return cls
+        return None
+
+    def build_for(self, scenario: RawScenario) -> list[Evidence]:
+        """Build one Evidence per attachment that maps to a known class.
+
+        Attachments with no matching class are skipped (unknown type). Presence
+        is per-Evidence (`is_present`); missing expected evidence is reported by
+        `missing_names`, not by silently dropping (A5.4).
         """
-        names = self._platform_evidence.get(scenario.platform, [])
         evidences: list[Evidence] = []
-        for name in names:
-            cls = self._classes[name]
-            flags = self._flags.get(name, {"goes_to_llm": True, "goes_to_store": True})
+        for attachment in scenario.attachments:
+            cls = self._class_for(attachment)
+            if cls is None:
+                continue
+            flags = self._flags_for(cls.evidence_name)
             evidences.append(
-                cls.from_scenario(
-                    scenario,
+                cls.from_attachment(
+                    attachment,
                     goes_to_llm=flags.get("goes_to_llm", True),
                     goes_to_store=flags.get("goes_to_store", True),
                 )
             )
         return evidences
+
+    def expected_names(self, platform: Platform) -> list[str]:
+        """Evidence types expected for this platform (for missing detection)."""
+        return list(self._platform_evidence.get(platform, []))
+
+    def missing_names(
+        self, platform: Platform, present: list[Evidence]
+    ) -> list[str]:
+        """Expected-but-absent evidence types (A5.4).
+
+        An expected type counts as present only if at least one built evidence
+        of that type actually arrived (`is_present`).
+        """
+        present_ok = {
+            type(evidence).evidence_name
+            for evidence in present
+            if evidence.is_present
+        }
+        return [
+            name
+            for name in self.expected_names(platform)
+            if name not in present_ok
+        ]

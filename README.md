@@ -24,8 +24,9 @@ Source (VisiumGo) → Extraction (Evidence → Findings) → PreCheck → Prompt
 - **PreCheck kancası:** bugün `NoOpPreCheck` (her zaman LLM'e gider); kural listesi yok.
 - **DB simülasyonu:** `database/<tablo>/<id>.json`; Repository arayüzü arkasında
   (ileride SQLite/Oracle tak-çıkar).
-- **Halka 1-2 stub:** gerçek VisiumGo erişimi iş bilgisayarında doldurulacak
-  (`# TODO(work-pc)` işaretli); MacBook'ta mock'larla uçtan uca çalışır.
+- **Halka 1-2 gerçek:** `VisiumGoSource` gerçek API'ye bağlı (run çöz → FAILED
+  senaryolar → detay → attachment indir); `deviceId`+`mimeType` ile Evidence
+  eşlenir. `.env` boşken/`SOURCE_PROVIDER=mock` iken mock'larla uçtan uca çalışır.
 - **Mock etiketleme:** tüm mock çıktıları `MOCK_` ile başlar (gerçek veriyle karışmasın).
 - **Docker yok** (iş bilgisayarında mevcut değil).
 
@@ -62,6 +63,7 @@ uvicorn app.main:app --reload
 ```bash
 # analizi başlat (hemen analyzer_run_id döner, arka planda çalışır)
 # platform GİRDİDİR (tahmin edilmez): web | mobile | hybrid
+# job_id VEYA run_id verilir (ikisi de olursa run_id kazanır)
 curl -X POST http://127.0.0.1:8000/analyze/visiumgo \
   -H "Content-Type: application/json" \
   -d '{"bank": "demo", "job_id": "job-42", "platform": "web"}'
@@ -81,7 +83,7 @@ Mock kolaylığı: `job_id` sonu `-clean` biterse job hatasız kabul edilir
 | Ne | `.env` değişikliği |
 |---|---|
 | Gerçek lokal LLM | `LLM_PROVIDER=openai_compatible`, `LLM_API_URL=<tam chat-completions URL>`, `LLM_MODEL=...` |
-| Gerçek VisiumGo | `SOURCE_PROVIDER=visiumgo`, `EXTRACTOR_PROVIDER=visiumgo` + `config/banks.json` doldur (*iş bilgisayarında gerçeklenecek stub*) |
+| Gerçek VisiumGo | `SOURCE_PROVIDER=visiumgo`, `VISIUMGO_BASE_URL=<url>`, `VISIUMGO_TOKEN=<JWT>` (extractor kaynaktan bağımsız, ayrı ayar yok) |
 | Kırpma eşiği | `TRUNCATION_THRESHOLD_TOKENS=<model context'ine göre>` (0 = kesme yok; kırpma Evidence içi) |
 | Kanıt akışı | `EVIDENCE_FLAGS=<JSON>` → hangi kanıt LLM'e/depoya gider (varsayılan koddadır) |
 | Paralellik | `MAX_CONCURRENCY=<n>` |
