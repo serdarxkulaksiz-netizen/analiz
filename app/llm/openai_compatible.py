@@ -33,6 +33,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         temperature: float,
         timeout_seconds: float,
         max_tokens: int,
+        verify_ssl: bool = True,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not base_url:
@@ -45,6 +46,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         self._temperature = temperature
         self._timeout_seconds = timeout_seconds
         self._max_tokens = max_tokens
+        self._verify_ssl = verify_ssl
         self._transport = transport
 
     def _headers(self) -> dict[str, str]:
@@ -60,11 +62,17 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             "max_tokens": self._max_tokens,
         }
 
+        client_kwargs: dict[str, Any] = {"timeout": self._timeout_seconds}
+        # A custom transport (tests) handles its own connection; `verify` only
+        # applies to the real default transport.
+        if self._transport is not None:
+            client_kwargs["transport"] = self._transport
+        else:
+            client_kwargs["verify"] = self._verify_ssl
+
         started = time.perf_counter()
         try:
-            async with httpx.AsyncClient(
-                timeout=self._timeout_seconds, transport=self._transport
-            ) as client:
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 response = await client.post(
                     self._url, json=payload, headers=self._headers()
                 )

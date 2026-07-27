@@ -28,6 +28,7 @@ class VisiumGoClient:
         base_url: str,
         token: str,
         timeout_seconds: float,
+        verify_ssl: bool = True,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not base_url:
@@ -38,6 +39,7 @@ class VisiumGoClient:
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._timeout = timeout_seconds
+        self._verify_ssl = verify_ssl
         self._transport = transport
 
     def _headers(self) -> dict[str, str]:
@@ -47,12 +49,18 @@ class VisiumGoClient:
         return headers
 
     def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            base_url=self._base_url,
-            headers=self._headers(),
-            timeout=self._timeout,
-            transport=self._transport,
-        )
+        kwargs: dict[str, Any] = {
+            "base_url": self._base_url,
+            "headers": self._headers(),
+            "timeout": self._timeout,
+        }
+        # A custom transport (tests) handles its own connection; `verify` only
+        # applies to the real default transport.
+        if self._transport is not None:
+            kwargs["transport"] = self._transport
+        else:
+            kwargs["verify"] = self._verify_ssl
+        return httpx.AsyncClient(**kwargs)
 
     async def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         async with self._client() as client:

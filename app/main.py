@@ -61,7 +61,12 @@ def _attachments_dir(settings: Settings):
 SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
     "mock": lambda s: MockSource(),
     "visiumgo": lambda s: VisiumGoSource(
-        VisiumGoClient(s.visiumgo_base_url, s.visiumgo_token, s.visiumgo_timeout_seconds),
+        VisiumGoClient(
+            s.visiumgo_base_url,
+            s.visiumgo_token,
+            s.visiumgo_timeout_seconds,
+            verify_ssl=s.visiumgo_verify_ssl,
+        ),
         _attachments_dir(s),
     ),
 }
@@ -76,6 +81,7 @@ LLM_REGISTRY: dict[str, Callable[[Settings], LLMProvider]] = {
         temperature=s.llm_temperature,
         timeout_seconds=s.llm_timeout_seconds,
         max_tokens=s.llm_max_tokens,
+        verify_ssl=s.llm_verify_ssl,
     ),
 }
 

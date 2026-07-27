@@ -524,3 +524,16 @@ Kullanıcı push öncesi atık/ölü kod incelemesi istedi; tek tek konuşuldu, 
   gerekirse `DirectLLMProvider` registry'ye eklenir, üst katman değişmez (bugün ekstra sınıf yazılmadı).
 - **İş bilgisayarında kalan:** gerçek `.env` (LLM_BASE_URL) ile canlı doğrulama; (opsiyonel) Jenkins
   console.log; gerçek context penceresine göre kırpma.
+
+## [SSL doğrulama anahtarı] — TAMAM (2026-07-23)
+- **Neden:** Banka iç ağında self-signed/iç-CA sertifikaları SSL doğrulamasını patlatabilir.
+  `verify=False` KOD'a gömülmez (HARDCODED YOK + güvenlik) → config anahtarı, güvenli varsayılan (açık).
+- **Dosyalar:** `app/config.py` (`visiumgo_verify_ssl: bool = True`, `llm_verify_ssl: bool = True`),
+  `app/source/visiumgo_client.py` + `app/llm/openai_compatible.py` (`verify_ssl` parametresi; gerçek
+  transport'ta `httpx.AsyncClient(verify=...)`, enjekte transport'ta yok sayılır), `app/main.py`
+  (registry'lerde `verify_ssl=s.*_verify_ssl` enjekte), `.env.example` (`VISIUMGO_VERIFY_SSL=true`,
+  `LLM_VERIFY_SSL=true` + iç ağ notu), `tests/test_openai_compatible.py` (monkeypatch ile verify=False'ın
+  httpx client'a geçtiği doğrulanır, ağa çıkmadan).
+- **Kullanım:** iş-pc'de gerekiyorsa `.env`'de `VISIUMGO_VERIFY_SSL=false` / `LLM_VERIFY_SSL=false`.
+  Daha güvenli alternatif (ileride): iç CA bundle yolunu `verify`'a vermek — bugün eklenmedi (kapsam).
+- **Doğrulama:** `pytest` → 53/53; `compileall` temiz.

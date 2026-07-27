@@ -101,6 +101,31 @@ async def test_http_error_raises_llm_error() -> None:
         await provider.complete("x")
 
 
+@pytest.mark.asyncio
+async def test_verify_ssl_flag_reaches_httpx_client(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        captured.update(kwargs)
+        raise RuntimeError("stop before network")
+
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", fake_init)
+    # No transport -> the real default transport path, where verify applies.
+    provider = OpenAICompatibleLLMProvider(
+        base_url="https://llm.test.local",
+        endpoint_path="/x",
+        api_key="",
+        model="m",
+        temperature=0.0,
+        timeout_seconds=5.0,
+        max_tokens=8000,
+        verify_ssl=False,
+    )
+    with pytest.raises(LLMError):
+        await provider.complete("x")
+    assert captured.get("verify") is False
+
+
 def test_empty_base_url_fails_fast() -> None:
     with pytest.raises(ValueError):
         OpenAICompatibleLLMProvider(
