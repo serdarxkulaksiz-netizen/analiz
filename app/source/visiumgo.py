@@ -84,7 +84,9 @@ class VisiumGoSource(Source):
         runs = await self._client.get_json("/api/runs", params={"jobId": job_id})
         if not runs:
             raise ValueError(f"No runs found for job_id={job_id!r}.")
-        latest = max(runs, key=lambda r: r.get("startTime", 0))
+        # startTime is an ISO 8601 string (e.g. "2026-07-27T10:20:08.623449"),
+        # which sorts chronologically as text.
+        latest = max(runs, key=lambda r: r.get("startTime", ""))
         resolved = latest.get("id")
         if not resolved:
             raise ValueError(f"Run record for job_id={job_id!r} has no id.")
@@ -104,7 +106,9 @@ class VisiumGoSource(Source):
             status = _to_step_status(step.get("resultType", ""))
             if status is None:
                 continue
-            name = step.get("stepLine") or step.get("stepType") or ""
+            # `line` is the human-readable step text ("butonDevam2 öğesini
+            # görürüm"); `stepLine` is only a line number — do not use it here.
+            name = step.get("line") or step.get("stepType") or ""
             steps.append(Step(name=str(name), status=status))
 
         attachments: list[Attachment] = []

@@ -21,7 +21,9 @@ class MockLLMProvider(LLMProvider):
     """Returns a fixed, contract-valid JSON diagnosis (free text in Turkish)."""
 
     def __init__(self, model: str, confidence: float = 0.75) -> None:
-        self._model = model
+        # Mock meta must be MOCK_-labeled too (plan.md A14.2) so mock and real
+        # never blend: e.g. "MOCK_qwen3-coder-next".
+        self._model = model if model.startswith("MOCK_") else f"MOCK_{model}"
         self._confidence = confidence
 
     @staticmethod

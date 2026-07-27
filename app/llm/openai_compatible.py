@@ -1,8 +1,16 @@
-"""OpenAI-compatible LLM provider (plan.md A9) — endpoint passthrough.
+"""OpenAI-compatible LLM provider (plan.md A9) — real service, single-shot.
 
-Sends `messages` to a full chat-completions URL taken from config, reads
-`choices[0].message.content`. All call parameters (URL, key, model,
-temperature, timeout, max_tokens) come from config — nothing hardcoded.
+Sends the prompt as one `user` message to `base_url + endpoint_path` and reads
+`choices[0].message.content` from the OpenAI-style `chat.completion` response.
+
+Verified against the real service (test-automation-ai-api …/api/v1/extension/send):
+  - NO auth: the service takes no token; an `Authorization` header is sent only
+    if an api_key is explicitly configured (empty by default).
+  - The request body carries `messages` + `temperature` + `max_tokens`. The
+    `model` field is NOT sent in the body (it is meta only).
+
+All call parameters (base URL, path, temperature, timeout, max_tokens) come
+from config — nothing hardcoded. A custom transport can be injected for tests.
 """
 
 import time
@@ -14,51 +22,60 @@ from app.llm.provider import LLMError, LLMProvider, LLMResponse
 
 
 class OpenAICompatibleLLMProvider(LLMProvider):
-    """Single-shot call against any OpenAI-compatible endpoint (on-prem local LLM)."""
+    """Single-shot call against an OpenAI-compatible chat endpoint (on-prem)."""
 
     def __init__(
         self,
-        api_url: str,
+        base_url: str,
+        endpoint_path: str,
         api_key: str,
         model: str,
         temperature: float,
         timeout_seconds: float,
-        max_tokens: int | None = None,
+        max_tokens: int,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        if not api_url:
+        if not base_url:
             raise ValueError(
-                "LLM_API_URL is empty — set the full OpenAI-compatible "
-                "chat-completions URL in .env (or use LLM_PROVIDER=mock)."
+                "LLM_BASE_URL is empty — set it in .env (or use LLM_PROVIDER=mock)."
             )
-        self._api_url = api_url
+        self._url = base_url.rstrip("/") + endpoint_path
         self._api_key = api_key
-        self._model = model
+        self._model = model  # kept for meta only; not sent in the body
         self._temperature = temperature
         self._timeout_seconds = timeout_seconds
         self._max_tokens = max_tokens
+        self._transport = transport
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"accept": "application/json"}
+        if self._api_key:  # this service needs none; generic support only
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        return headers
 
     async def complete(self, prompt: str) -> LLMResponse:
         payload: dict[str, Any] = {
-            "model": self._model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": self._temperature,
+            "max_tokens": self._max_tokens,
         }
-        if self._max_tokens is not None:
-            payload["max_tokens"] = self._max_tokens
-
-        headers: dict[str, str] = {}
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
 
         started = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-                response = await client.post(self._api_url, json=payload, headers=headers)
+            async with httpx.AsyncClient(
+                timeout=self._timeout_seconds, transport=self._transport
+            ) as client:
+                response = await client.post(
+                    self._url, json=payload, headers=self._headers()
+                )
                 response.raise_for_status()
                 data = response.json()
             content = data["choices"][0]["message"]["content"]
         except Exception as exc:
             raise LLMError(f"{type(exc).__name__}: {exc}") from exc
+
+        if not content:
+            raise LLMError("LLM returned empty content.")
         duration_ms = int((time.perf_counter() - started) * 1000)
 
         usage = data.get("usage") or {}

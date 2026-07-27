@@ -474,3 +474,53 @@ Kullanıcı push öncesi atık/ölü kod incelemesi istedi; tek tek konuşuldu, 
 - **Doğrulama:** `pytest` → 47/47; `compileall` temiz.
 - **Genel yön (kullanıcı):** Bundan sonra `# TODO(work-pc)` işlerinin çoğu BURADA yapılacak; iş
   bilgisayarına çok az iş bırakılacak (Jenkins console.log, Evidence-içi kırpma vb. sırada).
+
+---
+---
+
+# [LLM entegrasyonu] Halka 4 gerçek gerçekleme (2026-07-23)
+
+> Kullanıcı gerçek LLM servis sözleşmesini + gerçek VisiumGo payload değerlerini verdi (Network +
+> Swagger'dan doğrulanmış). **Onaylı karar:** mesaj biçimi = **tek user mesajı** (A; Halka 3'e dokunma).
+
+## [LLM Adım 1] Config + Provider + Registry — TAMAM (2026-07-23)
+- **Dosyalar:**
+  - `app/config.py` — `llm_api_url` → `llm_base_url` + `llm_endpoint_path` (=/api/v1/extension/send);
+    `llm_max_tokens: int = 8000` (artık her istekte); `llm_model = "qwen3-coder-next"` (yalnız meta,
+    body'de gönderilmez); `llm_api_key` opsiyonel (auth yok, boş=header yok).
+  - `app/llm/openai_compatible.py` — URL = base+path; header `accept: application/json`, Authorization
+    **yalnız api_key doluysa** (bu serviste yok); body = `{messages(user), temperature, max_tokens}`,
+    **model body'de YOK**; cevap `choices[0].message.content` (boş → `LLMError`); meta model/usage;
+    test için `transport` enjekte edilebilir.
+  - `app/main.py` — LLM_REGISTRY openai_compatible yeni argümanlar (base_url+endpoint_path).
+- **Sıradaki adım:** LLM Adım 2 — VisiumGo alan düzeltmeleri + mock hizalama.
+
+## [LLM Adım 2] VisiumGo alan düzeltmeleri + mock hizalama — TAMAM (2026-07-23)
+- **Dosyalar:** `app/source/visiumgo.py` — gerçek payload teyidiyle iki düzeltme: adım adı `stepLine`
+  (satır no) yerine **`line`** (asıl metin); `startTime` ISO **string** olduğundan `max(..., default="")`.
+  `app/llm/mock.py` — mock `model` artık `MOCK_` önekli (`MOCK_qwen3-coder-next`, A14.2). `app/source/mock.py`
+  — `JobData`'ya `job_name="MOCK_nightly-test"` + gerçek şekilli `run_result` (state/totalScenarios/
+  failScenarios/passScenarios/unstableScenarios) + `raw_run_response` (hepsi MOCK_).
+- **Sıradaki adım:** LLM Adım 3 — testler + docs.
+
+## [LLM Adım 3] Testler + docs — TAMAM (2026-07-23)
+- **Dosyalar (yeni):** `tests/test_openai_compatible.py` — enjekte `httpx.MockTransport`: doğru URL,
+  Authorization header YOK, body'de model YOK, temperature/max_tokens gönderiliyor, content/usage/model
+  parse, boş choices→LLMError, HTTP 500→LLMError, boş base_url→fail-fast, api_key varsa Bearer.
+- **Dosyalar (değişen):** `tests/test_llm_mock.py` (model `MOCK_mock-model`), `tests/test_api_smoke.py`
+  (`meta.llm_model == MOCK_{llm_model}`), `.env.example` (LLM_BASE_URL/ENDPOINT_PATH/MAX_TOKENS=8000/
+  MODEL=qwen3-coder-next; LLM_API_URL kaldırıldı), `README.md` (geçiş tablosu).
+- **Doğrulama:** `pytest` → **52/52**; `compileall` temiz; statik grep → eski LLM referansı yok,
+  `if mock/type` yok. Canlı mock smoke: `run_result` gerçek şekilde, `meta.llm_model=MOCK_qwen3-coder-next`,
+  tokenlar dolu.
+
+---
+
+## [LLM entegrasyonu SONUÇ] Halka 4 gerçek — TAMAM (2026-07-23)
+- **Bitmiş ölçütü:** `.env`'de `LLM_BASE_URL`+`LLM_PROVIDER=openai_compatible` set edilince gerçek
+  servise istek gider (auth yok, model body'de yok), `content`+meta alınır; mock seçiliyken uçtan uca
+  `MOCK_` etiketli çalışır; URL/yol/temperature/max_tokens/model hardcode yok; `if mock/type` yok.
+- **İleriye açık kapı (§7):** base_url+path ayrı olduğu için doğrudan-LLM sunucusuna geçiş tek config;
+  gerekirse `DirectLLMProvider` registry'ye eklenir, üst katman değişmez (bugün ekstra sınıf yazılmadı).
+- **İş bilgisayarında kalan:** gerçek `.env` (LLM_BASE_URL) ile canlı doğrulama; (opsiyonel) Jenkins
+  console.log; gerçek context penceresine göre kırpma.

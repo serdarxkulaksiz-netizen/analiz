@@ -68,12 +68,15 @@ class Settings(BaseSettings):
 
     # --- LLM / Halka 4 (plan.md A9) — value = registry key ---
     llm_provider: str = "mock"  # mock | openai_compatible
-    llm_api_url: str = ""  # full OpenAI-compatible chat-completions URL
-    llm_api_key: str = ""
-    llm_model: str = "mock-model"
+    # Base URL + path are separate so switching to a direct LLM server later is
+    # a single config change (no code). Full URL = base_url + endpoint_path.
+    llm_base_url: str = ""  # e.g. https://test-automation-ai-api.apps.nonfin-vip.zke.zb
+    llm_endpoint_path: str = "/api/v1/extension/send"
+    llm_api_key: str = ""  # no auth for this service; header sent only if set
+    llm_model: str = "qwen3-coder-next"  # meta only; NOT sent in the request body
     llm_temperature: float = 0.0
     llm_timeout_seconds: float = 120.0
-    llm_max_tokens: int | None = None
+    llm_max_tokens: int = 8000
 
     # --- API & background processing (plan.md A11) ---
     max_concurrency: int = 2  # asyncio.Semaphore size

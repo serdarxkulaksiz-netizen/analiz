@@ -82,7 +82,7 @@ Mock kolaylığı: `job_id` sonu `-clean` biterse job hatasız kabul edilir
 
 | Ne | `.env` değişikliği |
 |---|---|
-| Gerçek lokal LLM | `LLM_PROVIDER=openai_compatible`, `LLM_API_URL=<tam chat-completions URL>`, `LLM_MODEL=...` |
+| Gerçek lokal LLM | `LLM_PROVIDER=openai_compatible`, `LLM_BASE_URL=<url>`, `LLM_ENDPOINT_PATH=/api/v1/extension/send` (auth yok; `model` body'de gönderilmez) |
 | Gerçek VisiumGo | `SOURCE_PROVIDER=visiumgo`, `VISIUMGO_BASE_URL=<url>`, `VISIUMGO_TOKEN=<JWT>` (extractor kaynaktan bağımsız, ayrı ayar yok) |
 | Kırpma eşiği | `TRUNCATION_THRESHOLD_TOKENS=<model context'ine göre>` (0 = kesme yok; kırpma Evidence içi) |
 | Kanıt akışı | `EVIDENCE_FLAGS=<JSON>` → hangi kanıt LLM'e/depoya gider (varsayılan koddadır) |

@@ -20,7 +20,7 @@ async def test_mock_returns_schema_valid_json() -> None:
     # scenario_name is echoed from the prompt (keeps trace rows aligned).
     assert analysis.scenario_name == "MOCK_Login testi"
     assert analysis.verdict.value == "test_maintenance"
-    assert response.model == "mock-model"
+    assert response.model == "MOCK_mock-model"  # mock meta is MOCK_-labeled too
 
 
 @pytest.mark.asyncio

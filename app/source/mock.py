@@ -98,8 +98,17 @@ class MockSource(Source):
                 job_id=job_id,
                 run_id=run_id or "MOCK_run",
                 platform=platform,
+                job_name="MOCK_nightly-test",
+                run_result={
+                    "state": "PASSED",
+                    "totalScenarios": 100,
+                    "failScenarios": 0,
+                    "passScenarios": 100,
+                    "unstableScenarios": 0,
+                },
                 total_scenario_count=100,
                 failed_scenarios=[],
+                raw_run_response={"jobName": "MOCK_nightly-test", "state": "PASSED"},
             )
 
         failed = [
@@ -115,6 +124,15 @@ class MockSource(Source):
             job_id=job_id,
             run_id=run_id or "MOCK_run",
             platform=platform,
+            job_name="MOCK_nightly-test",
+            run_result={
+                "state": "FAILED",
+                "totalScenarios": 100,
+                "failScenarios": len(failed),
+                "passScenarios": 100 - len(failed),
+                "unstableScenarios": 0,
+            },
             total_scenario_count=100,
             failed_scenarios=failed,
+            raw_run_response={"jobName": "MOCK_nightly-test", "state": "FAILED"},
         )

@@ -48,7 +48,7 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
         assert row["screenshot_paths"] == [row["screenshot_paths"][0]]
         assert row["screenshot_paths"][0].startswith("MOCK_")
         assert row["raw_llm_response"]
-        assert row["meta"]["llm_model"] == settings.llm_model
+        assert row["meta"]["llm_model"] == f"MOCK_{settings.llm_model}"
 
     # Full trace on disk (plan.md A12): one row per table per scenario + run row.
     db = settings.database_dir

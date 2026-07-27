@@ -69,7 +69,8 @@ SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
 LLM_REGISTRY: dict[str, Callable[[Settings], LLMProvider]] = {
     "mock": lambda s: MockLLMProvider(model=s.llm_model),
     "openai_compatible": lambda s: OpenAICompatibleLLMProvider(
-        api_url=s.llm_api_url,
+        base_url=s.llm_base_url,
+        endpoint_path=s.llm_endpoint_path,
         api_key=s.llm_api_key,
         model=s.llm_model,
         temperature=s.llm_temperature,
