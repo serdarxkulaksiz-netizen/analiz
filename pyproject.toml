@@ -28,6 +28,9 @@ include = ["app*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+# Disable pytest's cache so no .pytest_cache/ dir is written (avoids
+# permission/lock friction on locked-down work machines).
+addopts = "-p no:cacheprovider"
 filterwarnings = [
     # Starlette suggests httpx2 for its TestClient; behavior is unaffected,
     # revisit on the next dependency bump (CHANGELOG note).
