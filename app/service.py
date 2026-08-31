@@ -145,6 +145,14 @@ class AnalyzerService:
         settings = self._settings
         self._update_run(run, status=RunStatus.RUNNING.value)
 
+        # Resolve which run this is BEFORE fetching anything: the cache keys on
+        # run_id, and a hit must not pay for the (expensive) evidence download.
+        # With an explicit run_id this costs no network call at all.
+        job_id = run.get("job_id", "")
+        requested_run_id = run.get("run_id", "")  # what the caller asked for
+        resolved_run_id = await self._source.resolve_run_id(job_id, requested_run_id)
+        self._update_run(run, run_id=resolved_run_id)
+
         if settings.cache_enabled:
             cached = self._find_cached_run(run)
             if cached is not None:
@@ -155,13 +163,15 @@ class AnalyzerService:
                     completed_count=cached.get("completed_count", 0),
                     total_scenario_count=cached.get("total_scenario_count", 0),
                     cached_from=cached["analyzer_run_id"],
-                    note="cache: aynı parametreler+job_id daha önce analiz edildi, sonuçlar diskten",
+                    note="cache: aynı run_id + parametreler daha önce analiz edildi, sonuçlar diskten",
                 )
                 return
 
-        job = await self._source.fetch_job(
-            run.get("job_id", ""), run.get("run_id", "")
-        )
+        # Pass the ORIGINAL request, not the resolved id: when only a job_id was
+        # given, fetch_job's own resolution is what yields the run summary
+        # (job_name / runResult). One extra cheap call on a cache miss, in
+        # exchange for skipping the whole download on a hit.
+        job = await self._source.fetch_job(job_id, requested_run_id)
         self._update_run(
             run,
             run_id=job.run_id,  # resolved run id (real source may derive it)
@@ -200,13 +210,22 @@ class AnalyzerService:
         self._update_run(run, status=RunStatus.DONE.value)
 
     def _find_cached_run(self, run: dict[str, Any]) -> dict[str, Any] | None:
-        """Find a previously finished run for the same parameters+job_id."""
+        """Find a previously finished analysis of the same run + parameters.
+
+        Keyed on `run_id`, NOT `job_id`: a job runs many times and each run has
+        its own failures — matching on job_id would serve an older run's
+        results. Without a resolved run_id the cache is skipped entirely
+        (better no hit than a wrong one).
+        """
+        run_id = run.get("run_id", "")
+        if not run_id:
+            return None
         for row in self._repo.list(self._settings.table_runs):
             if (
                 row.get("analyzer_run_id") != run["analyzer_run_id"]
+                and row.get("run_id") == run_id
                 and row.get("parameter1") == run["parameter1"]
                 and row.get("parameter2") == run["parameter2"]
-                and row.get("job_id") == run["job_id"]
                 and row.get("status") == RunStatus.DONE.value
                 and not row.get("cached_from")
                 and not row.get("note")  # only fully analyzed runs are reusable

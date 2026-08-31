@@ -53,6 +53,11 @@ class VisiumGoSource(Source):
         self._attachments_dir = attachments_dir
         self._jenkins_log_path = jenkins_log_path
 
+    async def resolve_run_id(self, job_id: str, run_id: str = "") -> str:
+        """Which run to analyze — no evidence fetched (see Source docstring)."""
+        resolved, _ = await self._resolve_run(job_id, run_id)
+        return resolved
+
     async def fetch_job(self, job_id: str, run_id: str = "") -> JobData:
         resolved_run_id, raw_run = await self._resolve_run(job_id, run_id)
 

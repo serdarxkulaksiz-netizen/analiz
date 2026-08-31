@@ -14,6 +14,16 @@ class Source(ABC):
     """
 
     @abstractmethod
+    async def resolve_run_id(self, job_id: str, run_id: str = "") -> str:
+        """Resolve which run to analyze — cheap, no evidence fetched.
+
+        Separate from `fetch_job` so the caller can look the run up in its
+        cache before paying for the full download. `run_id` is returned as-is
+        when given (no network call at all); otherwise the newest run of
+        `job_id` is resolved. Raises if neither is given.
+        """
+
+    @abstractmethod
     async def fetch_job(self, job_id: str, run_id: str = "") -> JobData:
         """Return the job report and raw evidence for every failed scenario.
 

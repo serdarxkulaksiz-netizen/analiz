@@ -744,3 +744,50 @@ farklı anlam taşıyorlar; gerekçe yorumu eklendi.
 yazılmıyor — job-seviyesi olduğu için doğal yeri `runs` satırı olurdu. "Her şey kaydedilsin"
 kuralıyla çelişiyor; istenirse tek satırla eklenir (ama tüm senaryoları içerdiği için `runs`
 satırını büyütür).
+
+---
+---
+
+# [Önbellek] Anahtar `job_id` → `run_id` + israfsız kontrol (2026-09-01)
+
+> **Bug:** Önbellek `job_id` ile eşleşiyordu. Bir job arka arkaya defalarca koşar; her koşumun ayrı
+> `run_id`'si ve ayrı hataları vardır → 2. koşumu analiz etmek istediğinde sistem **1. koşumun
+> sonuçlarını** döndürürdü. `CACHE_ENABLED=false` olduğu için görünmüyordu; açıldığı an sessiz ve
+> yanıltıcı bir hata olurdu.
+
+**Tasarım sorunu ve kararı:** Cache kontrolü `fetch_job`'dan önce çalışıyordu, ama POST'ta yalnız
+`job_id` geldiyse o an `run_id` **boş** oluyordu (henüz çözülmemiş). Kontrolü olduğu gibi fetch
+sonrasına almak doğru sonuç verirdi ama cache isabetinde **tüm indirme boşa giderdi**
+(10 senaryo × ~4 attachment ≈ 52 HTTP çağrısı). Karar: **çözümlemeyi çekmeden ayır.**
+
+**Değişiklikler:**
+- `app/source/base.py` — yeni arayüz metodu **`resolve_run_id(job_id, run_id="") -> str`**
+  ("hangi koşum?" — ucuz; `run_id` verilmişse ağa hiç çıkmaz).
+- `app/source/visiumgo.py` — `resolve_run_id` mevcut `_resolve_run`'ı kullanır (mantık tekrarı yok).
+- `app/source/mock.py` — `resolve_run_id` + `fetch_job` artık **job başına ayrı** run_id üretir
+  (`MOCK_run_{job_id}`); önceden hepsi "MOCK_run"du → run_id anahtarında farklı job'lar aynı koşum
+  sayılırdı.
+- `app/service.py` — `_run_job` sırası: `running` → **resolve_run_id** → run satırına run_id yaz →
+  **cache kontrolü** → ıskalarsa `fetch_job`. `_find_cached_run` artık **`run_id` + parameter1 +
+  parameter2** ile eşleşir (`job_id` anahtardan çıktı); **run_id boşsa cache hiç aranmaz**
+  (yanlış eşleşmektense hiç). Cache notu güncellendi.
+- **Önemli ayrıntı:** `fetch_job`'a **orijinal** istek geçirilir (çözülmüş id değil) — çünkü yalnız
+  `job_id` verildiğinde `job_name`/`run_result` özeti fetch'in kendi çözümlemesinden gelir. Iskada
+  1 fazla ucuz çağrı, isabette ~52 çağrı tasarrufu (bilinçli takas, kodda yorumlu).
+
+**Testler (90/90):** `test_cache_key_is_run_not_job` (**asıl bug'ın testi**: aynı job, farklı run →
+cache YOK; aynı run tekrar → cache VAR), `test_cache_hit_does_not_fetch_evidence` (isabette
+`fetch_job` **hiç çağrılmıyor** — israfın geri gelmediğinin garantisi),
+`test_resolve_run_id_is_cheap_and_correct` (run_id verilince sıfır HTTP; job_id verilince tek
+`/api/runs` çağrısı), `FailingSource` yeni metodu uygular.
+
+**Canlı smoke (CACHE_ENABLED=true):** RUN_1 analiz → RUN_2 (aynı job) **yeniden analiz** (bug
+düzeldi) → RUN_2 tekrar **cache** → RUN_2 farklı parametre **yeniden analiz**; cache kapalıyken
+hiç eşleşme yok.
+
+**Docs:** README (önbellek satırı + bayat satırlar: platform kavramı, prompts açıklaması, test
+listesi), `docs/proje-rehberi.md` (`resolve_run_id` satırı, `_find_cached_run`, `cache_enabled`),
+`.env.example` (`CACHE_ENABLED` yorumu).
+
+**Sıradaki adım:** kullanıcı push kararı. Ertelenenler: eksik kanıt bildirimi (`missing_evidence`),
+PreCheck kuralları, attachment sayısı özeti.

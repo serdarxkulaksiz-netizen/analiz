@@ -182,7 +182,7 @@ def test_cache_reuses_previous_analysis(settings: Settings) -> None:
 
 
 def test_cache_key_includes_parameters(settings: Settings) -> None:
-    # Same job, different parameters -> NOT served from cache.
+    # Same run, different parameters -> NOT served from cache.
     client = _client(settings)
 
     client.post("/analyze/visiumgo", json={"job_id": "job-7"})
@@ -192,6 +192,62 @@ def test_cache_key_includes_parameters(settings: Settings) -> None:
 
     second = client.get(f"/analyze/visiumgo/{second_id}").json()
     assert second["cached_from"] == ""  # re-analyzed, not cached
+
+
+def test_cache_key_is_run_not_job(settings: Settings) -> None:
+    """Same job, DIFFERENT run -> must be re-analyzed, not served from cache.
+
+    A job runs many times; each run has its own failures. Keying the cache on
+    job_id would hand back an older run's diagnoses.
+    """
+    client = _client(settings)
+
+    first_id = client.post(
+        "/analyze/visiumgo", json={"job_id": "job-7", "run_id": "RUN_1"}
+    ).json()["analyzer_run_id"]
+    second_id = client.post(
+        "/analyze/visiumgo", json={"job_id": "job-7", "run_id": "RUN_2"}
+    ).json()["analyzer_run_id"]
+
+    first = client.get(f"/analyze/visiumgo/{first_id}").json()
+    second = client.get(f"/analyze/visiumgo/{second_id}").json()
+    assert first["run_id"] == "RUN_1" and second["run_id"] == "RUN_2"
+    assert second["cached_from"] == ""  # NOT cached — different run
+    db = settings.database_dir
+    assert len(list((db / settings.table_analysis_results).glob("*.json"))) == 4
+
+    # Same run again -> now it IS cached.
+    third_id = client.post(
+        "/analyze/visiumgo", json={"job_id": "job-7", "run_id": "RUN_2"}
+    ).json()["analyzer_run_id"]
+    third = client.get(f"/analyze/visiumgo/{third_id}").json()
+    assert third["cached_from"] == second_id
+
+
+def test_cache_hit_does_not_fetch_evidence(settings: Settings) -> None:
+    """A cache hit must skip the whole (expensive) download, not just the LLM."""
+    from app.main import build_service
+
+    service = build_service(settings)
+    calls: list[str] = []
+    real_fetch = service._source.fetch_job
+
+    async def counting_fetch(job_id: str, run_id: str = ""):
+        calls.append(run_id or job_id)
+        return await real_fetch(job_id, run_id)
+
+    service._source.fetch_job = counting_fetch  # type: ignore[method-assign]
+
+    import asyncio
+
+    first = service.create_run("default", "job-7", "default", "RUN_9")
+    asyncio.run(service.run_analysis(first))
+    assert len(calls) == 1  # first run fetched
+
+    second = service.create_run("default", "job-7", "default", "RUN_9")
+    asyncio.run(service.run_analysis(second))
+    assert len(calls) == 1  # cache hit -> no fetch at all
+    assert service.get_run(second)["cached_from"] == first
 
 
 def test_cache_disabled_reanalyzes(settings: Settings) -> None:

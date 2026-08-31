@@ -1,6 +1,6 @@
 # VisiumGo Test Analyzer
 
-Başarısız otomasyon test koşumlarının (`web` / `mobile` / `hybrid`) ham kanıtını
+Başarısız otomasyon test koşumlarının ham kanıtını
 (test.log, DOM, browser.log, ekran görüntüsü) lokal bir LLM'e yorumlatan FastAPI
 backend. Çıktı: **güven seviyeli, gerekçeli ön teşhis** — "test hatası mı,
 uygulama hatası mı, ortam mı, geçici mi (yoksa unknown/inconclusive mı)?"
@@ -82,8 +82,10 @@ curl -X POST http://127.0.0.1:8000/analyze/visiumgo \
 curl http://127.0.0.1:8000/analyze/visiumgo/<analyzer_run_id>
 ```
 
-Tam iz `database/` altına düşer: `runs/`, `evidence/`, `prompts/` (giden tam
-prompt + ham cevap), `analysis_results/` (teşhisler). Hepsi insan-okunur JSON.
+Tam iz `database/` altına düşer: `runs/` (koşum durumu + ham API cevapları),
+`evidence/` (ham kanıt), `prompts/` (**giden**: prompt + istek),
+`llm_responses/` (**gelen**: LLM'in tam ham cevabı), `analysis_results/`
+(teşhisler). Hepsi insan-okunur JSON.
 
 Mock kolaylığı: `job_id` sonu `-clean` biterse job hatasız kabul edilir
 ("analiz edilecek hata yok" yolu).
@@ -134,7 +136,7 @@ eşleşmesi → yoksa `default`. Var olmayan profil adı verilirse koşum `faile
 | Jenkins log | `VISIUMGO_JENKINS_LOG_PATH=/api/runs/{run_id}/jenkins-log` (VisiumGo'nun kendi endpoint'i; boş = atla) |
 | Kanıt akışı / kırpma | `config/profiles.json` → job bazlı profil + kurallar |
 | Paralellik | `MAX_CONCURRENCY=<n>` |
-| Önbellek | `CACHE_ENABLED=false` → aynı job tekrar analiz edilir |
+| Önbellek | `CACHE_ENABLED=true` → aynı **run_id + parametreler** daha önce analiz edildiyse LLM çağrılmaz, sonuç diskten döner (job bazlı değil: bir job'ın her koşumu ayrı analiz edilir) |
 
 ## Testler
 
@@ -142,6 +144,6 @@ eşleşmesi → yoksa `default`. Var olmayan profil adı verilirse koşum `faile
 pytest
 ```
 
-Sözleşme-bazlı testler (Findings/A6, çıktı şeması/A10, Repository, parsing,
-Evidence mimarisi/registry, eksik kanıt toleransı, PreCheck, hata dayanıklılığı)
-+ mock'larla uçtan uca smoke testi.
+Sözleşme-bazlı testler (Findings, çıktı şeması, Repository, parsing, Evidence
+mimarisi/registry, profil çözümü, kırpma kuralları, önbellek, PreCheck, hata
+dayanıklılığı) + mock'larla uçtan uca smoke testi.

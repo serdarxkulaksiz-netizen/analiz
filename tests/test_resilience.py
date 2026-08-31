@@ -86,6 +86,9 @@ async def test_llm_timeout_marks_scenarios_failed_but_job_finishes(
 class FailingSource(Source):
     """A source whose fetch fails (e.g. VisiumGo unreachable / auth error)."""
 
+    async def resolve_run_id(self, job_id, run_id=""):  # type: ignore[no-untyped-def]
+        return run_id or f"RUN_{job_id}"
+
     async def fetch_job(self, job_id, run_id=""):  # type: ignore[no-untyped-def]
         raise RuntimeError("VisiumGo unreachable")
 

@@ -67,7 +67,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `llm_temperature` / `llm_max_tokens` / `llm_timeout_seconds` | 0 / 8000 / 120 | LLM çağrı parametreleri |
 | `llm_verify_ssl` | `False` | LLM SSL doğrulama |
 | `max_concurrency` | `2` | Aynı anda kaç senaryo işlenir (`Semaphore`) |
-| `cache_enabled` | `False` | Aynı job'ı tekrar analiz etmeme (kapalı) |
+| `cache_enabled` | `False` | Aynı **koşumu** (run_id + parametreler) tekrar analiz etmeme (kapalı) |
 
 `get_settings()` → süreç boyunca tek `Settings` örneği döndürür (`@lru_cache`).
 
@@ -129,6 +129,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 **`Source`** (arayüz)
 | Method | Ne yapar |
 |---|---|
+| `resolve_run_id(job_id, run_id="")` | **Hangi koşum?** — ucuz; `run_id` verilmişse ağa hiç çıkmaz, yoksa en yeni koşumu bulur. Cache kontrolü bunun sonucuyla yapılır (isabet ederse indirme hiç olmaz) |
 | `fetch_job(job_id, run_id="")` | Bir job'ın başarısız senaryolarını `JobData` olarak döndürür. `job_id` veya `run_id`'den biri koşumu belirler (parametreler source'a gitmez — yalnız analiz tarafını özelleştirir) |
 
 **`MockSource`** (sahte veri; VisiumGo kapalıyken çalışır)
@@ -290,7 +291,7 @@ Tüm halkaları enjekte alır; hiçbirini kendisi yaratmaz.
 | `run_analysis(analyzer_run_id)` | **Tek tetik** (arka plan girişi). `_run_job`'u sarar; job-seviyesi hata → `status=failed` + not |
 | `_run_job(run)` | `running` yapar → (cache açıksa kontrol) → `source.fetch_job` → run'ı günceller → hata yoksa `done` → varsa her senaryo için `_analyze_scenario` (paralel, `Semaphore`) → `done` |
 | `_analyze_scenario(...)` | **Asıl zincir** (aşağıda). Asla exception fırlatmaz (bir senaryo koşuyu düşürmez) |
-| `_find_cached_run(run)` | Aynı parametreler+job_id'nin daha önce tam analizli koşusunu bulur (cache) |
+| `_find_cached_run(run)` | Aynı **run_id** + parametrelerin daha önce tam analizli koşumunu bulur. job_id ile eşleşmez (bir job'ın çok koşumu olur); run_id boşsa cache aranmaz |
 | `_screenshot_paths(scenario)` | Ham iz satırı için image attachment yollarını toplar |
 | `_increment_completed(id)` | Kilit altında `completed_count += 1` |
 | `_update_run(run, **fields)` | Run satırını güncelleyip diske yazar |

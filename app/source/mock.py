@@ -90,11 +90,17 @@ def _scenario(name: str, retry_info: str = "") -> RawScenario:
 class MockSource(Source):
     """Returns a canned job with two failed scenarios (out of 100)."""
 
+    async def resolve_run_id(self, job_id: str, run_id: str = "") -> str:
+        # Per-job ids, like the real source: two different jobs must never look
+        # like the same run (the cache keys on run_id).
+        return run_id or f"MOCK_run_{job_id}"
+
     async def fetch_job(self, job_id: str, run_id: str = "") -> JobData:
+        resolved = await self.resolve_run_id(job_id, run_id)
         if job_id.endswith(CLEAN_JOB_SUFFIX):
             return JobData(
                 job_id=job_id,
-                run_id=run_id or "MOCK_run",
+                run_id=resolved,
                 job_name="MOCK_nightly-test",
                 run_result={
                     "state": "PASSED",
@@ -118,7 +124,7 @@ class MockSource(Source):
         ]
         return JobData(
             job_id=job_id,
-            run_id=run_id or "MOCK_run",
+            run_id=resolved,
             job_name="MOCK_nightly-test",
             run_result={
                 "state": "FAILED",

@@ -135,6 +135,20 @@ async def test_attachments_downloaded_and_saved(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolve_run_id_is_cheap_and_correct(tmp_path: Path) -> None:
+    # Explicit run_id -> returned as-is, WITHOUT any network call (this is what
+    # makes a cache hit free).
+    source = _source(tmp_path / "attachments")
+    assert await source.resolve_run_id("job-42", "RUN_DIRECT") == "RUN_DIRECT"
+    assert _CAPTURED == []
+
+    # Only job_id -> newest run resolved with a single lookup, no evidence.
+    source = _source(tmp_path / "attachments")
+    assert await source.resolve_run_id("job-42") == "RUN_NEW"
+    assert [r.url.path for r in _CAPTURED] == ["/api/runs"]
+
+
+@pytest.mark.asyncio
 async def test_jenkins_log_fetched_when_path_configured(tmp_path: Path) -> None:
     # VisiumGo serves the Jenkins console log from its own (new) endpoint.
     source = _source(
