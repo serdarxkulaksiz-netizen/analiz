@@ -12,8 +12,6 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 
-_WEB_JOB = {"bank": "demo", "job_id": "job-42", "platform": "web"}
-
 
 def _client(settings: Settings) -> TestClient:
     return TestClient(create_app(settings))
@@ -22,7 +20,8 @@ def _client(settings: Settings) -> TestClient:
 def test_end_to_end_with_mocks(settings: Settings) -> None:
     client = _client(settings)
 
-    response = client.post("/analyze/visiumgo", json=_WEB_JOB)
+    # Parameters omitted -> default/default.
+    response = client.post("/analyze/visiumgo", json={"job_id": "job-42"})
     assert response.status_code == 200
     body = response.json()
     analyzer_run_id = body["analyzer_run_id"]
@@ -30,10 +29,14 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
 
     result = client.get(f"/analyze/visiumgo/{analyzer_run_id}").json()
     assert result["status"] == "done"
-    assert result["platform"] == "web"
+    assert result["parameter1"] == "default"
+    assert result["parameter2"] == "default"
     assert result["scenario_count"] == 2
     assert result["completed_count"] == 2
     assert result["total_scenario_count"] == 100
+    # Job-level raw traces are persisted (save-everything rule).
+    assert result["raw_run_response"]["jobName"] == "MOCK_nightly-test"
+    assert len(result["raw_results_response"]) == 2
 
     names = {row["scenario_name"] for row in result["results"]}
     assert names == {
@@ -45,10 +48,11 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
         assert row["verdict"] == "test_maintenance"  # single mock diagnosis
         assert row["confidence"] in {0.1, 0.25, 0.5, 0.75, 0.99}
         assert row["explanation"].startswith("MOCK_")  # mock-labeled content
-        assert row["bank"] == "demo"
-        assert row["platform"] == "web"
-        assert row["screenshot_paths"] == [row["screenshot_paths"][0]]
-        assert row["screenshot_paths"][0].startswith("MOCK_")
+        assert row["parameter1"] == "default"
+        assert row["parameter2"] == "default"
+        assert row["screenshot_paths"] and all(
+            p.startswith("MOCK_") for p in row["screenshot_paths"]
+        )
         # raw_llm_response is the FULL envelope (not just content).
         assert '"choices"' in row["raw_llm_response"]
         assert row["meta"]["llm_model"] == f"MOCK_{settings.llm_model}"
@@ -60,6 +64,12 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     assert len(list((db / settings.table_prompts).glob("*.json"))) == 2
     assert len(list((db / settings.table_analysis_results).glob("*.json"))) == 2
     assert len(list((db / settings.table_llm_responses).glob("*.json"))) == 2
+
+    # evidence row keeps the scenario's full raw detail (save-everything rule).
+    evidence_row = json.loads(
+        next((db / settings.table_evidence).glob("*.json")).read_text("utf-8")
+    )
+    assert evidence_row["raw_scenario"]["raw_detail"]
 
     # prompts row carries the full request + full raw envelope (plan.md A12).
     prompt_row = json.loads(
@@ -78,12 +88,27 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     assert llm_row["model"] and llm_row["duration_ms"] is not None
 
 
+def test_explicit_parameters_are_recorded(settings: Settings) -> None:
+    client = _client(settings)
+
+    rid = client.post(
+        "/analyze/visiumgo",
+        json={"parameter1": "projeX", "parameter2": "tipY", "job_id": "job-9"},
+    ).json()["analyzer_run_id"]
+
+    result = client.get(f"/analyze/visiumgo/{rid}").json()
+    assert result["parameter1"] == "projeX"
+    assert result["parameter2"] == "tipY"
+    for row in result["results"]:
+        assert row["parameter1"] == "projeX"
+        assert row["parameter2"] == "tipY"
+
+
 def test_clean_job_returns_nothing_to_analyze(settings: Settings) -> None:
     client = _client(settings)
 
     analyzer_run_id = client.post(
-        "/analyze/visiumgo",
-        json={"bank": "demo", "job_id": "job-clean", "platform": "web"},
+        "/analyze/visiumgo", json={"job_id": "job-clean"}
     ).json()["analyzer_run_id"]
 
     result = client.get(f"/analyze/visiumgo/{analyzer_run_id}").json()
@@ -93,16 +118,16 @@ def test_clean_job_returns_nothing_to_analyze(settings: Settings) -> None:
     assert result["note"] == "analiz edilecek hata yok"
 
 
-def test_platform_is_required_in_body(settings: Settings) -> None:
+def test_job_or_run_id_required(settings: Settings) -> None:
     client = _client(settings)
-    # Missing platform -> 422 (plan.md A13 body: {bank, job_id, platform}).
-    resp = client.post("/analyze/visiumgo", json={"bank": "demo", "job_id": "x"})
+    # No job_id/run_id -> 422 (parameters alone are not enough).
+    resp = client.post("/analyze/visiumgo", json={"parameter1": "x"})
     assert resp.status_code == 422
 
 
 def test_cache_reuses_previous_analysis(settings: Settings) -> None:
     client = _client(settings)
-    job = {"bank": "demo", "job_id": "job-7", "platform": "web"}
+    job = {"job_id": "job-7"}
 
     first_id = client.post("/analyze/visiumgo", json=job).json()["analyzer_run_id"]
     second_id = client.post("/analyze/visiumgo", json=job).json()["analyzer_run_id"]
@@ -117,10 +142,23 @@ def test_cache_reuses_previous_analysis(settings: Settings) -> None:
     assert len(list((db / settings.table_analysis_results).glob("*.json"))) == 2
 
 
+def test_cache_key_includes_parameters(settings: Settings) -> None:
+    # Same job, different parameters -> NOT served from cache.
+    client = _client(settings)
+
+    client.post("/analyze/visiumgo", json={"job_id": "job-7"})
+    second_id = client.post(
+        "/analyze/visiumgo", json={"job_id": "job-7", "parameter1": "projeX"}
+    ).json()["analyzer_run_id"]
+
+    second = client.get(f"/analyze/visiumgo/{second_id}").json()
+    assert second["cached_from"] == ""  # re-analyzed, not cached
+
+
 def test_cache_disabled_reanalyzes(settings: Settings) -> None:
     settings = settings.model_copy(update={"cache_enabled": False})
     client = _client(settings)
-    job = {"bank": "demo", "job_id": "job-7", "platform": "web"}
+    job = {"job_id": "job-7"}
 
     client.post("/analyze/visiumgo", json=job)
     second_id = client.post("/analyze/visiumgo", json=job).json()["analyzer_run_id"]

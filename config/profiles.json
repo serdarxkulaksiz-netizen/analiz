@@ -1,0 +1,18 @@
+{
+  "default": {
+    "job_ids": [],
+    "evidence_to_llm": [
+      "TestLogEvidence",
+      "HtmlEvidence",
+      "BrowserLogEvidence"
+    ],
+    "evidence_to_store": [
+      "TestLogEvidence",
+      "HtmlEvidence",
+      "BrowserLogEvidence",
+      "JenkinsLogEvidence",
+      "WebScreenshotEvidence",
+      "MobileScreenshotEvidence"
+    ]
+  }
+}

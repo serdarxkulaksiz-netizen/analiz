@@ -6,6 +6,7 @@ Each declares the `mime_type` + `device_id` it matches (plan.md real spec):
 |------------|------------------|--------------------------|
 | text/plain | test             | TestLogEvidence          |
 | text/plain | browser.default  | BrowserLogEvidence       |
+| text/plain | jenkins          | JenkinsLogEvidence       |
 | text/html  | browser.default  | HtmlEvidence             |
 | image/png  | browser.default  | WebScreenshotEvidence    |
 | image/png  | mobile (prefix)  | MobileScreenshotEvidence |
@@ -13,12 +14,15 @@ Each declares the `mime_type` + `device_id` it matches (plan.md real spec):
 There is NO separate mobile XML/DOM evidence: the mobile UI tree arrives inside
 `test.log`, carried as-is by `TestLogEvidence` (plan.md A4.3).
 
-The `=== HATA ===` and `=== CONSOLE.LOG ===` blocks are NOT evidence classes:
-HATA is the scenario's `error_text` (an A6 field), and CONSOLE.LOG is the
-job-level Jenkins log — both assembled by the extractor.
+The Jenkins log is job-level (one log for all scenarios); the extractor injects
+it as a synthetic `jenkins` attachment so it flows through the same profile and
+rule machinery as everything else (e.g. "keep only this scenario's section").
+
+`=== HATA ===` is not an evidence class: it is the scenario's `error_text`
+(an A6 field), assembled by the extractor.
 """
 
-from app.domain.findings import BLOCK_BROWSER, BLOCK_DOM, BLOCK_STEPS
+from app.domain.findings import BLOCK_BROWSER, BLOCK_CONSOLE, BLOCK_DOM, BLOCK_STEPS
 from app.evidence.base import ScreenshotEvidence, TextEvidence
 
 
@@ -38,6 +42,19 @@ class BrowserLogEvidence(TextEvidence):
     mime_type = "text/plain"
     device_id = "browser.default"
     block_label = BLOCK_BROWSER
+
+
+class JenkinsLogEvidence(TextEvidence):
+    """Job-level Jenkins console log (via VisiumGo) → `=== CONSOLE.LOG ===`.
+
+    Contains every scenario, so profiles typically pair it with a
+    `keep_scenario_section` rule to keep only the relevant part.
+    """
+
+    evidence_name = "JenkinsLogEvidence"
+    mime_type = "text/plain"
+    device_id = "jenkins"
+    block_label = BLOCK_CONSOLE
 
 
 class HtmlEvidence(TextEvidence):

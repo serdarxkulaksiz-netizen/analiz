@@ -1,15 +1,15 @@
 """Prompt builder contract tests (plan.md A8)."""
 
 from app.config import Settings
-from app.domain.enums import Platform, StepStatus
+from app.domain.enums import StepStatus
 from app.domain.findings import BLOCK_ERROR, EvidenceBlock, Findings, Step
 from app.prompting.builder import PromptBuilder
 
 
 def _sample_findings() -> Findings:
     return Findings(
-        platform=Platform.WEB,
-        bank="demo",
+        parameter1="projeX",
+        parameter2="tipY",
         scenario_name="Login - geçerli kullanıcı",
         failed_step="Giriş butonuna tıkla",
         error_message="NoSuchElementException: #login-submit",
@@ -20,7 +20,6 @@ def _sample_findings() -> Findings:
         evidence_blocks=[
             EvidenceBlock(label=BLOCK_ERROR, content="NoSuchElementException"),
         ],
-        missing_evidence=["BrowserLogEvidence"],
     )
 
 
@@ -29,16 +28,14 @@ def test_prompt_contains_evidence_and_constraints(settings: Settings) -> None:
     prompt = builder.build(_sample_findings())
 
     # identity/context lines (MockLLMProvider relies on the Senaryo: prefix)
-    assert "Platform: web" in prompt
-    assert "Banka: demo" in prompt
+    assert "Parametre1: projeX" in prompt
+    assert "Parametre2: tipY" in prompt
     assert "Senaryo: Login - geçerli kullanıcı" in prompt
     # organized evidence
     assert "Giriş butonuna tıkla" in prompt
     assert "NoSuchElementException" in prompt
     assert "=== HATA ===" in prompt
     assert "- Login sayfasını aç: PASSED" in prompt
-    # missing-evidence notification
-    assert "BrowserLogEvidence" in prompt
     # mandatory output contract — all 6 verdict values
     for verdict in (
         "test_maintenance",
@@ -64,13 +61,12 @@ def test_no_unfilled_placeholders(settings: Settings) -> None:
     prompt = builder.build(_sample_findings())
 
     for placeholder in (
-        "$platform",
-        "$bank",
+        "$parameter1",
+        "$parameter2",
         "$scenario_name",
         "$failed_step",
         "$error_message",
         "$steps",
-        "$missing_evidence",
         "$evidence_blocks",
         "$confidence_buckets",
     ):

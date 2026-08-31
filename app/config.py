@@ -10,19 +10,7 @@ constants (enum values, block labels) live in code instead.
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-# Evidence flag defaults (plan.md A5.2): per evidence type, does it go to the
-# LLM and/or the store. Keys are the evidence class names (registry keys).
-# Screenshots are stored but not sent to the (text) LLM today.
-_DEFAULT_EVIDENCE_FLAGS: dict[str, dict[str, bool]] = {
-    "TestLogEvidence": {"goes_to_llm": True, "goes_to_store": True},
-    "HtmlEvidence": {"goes_to_llm": True, "goes_to_store": True},
-    "BrowserLogEvidence": {"goes_to_llm": True, "goes_to_store": True},
-    "WebScreenshotEvidence": {"goes_to_llm": False, "goes_to_store": True},
-    "MobileScreenshotEvidence": {"goes_to_llm": False, "goes_to_store": True},
-}
 
 
 class Settings(BaseSettings):
@@ -51,16 +39,19 @@ class Settings(BaseSettings):
     visiumgo_timeout_seconds: float = 60.0
     # SSL verification off (internal self-signed certs); true to enable via .env.
     visiumgo_verify_ssl: bool = False
+    # VisiumGo endpoint serving the job's Jenkins console log; `{run_id}` is
+    # substituted. Empty = skip (the endpoint is being added on the VisiumGo
+    # side; nothing breaks until it exists).
+    visiumgo_jenkins_log_path: str = ""
 
     # --- extraction & size management / Halka 2 (plan.md A5, A11) ---
     # Reserved for later (plan.md A11): the single "when to trim" threshold.
     # Not wired yet — today everything is passthrough; real Evidence-level
     # trimming + real token counting land on the work PC. 0 = passthrough.
     truncation_threshold_tokens: int = 0
-    # Per-evidence-type flags (A5.2): goes_to_llm / goes_to_store.
-    evidence_flags: dict[str, dict[str, bool]] = Field(
-        default_factory=lambda: _DEFAULT_EVIDENCE_FLAGS
-    )
+    # Analysis profiles (parameter1/parameter2 -> which evidence goes to the
+    # LLM / to the store). New profile = a row in this file, not code.
+    profiles_config_path: Path = Path("config") / "profiles.json"
 
     # --- precheck / Halka before-prompt (plan.md A7) — value = registry key ---
     precheck_provider: str = "noop"  # noop (only implementation today)

@@ -9,15 +9,19 @@ Chain (real-spec Bölüm 2):
 Produces the same attachment-based `RawScenario` as MockSource, so the
 extraction ring is unchanged (mock/real difference lives only here).
 
+Save-everything rule: the raw run response, the raw /results array and each
+scenario's raw detail response are kept verbatim on the models and persisted
+by the service — nothing from the API is discarded.
+
 Robustness (real-spec Bölüm 5): a failed attachment download leaves that
-evidence empty (→ counted missing downstream) but the scenario continues; the
-service marks a fully-failing scenario `analysis_failed` and the job goes on.
+evidence empty but the scenario continues; the service marks a fully-failing
+scenario `analysis_failed` and the job goes on.
 """
 
 from pathlib import Path
 from typing import Any
 
-from app.domain.enums import Platform, StepStatus
+from app.domain.enums import StepStatus
 from app.domain.findings import Step
 from app.source.base import Source
 from app.source.models import Attachment, JobData, RawScenario
@@ -39,13 +43,17 @@ def _to_step_status(result_type: str) -> StepStatus | None:
 class VisiumGoSource(Source):
     """Fetches real job evidence from a VisiumGo instance."""
 
-    def __init__(self, client: VisiumGoClient, attachments_dir: Path) -> None:
+    def __init__(
+        self,
+        client: VisiumGoClient,
+        attachments_dir: Path,
+        jenkins_log_path: str = "",
+    ) -> None:
         self._client = client
         self._attachments_dir = attachments_dir
+        self._jenkins_log_path = jenkins_log_path
 
-    async def fetch_job(
-        self, bank: str, job_id: str, platform: Platform, run_id: str = ""
-    ) -> JobData:
+    async def fetch_job(self, job_id: str, run_id: str = "") -> JobData:
         resolved_run_id, raw_run = await self._resolve_run(job_id, run_id)
 
         results = await self._client.get_json(
@@ -55,23 +63,35 @@ class VisiumGoSource(Source):
 
         scenarios: list[RawScenario] = []
         for record in failed:
-            scenarios.append(
-                await self._build_scenario(resolved_run_id, record, platform)
-            )
+            scenarios.append(await self._build_scenario(resolved_run_id, record))
 
         run_result = (raw_run.get("runResult") or {}) if raw_run else {}
         total = run_result.get("totalScenarios", len(results))
         return JobData(
-            bank=bank,
             job_id=job_id,
             run_id=resolved_run_id,
-            platform=platform,
             job_name=(raw_run.get("jobName", "") if raw_run else ""),
             run_result=run_result,
             total_scenario_count=total,
             failed_scenarios=scenarios,
+            jenkins_console_log=await self._fetch_jenkins_log(resolved_run_id),
             raw_run_response=raw_run or {},
+            raw_results_response=results,
         )
+
+    async def _fetch_jenkins_log(self, run_id: str) -> str:
+        """Job-level Jenkins console log, served by VisiumGo (plan.md A4.1).
+
+        Optional: unset path = skip; a failure leaves it empty and the job
+        continues (the analysis simply has one evidence less).
+        """
+        if not self._jenkins_log_path:
+            return ""
+        path = self._jenkins_log_path.format(run_id=encode_segment(run_id))
+        try:
+            return await self._client.get_text(path)
+        except Exception:
+            return ""
 
     async def _resolve_run(
         self, job_id: str, run_id: str
@@ -93,7 +113,7 @@ class VisiumGoSource(Source):
         return str(resolved), latest
 
     async def _build_scenario(
-        self, run_id: str, record: dict[str, Any], platform: Platform
+        self, run_id: str, record: dict[str, Any]
     ) -> RawScenario:
         """Adım C: fetch scenario detail and its attachments."""
         scenario_id = str(record.get("id", ""))
@@ -117,12 +137,12 @@ class VisiumGoSource(Source):
 
         return RawScenario(
             scenario_name=str(record.get("name", "")),
-            platform=platform,
             scenario_id=scenario_id,
             error_text=str(detail.get("errorText", "")),
             steps=steps,
             attachments=attachments,
             retry_info=str(record.get("retryNumber", "")),
+            raw_detail=detail,  # full raw response, persisted (save everything)
         )
 
     async def _download_attachment(
@@ -154,8 +174,8 @@ class VisiumGoSource(Source):
                 stored_path=str(stored),
             )
         except Exception:
-            # A failed download leaves this evidence empty -> counted missing,
-            # scenario continues (real-spec Bölüm 5).
+            # A failed download leaves this evidence empty — the scenario
+            # continues (real-spec Bölüm 5).
             return Attachment(
                 file_name=file_name, mime_type=mime_type, device_id=device_id
             )

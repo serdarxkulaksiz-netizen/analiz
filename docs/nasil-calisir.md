@@ -30,9 +30,9 @@ böylece mock↔gerçek geçişi kod değişmeden olur.
 
 **Dosya:** `app/main.py` → `start_analysis()`
 
-1. **FastAPI gövdeyi doğrular.** `AnalyzeRequest` modeli `{bank, platform, job_id | run_id}` bekler.
-   İkisi de (job_id ve run_id) yoksa → `422` hata.
-2. **`service.create_run(bank, job_id, platform, run_id)`** çağrılır (`app/service.py`):
+1. **FastAPI gövdeyi doğrular.** `AnalyzeRequest` modeli `{parameter1?, parameter2?, job_id | run_id}`
+   bekler; parametreler verilmezse `"default"` olur. job_id ve run_id'nin ikisi de yoksa → `422` hata.
+2. **`service.create_run(parameter1, job_id, parameter2, run_id)`** çağrılır (`app/service.py`):
    - Rastgele bir kimlik üretir: `analyzer_run_id`.
    - `database/runs/{analyzer_run_id}.json` dosyasını `status="pending"` ile **diske yazar**.
    - Bu id'yi döndürür.
@@ -52,7 +52,7 @@ yalnızca burası değişir; kod bu yüzden böyle kurgulandı.)
 1. `runs` dosyasını diskten okur.
 2. **`_run_job(run)`** çağrılır:
    - Durumu `running` yapar.
-   - **`self._source.fetch_job(bank, job_id, platform, run_id)`** — **Source** halkası
+   - **`self._source.fetch_job(job_id, run_id)`** — **Source** halkası
      (`MockSource` veya `VisiumGoSource`):
      - `VisiumGoSource`: run_id'yi çözer → `/results`'tan **FAILED** senaryoları alır → her senaryonun
        detayını (`errorText`, `stepResults`, `attachments`) çeker → attachment'ları indirir.
@@ -117,4 +117,7 @@ yalnızca burası değişir; kod bu yüzden böyle kurgulandı.)
 - **Paralel işlem** → senaryolar aynı anda analiz edilsin (`Semaphore` ile sınırlı).
 - **Durum diskten okunsun** → sunucu yeniden başlasa bile kaybolmasın; ileride kuyruk/Redis'e geçiş kolay.
 - **Mock↔gerçek geçişi sadece `.env`** → kod değişmeden; test/geliştirme mock'la, üretim gerçekle.
-- **Davranış dallanması yok** (`if mock` / `if platform` yok) → her varyant ayrı sınıf + registry + DI.
+- **Davranış dallanması yok** (`if mock` / `if type` yok) → her varyant ayrı sınıf + registry + DI.
+- **Job bazlı özelleştirme**: `job_id` (ya da `parameter1`) → `config/profiles.json`'dan analiz
+  profili seçilir: hangi kanıt prompt'a girer **ve** o kanıtın içine hangi kurallar uygulanır
+  (kes/seç/ekle). Yeni job = config satırı, kod değişmez.

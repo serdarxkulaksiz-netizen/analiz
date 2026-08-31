@@ -1,13 +1,13 @@
 """Extractor interface (plan.md Halka 2).
 
 Raw evidence goes out as labeled blocks; interpretation belongs to the LLM
-(parse-minimal, plan.md A5/B3.6). This is the only ring that changes when a
-new platform (web -> mobile -> hybrid) is added.
+(parse-minimal, plan.md A5/B3.6).
 
-`bank` and `jenkins_console_log` are job-level context (plan.md A4.1): the
-bank stamps the Findings, and the Jenkins console.log becomes the job-level
-`=== CONSOLE.LOG ===` block (it is not one of the five per-scenario evidence
-classes, A5.1).
+`parameter1` (profile name override) and `job_id` select the analysis profile —
+which evidence reaches the prompt and how its content is shaped. `parameter2`
+is carried through for the record/prompt context. `jenkins_console_log` is
+job-level context (plan.md A4.1) that becomes the `=== CONSOLE.LOG ===` block
+when the profile includes it.
 """
 
 from abc import ABC, abstractmethod
@@ -24,7 +24,9 @@ class Extractor(ABC):
         self,
         scenario: RawScenario,
         *,
-        bank: str = "",
+        parameter1: str = "default",
+        parameter2: str = "default",
+        job_id: str = "",
         jenkins_console_log: str = "",
     ) -> Findings:
         """Build Findings (labeled blocks + minimal fields) from raw evidence."""

@@ -17,13 +17,14 @@ from abc import ABC, abstractmethod
 from typing import ClassVar
 
 from app.domain.findings import EvidenceBlock
+from app.evidence.rules import Rule, RuleContext
 from app.source.models import Attachment
 
 
 class Evidence(ABC):
     """One piece of raw evidence for a scenario (plan.md A5.1)."""
 
-    #: Registry key = class name; also the label used in `missing_evidence`.
+    #: Registry key = class name (also used in profile config lists).
     evidence_name: ClassVar[str]
     #: Attachment identity this evidence matches (plan.md real spec, Bölüm 3).
     mime_type: ClassVar[str]
@@ -66,10 +67,21 @@ class Evidence(ABC):
         """Stored screenshot reference, or "" for non-screenshot evidence."""
         return ""
 
+    @property
+    def was_trimmed(self) -> bool:
+        """True if content rules actually changed this evidence's content."""
+        return False
+
     @classmethod
     @abstractmethod
     def from_attachment(
-        cls, attachment: Attachment, *, goes_to_llm: bool, goes_to_store: bool
+        cls,
+        attachment: Attachment,
+        *,
+        goes_to_llm: bool,
+        goes_to_store: bool,
+        rules: list[Rule] | None = None,
+        ctx: RuleContext | None = None,
     ) -> "Evidence":
         """Build this evidence from a matching attachment."""
 
@@ -80,17 +92,38 @@ class TextEvidence(Evidence):
     #: Findings evidence-block label this evidence fills (plan.md A6).
     block_label: ClassVar[str]
 
-    def __init__(self, content: str, *, goes_to_llm: bool, goes_to_store: bool) -> None:
+    def __init__(
+        self,
+        content: str,
+        *,
+        goes_to_llm: bool,
+        goes_to_store: bool,
+        rules: list[Rule] | None = None,
+        ctx: RuleContext | None = None,
+    ) -> None:
         super().__init__(goes_to_llm=goes_to_llm, goes_to_store=goes_to_store)
         self._content = content or ""
+        self._rules = rules or []
+        self._ctx = ctx or RuleContext()
 
     @property
     def is_present(self) -> bool:
         return bool(self._content.strip())
 
     def select_content(self) -> str:
-        """Content selector (A5.3): passthrough today — nothing is cut."""
-        return self._content
+        """Content selector (A5.3): applies the profile's rules, in order.
+
+        With no rules this is passthrough. The raw content is untouched — only
+        what reaches the LLM is shaped here.
+        """
+        text = self._content
+        for rule in self._rules:
+            text = rule.apply(text, self._ctx)
+        return text
+
+    @property
+    def was_trimmed(self) -> bool:
+        return bool(self._rules) and self.select_content() != self._content
 
     def to_block(self) -> EvidenceBlock | None:
         if self.goes_to_llm and self.is_present:
@@ -99,10 +132,20 @@ class TextEvidence(Evidence):
 
     @classmethod
     def from_attachment(
-        cls, attachment: Attachment, *, goes_to_llm: bool, goes_to_store: bool
+        cls,
+        attachment: Attachment,
+        *,
+        goes_to_llm: bool,
+        goes_to_store: bool,
+        rules: list[Rule] | None = None,
+        ctx: RuleContext | None = None,
     ) -> "TextEvidence":
         return cls(
-            attachment.content, goes_to_llm=goes_to_llm, goes_to_store=goes_to_store
+            attachment.content,
+            goes_to_llm=goes_to_llm,
+            goes_to_store=goes_to_store,
+            rules=rules,
+            ctx=ctx,
         )
 
 
@@ -123,7 +166,13 @@ class ScreenshotEvidence(Evidence):
 
     @classmethod
     def from_attachment(
-        cls, attachment: Attachment, *, goes_to_llm: bool, goes_to_store: bool
+        cls,
+        attachment: Attachment,
+        *,
+        goes_to_llm: bool,
+        goes_to_store: bool,
+        rules: list[Rule] | None = None,  # not applicable to binary evidence
+        ctx: RuleContext | None = None,
     ) -> "ScreenshotEvidence":
         # A screenshot's reference is its stored path (fallback: file name).
         path = attachment.stored_path or attachment.file_name

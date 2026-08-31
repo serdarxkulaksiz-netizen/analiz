@@ -585,3 +585,108 @@ Kullanıcı push öncesi atık/ölü kod incelemesi istedi; tek tek konuşuldu, 
 - **Doğrulama:** `pytest` → 55/55; canlı smoke: `database/llm_responses/` yazıldı (raw zarf + content + meta).
 - **Not:** Bu klasör, `raw_llm_response`'un boş göründüğü durumda LLM'in gerçekte ne döndürdüğünü
   (boş gövde mi, farklı yapı mı) diske kalıcı yazar — iş-pc'de o satırı açıp bakabilirsin.
+
+---
+---
+
+# [parameter1/2 + profil sistemi] bank/platform → jenerik parametreler (2026-08-31)
+
+> Kullanıcı kararı (onaylı plan): `bank`/`platform` kavramı gerçeği yansıtmıyor (olay projeler).
+> İki alan jenerik `parameter1`/`parameter2` oldu (verilmezse "default") ve analiz özelleştirmesinin
+> anahtarı haline geldi: parametre çifti `config/profiles.json`'dan bir **analiz profili** seçer —
+> hangi kanıt (test.log/DOM/browser.log) prompt'a girer. Yeni profil = config satırı, kod değişmez.
+> **plan.md v2'den bilinçli sapma:** A4.2 (platform girdisi web/mobile/hybrid) ve A6'daki
+> `platform`/`bank` alanları bu kararla değişti; plan.md güncellemesi kullanıcıya bırakıldı.
+
+**Onaylı kararlar:** (1) alan adları birebir parameter1/parameter2; (2) bank/platform + Platform
+enum'u TAMAMEN kalktı, parameter2 serbest string; (3) default profil = bugünkü davranış (tüm metin
+kanıtları prompt'a); (4) `missing_evidence` özelliği TAMAMEN silindi.
+
+**Değişiklikler:**
+- **Domain:** `Platform` enum silindi; `Findings`: platform/bank → parameter1/parameter2,
+  missing_evidence silindi; `AnalysisResult`: aynı dönüşüm.
+- **Profil katmanı (yeni):** `app/evidence/profiles.py` — `Profile{evidence_to_llm, evidence_to_store}`
+  + `ProfileRegistry` (profiles.json'ı fail-fast yükler; `get(p1,p2)` fallback: [p1][p2]→[p1][default]→
+  [default][default]). `config/profiles.json` (yeni): default/default satırı.
+- **EvidenceRegistry:** platform→beklenen-set haritası + expected/missing mantığı silindi;
+  `build_for(scenario, profile)` — bayraklar profil listelerinden. `EVIDENCE_FLAGS`/`evidence_flags`
+  tamamen kaldırıldı (tek mekanizma profil).
+- **Source:** `fetch_job(job_id, run_id="")` — parametreler source'a gitmez. `RawScenario`: platform
+  silindi, **`raw_detail`** eklendi (senaryo-detay HAM cevabı — "her şey kaydedilsin" kuralı; önceki
+  eksik kapatıldı: `properties` vb. artık düşmüyor). `JobData`: bank/platform silindi,
+  **`raw_results_response`** eklendi (/results ham dizisi). VisiumGoSource ikisini de dolduruyor;
+  MockSource platform ayrımsız TÜM attachment setini üretiyor (profil seçer).
+- **Extraction:** `extract(scenario, *, parameter1, parameter2, jenkins_console_log)`; profil
+  ProfileRegistry'den; Findings parametre damgalı.
+- **Prompt:** şablonda Banka:/Platform: → Parametre1:/Parametre2:; platform açıklama paragrafı ve
+  `=== EKSİK KANITLAR ===` bölümü silindi; builder substitüsyonları güncellendi.
+- **Service:** `create_run(parameter1, job_id, parameter2, run_id)`; runs satırı parameter1/2 +
+  raw_results_response; sonuç satırları parameter1/2; cache anahtarı parametreler+job_id
+  (eski latent bug — platform anahtarda yoktu — kapandı); evidence satırında platform alanı kalktı
+  (raw_scenario.raw_detail her şeyi taşıyor).
+- **API:** `AnalyzeRequest{parameter1="default", parameter2="default", job_id, run_id}`;
+  build_service ProfileRegistry enjekte ediyor.
+- **Testler:** 7 dosya güncellendi + `tests/test_profiles.py` (yeni: lookup/fallback, default/default
+  zorunlu, özel profil → prompt'ta yalnız ADIMLAR+HATA) + smoke'a parametre kayıt/cache-anahtar
+  testleri. **59/59 geçti.**
+- **Docs:** README, proje-rehberi, nasil-calisir, .env.example (EVIDENCE_FLAGS→PROFILES_CONFIG_PATH)
+  güncellendi.
+
+**Doğrulama:** pytest 59/59; compileall temiz; statik grep → kodda bank/platform/missing_evidence izi
+yok; canlı smoke: parametresiz POST → default/default + raw_detail kayıtlı + tam bloklar;
+projeX/minimal profili → prompt'ta yalnız ADIMLAR+HATA (config-only özelleştirme çalışıyor).
+
+**Sıradaki adım:** ~~push~~ → job bazlı kural sistemi (aşağıya bak).
+
+---
+---
+
+# [Job bazlı profil + kanıt kırpma kuralları] (2026-09-01)
+
+> Kullanıcının A/B/C/D job örnekleri: her job farklı kanıt ve farklı kırpma istiyor.
+> Profil artık **job_id ile otomatik** seçiliyor ve kanıtın **içine** müdahale edebiliyor.
+
+**Onaylı kararlar:** (1) profil-merkezli tek tablo + `job_ids`; `parameter1` elle ezme, `parameter2`
+yalnız kayıt/prompt bağlamı; (2) kural motoru registry ile; (3) Jenkins log **VisiumGo'nun kendi
+endpoint'inden** (Jenkins'e gidilmiyor); (4) HTML kırpma **bağımlılıksız** (stdlib `html.parser`) —
+bileşik CSS selector gerekirse bs4 sonra; (5) kırpma yalnız prompt'u etkiler, ham kayıt tam kalır.
+
+**Yeni dosyalar:**
+- `app/evidence/rules.py` — `Rule` ABC + `RuleContext` + `RULE_REGISTRY` + `build_rule`.
+  Kurallar: `keep_scenario_section` (job-seviyesi logu senaryo bazında dilimler), `keep_last_lines`,
+  `keep_first_lines`, `drop_matching`, `keep_matching`, `collapse_whitespace`, `max_chars`,
+  `strip_tags` (etiket + alt ağaç, void-tag güvenli), `select_nth` (N'inci element + alt ağaç).
+  Hepsi stdlib; eşleşme yoksa içerik **bozulmaz**; bozuk config/regex → **açılışta** hata.
+- `tests/test_rules.py` — her kural tipi + fail-fast + sıralı uygulama.
+
+**Değişenler:**
+- `app/evidence/profiles.py` — şema **düzleşti**: `{profil_adı: {job_ids, evidence_to_llm,
+  evidence_to_store, rules, extra_context}}`. `Profile` kuralları açılışta derler.
+  `get(job_id, parameter1)` sırası: parameter1 (bilinmeyen ad → **hata**, sessiz düşüş yok) →
+  job_ids → default. Aynı job_id iki profilde → açılışta hata.
+- `app/evidence/{base,types,registry}.py` — `TextEvidence.select_content()` artık profil kurallarını
+  sırayla uygular (+`was_trimmed`); `from_attachment` rules/ctx alır; **`JenkinsLogEvidence`** (6. sınıf,
+  text/plain + `jenkins` → CONSOLE.LOG); registry kuralları enjekte eder.
+- `app/extraction/evidence_extractor.py` — profil job_id/parameter1 ile seçilir; **jenkins log sentetik
+  attachment** olur (özel-durum kodu kalktı, profil+kural onu da yönetir); `truncated`/`truncated_note`,
+  `profile_name`, `extra_context` üretilir.
+- `app/domain/findings.py` — +`profile_name`, `extra_context`, `truncated`, `truncated_note`.
+- `app/source/visiumgo.py` — `_fetch_jenkins_log()`: `VISIUMGO_JENKINS_LOG_PATH` (`{run_id}`) doluysa
+  çeker; boşsa atlar, hata olursa boş bırakıp job devam eder. `app/source/mock.py` — çok senaryolu
+  `MOCK_` jenkins log (C profili denenebilsin).
+- `config/prompt_template.txt` + `builder.py` — `$extra_context`; `app/service.py` — job_id extractor'a
+  taşınır, `truncated`/`note` sonuca yazılır; `app/main.py` — jenkins path enjekte.
+- `config/profiles.json` — yeni düz şema (default profil).
+
+**Davranış değişikliği (dikkat):** Jenkins log artık **varsayılan profilde LLM'e GİTMEZ** (tüm
+senaryoları içerdiği için her prompt'u şişirirdi). Göndermek isteyen profil `JenkinsLogEvidence`'ı
+`evidence_to_llm`'e ekler — tipik olarak `keep_scenario_section` kuralıyla birlikte.
+
+**Doğrulama:** `pytest` → **86/86**. Canlı A/B/C/D smoke (mock source, geçici profil dosyası):
+- A → ADIMLAR+DOM (BROWSER LOG yok) · B → yalnız ADIMLAR
+- C → yalnız CONSOLE.LOG, **yalnız o senaryonun bölümü** (diğer senaryolar yok), `truncated=true`
+- D → DOM'da script yok, **yalnız ilk buton** (49 karakter), `extra_context` prompt'ta
+- Ham kayıt: `evidence/` içindeki DOM **tam** duruyor (kırpma yalnız prompt'ta)
+
+**Sıradaki adım:** kullanıcı push kararı. Ertelenenler: bs4/bileşik CSS selector,
+`truncation_threshold_tokens` ile eşik-bazlı otomatik kırpma, profil bazlı farklı prompt şablonu.

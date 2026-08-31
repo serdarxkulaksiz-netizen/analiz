@@ -1,10 +1,30 @@
-"""Evidence architecture tests (plan.md A5): attachment mapping, flags, missing."""
+"""Evidence architecture tests (plan.md A5): attachment mapping + profile flags."""
 
-from app.config import Settings
-from app.domain.enums import Platform
 from app.domain.findings import BLOCK_BROWSER, BLOCK_DOM, BLOCK_STEPS
+from app.evidence.profiles import Profile, ProfileConfig
 from app.evidence.registry import EvidenceRegistry
 from app.source.models import Attachment, RawScenario
+
+_ALL = [
+    "TestLogEvidence",
+    "HtmlEvidence",
+    "BrowserLogEvidence",
+    "JenkinsLogEvidence",
+    "WebScreenshotEvidence",
+    "MobileScreenshotEvidence",
+]
+
+
+def _profile(to_llm: list[str], rules: dict | None = None) -> Profile:
+    return Profile(
+        "test",
+        ProfileConfig(
+            evidence_to_llm=to_llm, evidence_to_store=_ALL, rules=rules or {}
+        ),
+    )
+
+
+_FULL_PROFILE = _profile(["TestLogEvidence", "HtmlEvidence", "BrowserLogEvidence"])
 
 
 def _att(mime: str, device: str, content: str = "x", path: str = "") -> Attachment:
@@ -26,12 +46,14 @@ def _web_attachments() -> list[Attachment]:
     ]
 
 
-def _scenario(platform: Platform, attachments: list[Attachment]) -> RawScenario:
-    return RawScenario(scenario_name="S", platform=platform, attachments=attachments)
+def _scenario(attachments: list[Attachment]) -> RawScenario:
+    return RawScenario(scenario_name="S", attachments=attachments)
 
 
-def test_attachments_map_to_expected_classes(evidence_registry: EvidenceRegistry) -> None:
-    evidences = evidence_registry.build_for(_scenario(Platform.WEB, _web_attachments()))
+def test_attachments_map_to_expected_classes() -> None:
+    evidences = EvidenceRegistry().build_for(
+        _scenario(_web_attachments()), _FULL_PROFILE
+    )
     names = {type(e).evidence_name for e in evidences}
     assert names == {
         "TestLogEvidence",
@@ -41,65 +63,78 @@ def test_attachments_map_to_expected_classes(evidence_registry: EvidenceRegistry
     }
 
 
-def test_two_text_plain_split_by_device_id(evidence_registry: EvidenceRegistry) -> None:
+def test_two_text_plain_split_by_device_id() -> None:
     # text/plain + test -> TestLog ; text/plain + browser.default -> BrowserLog
-    evidences = evidence_registry.build_for(
+    evidences = EvidenceRegistry().build_for(
         _scenario(
-            Platform.WEB,
-            [_att("text/plain", "test", "T"), _att("text/plain", "browser.default", "B")],
-        )
+            [_att("text/plain", "test", "T"), _att("text/plain", "browser.default", "B")]
+        ),
+        _FULL_PROFILE,
     )
     by_name = {type(e).evidence_name: e for e in evidences}
     assert by_name["TestLogEvidence"].to_block().label == BLOCK_STEPS
     assert by_name["BrowserLogEvidence"].to_block().label == BLOCK_BROWSER
 
 
-def test_mobile_png_prefix_matches_mobile_screenshot(
-    evidence_registry: EvidenceRegistry,
-) -> None:
-    evidences = evidence_registry.build_for(
+def test_mobile_png_prefix_matches_mobile_screenshot() -> None:
+    evidences = EvidenceRegistry().build_for(
         _scenario(
-            Platform.MOBILE,
-            [
-                _att("text/plain", "test", "T"),
-                _att("image/png", "mobile.ios.iPhone 14 Pro Max", "", "m.png"),
-            ],
-        )
+            [_att("image/png", "mobile.ios.iPhone 14 Pro Max", "", "m.png")]
+        ),
+        _FULL_PROFILE,
     )
     by_name = {type(e).evidence_name: e for e in evidences}
     assert by_name["MobileScreenshotEvidence"].screenshot_path == "m.png"
     assert by_name["MobileScreenshotEvidence"].to_block() is None  # png not to LLM
 
 
-def test_html_block_and_png_no_block(evidence_registry: EvidenceRegistry) -> None:
-    evidences = evidence_registry.build_for(_scenario(Platform.WEB, _web_attachments()))
+def test_html_block_and_png_no_block() -> None:
+    evidences = EvidenceRegistry().build_for(
+        _scenario(_web_attachments()), _FULL_PROFILE
+    )
     by_name = {type(e).evidence_name: e for e in evidences}
     assert by_name["HtmlEvidence"].to_block().label == BLOCK_DOM
     assert by_name["WebScreenshotEvidence"].to_block() is None
 
 
-def test_flag_override_stops_evidence_going_to_llm(settings: Settings) -> None:
-    flags = {**settings.evidence_flags}
-    flags["BrowserLogEvidence"] = {"goes_to_llm": False, "goes_to_store": True}
-    registry = EvidenceRegistry(flags)
-    evidences = registry.build_for(_scenario(Platform.WEB, _web_attachments()))
+def test_profile_controls_llm_flag() -> None:
+    # Profile without BrowserLog in evidence_to_llm: its block disappears —
+    # a config-only change, no code.
+    minimal = _profile(["TestLogEvidence"])
+    evidences = EvidenceRegistry().build_for(_scenario(_web_attachments()), minimal)
     by_name = {type(e).evidence_name: e for e in evidences}
-    assert by_name["BrowserLogEvidence"].to_block() is None  # config-only change
+    assert by_name["TestLogEvidence"].to_block() is not None
+    assert by_name["BrowserLogEvidence"].to_block() is None
+    assert by_name["HtmlEvidence"].to_block() is None
 
 
-def test_missing_expected_evidence_is_flagged(
-    evidence_registry: EvidenceRegistry,
-) -> None:
-    # Web scenario but no HTML attachment arrived (browser did not open).
-    attachments = [a for a in _web_attachments() if a.mime_type != "text/html"]
-    scenario = _scenario(Platform.WEB, attachments)
-    evidences = evidence_registry.build_for(scenario)
-    missing = evidence_registry.missing_names(Platform.WEB, evidences)
-    assert "HtmlEvidence" in missing
-
-
-def test_unknown_attachment_is_skipped(evidence_registry: EvidenceRegistry) -> None:
-    evidences = evidence_registry.build_for(
-        _scenario(Platform.WEB, [_att("application/pdf", "weird", "?")])
+def test_unknown_attachment_is_skipped() -> None:
+    evidences = EvidenceRegistry().build_for(
+        _scenario([_att("application/pdf", "weird", "?")]), _FULL_PROFILE
     )
     assert evidences == []
+
+
+def test_jenkins_attachment_maps_to_jenkins_evidence() -> None:
+    profile = _profile(["JenkinsLogEvidence"])
+    evidences = EvidenceRegistry().build_for(
+        _scenario([_att("text/plain", "jenkins", "job log")]), profile
+    )
+    assert [type(e).evidence_name for e in evidences] == ["JenkinsLogEvidence"]
+    assert evidences[0].to_block().label == "CONSOLE.LOG"
+
+
+def test_profile_rules_are_applied_to_content() -> None:
+    # A rule on HtmlEvidence must shape only that evidence's content.
+    profile = _profile(
+        ["TestLogEvidence", "HtmlEvidence"],
+        rules={"HtmlEvidence": [{"type": "max_chars", "n": 4}]},
+    )
+    evidences = EvidenceRegistry().build_for(_scenario(_web_attachments()), profile)
+    by_name = {type(e).evidence_name: e for e in evidences}
+
+    assert by_name["HtmlEvidence"].was_trimmed is True
+    assert by_name["HtmlEvidence"].to_block().content.startswith("<htm")
+    # test.log has no rules -> untouched
+    assert by_name["TestLogEvidence"].was_trimmed is False
+    assert by_name["TestLogEvidence"].to_block().content == "steps"

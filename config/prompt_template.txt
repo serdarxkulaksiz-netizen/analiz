@@ -4,13 +4,9 @@ GÖREV: Aşağıda başarısız olmuş bir otomasyon test senaryosunun ham kanı
 Bunları incele ve KESİN HÜKÜM DEĞİL, gerekçeli bir ÖN TEŞHİS üret:
 hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa geçici mi?
 
-Banka: $bank
-Platform: $platform
+Parametre1: $parameter1
+Parametre2: $parameter2
 Senaryo: $scenario_name
-
-NOT (platform bağlamı): "web" tarayıcı testi, "mobile" cihaz testi, "hybrid" ise TEK senaryoda
-hem web hem mobil adım içerir (ör. web'de işlem başlar → telefona push gelir → onaylanır →
-web'e dönülür). "element bulunamadı" gibi bir hatanın anlamı platforma göre değişir; bunu dikkate al.
 
 === PATLAYAN ADIM ===
 $failed_step
@@ -21,14 +17,11 @@ $error_message
 === ADIM SONUÇLARI ===
 $steps
 
-=== EKSİK KANITLAR ===
-$missing_evidence
-(Yukarıda kanıt listelenmişse: beklenen bu kanıt(lar) gelmedi. Bu başlı başına bir ipucudur —
-ör. "web senaryosu ama DOM yok" tarayıcının hiç açılamadığına işaret edebilir. Teşhisinde kullan.)
-
 --- HAM KANIT BLOKLARI ---
 $evidence_blocks
 --- HAM KANIT SONU ---
+
+$extra_context
 
 KURALLAR (UYULMASI ZORUNLU):
 1. Adım adım düşün; teşhisini YALNIZCA yukarıdaki kanıta dayandır.

@@ -14,13 +14,18 @@ Yapım geçmişi ve açık noktalar: [`CHANGELOG.md`](CHANGELOG.md).
 Source (VisiumGo) → Extraction (Evidence → Findings) → PreCheck → Prompt → LLM (tek atış) → Parse (JSON) → Persist + API
 ```
 
-- **Davranış dallanması YOK:** `if mock` / `if platform ==` / `if type ==` yerine
+- **Davranış dallanması YOK:** `if mock` / `if type ==` yerine
   ayrı sınıf + arayüz + registry + DI. Yeni varyant = registry'ye bir satır.
 - **Agentless / tek-atış:** senaryo başına tek prompt, tek LLM çağrısı; tool-calling yok.
 - **Parse-minimal:** ham kanıt etiketli bloklar halinde LLM'e gider; alan-parser yok.
-- **Evidence mimarisi:** 5 kanıt sınıfı + registry; `goes_to_llm`/`goes_to_store`
-  bayrakları config'ten; her kanıtın content selector'ı (bugün passthrough); eksik
-  kanıt tolere edilir. Beklenen kanıt seti platforma göre registry'den gelir.
+- **Job bazlı özelleştirme:** `config/profiles.json`'daki **analiz profili**,
+  `job_id`'ye göre otomatik seçilir (`parameter1` ile elle ezilebilir). Profil
+  hem *hangi kanıt* prompt'a girer hem de *o kanıtın içine ne yapılır*
+  (kes/seç/ekle) belirler. Yeni job = **config'e satır**, kod değişmez.
+- **Evidence mimarisi:** 6 kanıt sınıfı + registry (`mimeType`+`deviceId` eşleme);
+  her kanıtın content selector'ı profil kurallarını uygular.
+- **Her şey kaydedilir:** VisiumGo'dan gelen tüm ham cevaplar (run, results,
+  senaryo detayı, attachment dosyaları) `database/` altına yazılır.
 - **PreCheck kancası:** bugün `NoOpPreCheck` (her zaman LLM'e gider); kural listesi yok.
 - **DB simülasyonu:** `database/<tablo>/<id>.json`; Repository arayüzü arkasında
   (ileride SQLite/Oracle tak-çıkar).
@@ -62,11 +67,16 @@ uvicorn app.main:app --reload
 
 ```bash
 # analizi başlat (hemen analyzer_run_id döner, arka planda çalışır)
-# platform GİRDİDİR (tahmin edilmez): web | mobile | hybrid
+# parameter1/parameter2 opsiyonel (verilmezse "default") — analiz profilini seçer
 # job_id VEYA run_id verilir (ikisi de olursa run_id kazanır)
 curl -X POST http://127.0.0.1:8000/analyze/visiumgo \
   -H "Content-Type: application/json" \
-  -d '{"bank": "demo", "job_id": "job-42", "platform": "web"}'
+  -d '{"job_id": "job-42"}'
+
+# özelleştirilmiş analiz (config/profiles.json'daki profil seçilir)
+curl -X POST http://127.0.0.1:8000/analyze/visiumgo \
+  -H "Content-Type: application/json" \
+  -d '{"parameter1": "projeX", "parameter2": "minimal", "job_id": "job-42"}'
 
 # durumu / sonuçları sorgula
 curl http://127.0.0.1:8000/analyze/visiumgo/<analyzer_run_id>
@@ -78,14 +88,52 @@ prompt + ham cevap), `analysis_results/` (teşhisler). Hepsi insan-okunur JSON.
 Mock kolaylığı: `job_id` sonu `-clean` biterse job hatasız kabul edilir
 ("analiz edilecek hata yok" yolu).
 
+## Job bazlı özelleştirme — `config/profiles.json`
+
+Her job için "hangi kanıt gitsin" ve "o kanıtın içine ne yapılsın" burada tanımlanır.
+Kod değişmez; profil `job_id` ile otomatik bulunur.
+
+```json
+{
+  "default":     { "evidence_to_llm": ["TestLogEvidence","HtmlEvidence","BrowserLogEvidence"],
+                   "evidence_to_store": ["TestLogEvidence","HtmlEvidence","BrowserLogEvidence",
+                                         "JenkinsLogEvidence","WebScreenshotEvidence","MobileScreenshotEvidence"] },
+
+  "B_testlog":   { "job_ids": ["901"], "evidence_to_llm": ["TestLogEvidence"] },
+
+  "C_jenkins":   { "job_ids": ["1204"], "evidence_to_llm": ["JenkinsLogEvidence"],
+                   "rules": { "JenkinsLogEvidence": [
+                     {"type":"keep_scenario_section","start":"Scenario: {scenario_name}","end":"Scenario: "}]}},
+
+  "D_dom_sec":   { "job_ids": ["1350"], "evidence_to_llm": ["TestLogEvidence","HtmlEvidence"],
+                   "rules": { "HtmlEvidence": [
+                     {"type":"strip_tags","tags":["script","style"]},
+                     {"type":"select_nth","match":{"tag":"LinearLayout"},"index":0}]},
+                   "extra_context": "Bu projede ilk layout kritiktir." }
+}
+```
+
+**Profil seçimi:** `parameter1` bir profil adı verirse o kazanır → yoksa `job_ids`
+eşleşmesi → yoksa `default`. Var olmayan profil adı verilirse koşum `failed` olur
+(sessizce yanlış profille analiz etmez).
+
+**Kural tipleri:** `keep_scenario_section` (job-seviyesi logu senaryo bazında dilimler) ·
+`keep_last_lines` / `keep_first_lines` · `drop_matching` / `keep_matching` (regex) ·
+`strip_tags` (etiketi alt ağacıyla siler) · `select_nth` (N'inci elementi alır) ·
+`collapse_whitespace` · `max_chars`. Yeni kural tipi = 1 sınıf + registry'ye 1 satır.
+
+> Kurallar **yalnız prompt'u** etkiler; `database/` altına ham içerik **tam** yazılır.
+> Kesme olduysa sonuçta `truncated=true` + `truncated_note` görünür (sessiz kayıp yok).
+
 ## Mock → Gerçek geçişi (kod değişmeden, yalnızca `.env`)
 
 | Ne | `.env` değişikliği |
 |---|---|
 | Gerçek lokal LLM | `LLM_PROVIDER=openai_compatible`, `LLM_BASE_URL=<url>`, `LLM_ENDPOINT_PATH=/api/v1/extension/send` (auth yok; `model` body'de gönderilmez) |
 | Gerçek VisiumGo | `SOURCE_PROVIDER=visiumgo`, `VISIUMGO_BASE_URL=<url>`, `VISIUMGO_TOKEN=<JWT>` (extractor kaynaktan bağımsız, ayrı ayar yok) |
-| Kırpma eşiği | `TRUNCATION_THRESHOLD_TOKENS=<model context'ine göre>` (0 = kesme yok; kırpma Evidence içi) |
-| Kanıt akışı | `EVIDENCE_FLAGS=<JSON>` → hangi kanıt LLM'e/depoya gider (varsayılan koddadır) |
+| Jenkins log | `VISIUMGO_JENKINS_LOG_PATH=/api/runs/{run_id}/jenkins-log` (VisiumGo'nun kendi endpoint'i; boş = atla) |
+| Kırpma eşiği | `TRUNCATION_THRESHOLD_TOKENS=<model context'ine göre>` (0 = kesme yok; deterministik kırpma profil kurallarında) |
+| Kanıt akışı / kırpma | `config/profiles.json` → job bazlı profil + kurallar |
 | Paralellik | `MAX_CONCURRENCY=<n>` |
 | Önbellek | `CACHE_ENABLED=false` → aynı job tekrar analiz edilir |
 

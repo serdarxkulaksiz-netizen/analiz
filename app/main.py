@@ -1,7 +1,7 @@
 """FastAPI app — async start/poll API (plan.md A13).
 
 Endpoints (names frozen, plan.md B3.2):
-  POST /analyze/visiumgo {bank, platform, job_id?/run_id?} -> analyzer_run_id
+  POST /analyze/visiumgo {parameter1?, parameter2?, job_id?/run_id?} -> analyzer_run_id
   GET  /analyze/visiumgo/{analyzer_run_id} -> status + finished diagnoses (from disk)
 
 Every pluggable backend (source, LLM, precheck) is chosen from config via a
@@ -16,7 +16,8 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, model_validator
 
 from app.config import Settings, get_settings
-from app.domain.enums import Platform, RunStatus
+from app.domain.enums import RunStatus
+from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
 from app.extraction.evidence_extractor import EvidenceExtractor
 from app.llm.mock import MockLLMProvider
@@ -34,14 +35,15 @@ from app.source.visiumgo_client import VisiumGoClient
 
 
 class AnalyzeRequest(BaseModel):
-    """Body of POST /analyze/visiumgo (plan.md A13 + real-spec Adım A).
+    """Body of POST /analyze/visiumgo.
 
-    `platform` is input (A4.2). Either `job_id` or `run_id` must be given
-    (run_id wins if both are present).
+    `parameter1`/`parameter2` are generic customization keys selecting the
+    analysis profile (config/profiles.json); omitted -> "default". Either
+    `job_id` or `run_id` must be given (run_id wins if both are present).
     """
 
-    bank: str
-    platform: Platform
+    parameter1: str = "default"
+    parameter2: str = "default"
     job_id: str = ""
     run_id: str = ""
 
@@ -68,6 +70,7 @@ SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
             verify_ssl=s.visiumgo_verify_ssl,
         ),
         _attachments_dir(s),
+        jenkins_log_path=s.visiumgo_jenkins_log_path,
     ),
 }
 
@@ -101,12 +104,13 @@ def _select(registry: dict[str, Callable[[Settings], object]], key: str, kind: s
 
 def build_service(settings: Settings) -> AnalyzerService:
     """Wire the whole chain from config (dependency injection root)."""
-    registry = EvidenceRegistry(settings.evidence_flags)
     return AnalyzerService(
         settings=settings,
         repository=FileRepository(settings.database_dir),
         source=_select(SOURCE_REGISTRY, settings.source_provider, "source")(settings),
-        extractor=EvidenceExtractor(registry),
+        extractor=EvidenceExtractor(
+            EvidenceRegistry(), ProfileRegistry(settings.profiles_config_path)
+        ),
         prompt_builder=PromptBuilder(
             settings.prompt_template_path, settings.confidence_buckets
         ),
@@ -130,7 +134,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: AnalyzeRequest, background_tasks: BackgroundTasks
     ) -> dict[str, str]:
         analyzer_run_id = service.create_run(
-            request.bank, request.job_id, request.platform, request.run_id
+            request.parameter1, request.job_id, request.parameter2, request.run_id
         )
         # Single trigger call — swapping BackgroundTasks for a real queue
         # (Redis) only changes this line (plan.md A13).

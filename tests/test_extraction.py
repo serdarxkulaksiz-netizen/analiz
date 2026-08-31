@@ -1,6 +1,8 @@
 """EvidenceExtractor tests: RawScenario -> Findings (plan.md A5, A6)."""
 
-from app.domain.enums import Platform, StepStatus
+import pytest
+
+from app.domain.enums import StepStatus
 from app.domain.findings import (
     BLOCK_BROWSER,
     BLOCK_CONSOLE,
@@ -23,10 +25,9 @@ def _att(mime: str, device: str, content: str = "x", path: str = "") -> Attachme
     )
 
 
-def _web_scenario(**overrides: object) -> RawScenario:
+def _scenario(**overrides: object) -> RawScenario:
     base = dict(
-        scenario_name="Web senaryosu",
-        platform=Platform.WEB,
+        scenario_name="Senaryo",
         error_text="NoSuchElementException: #btn",
         steps=[
             Step(name="Adım bir", status=StepStatus.PASSED),
@@ -38,16 +39,17 @@ def _web_scenario(**overrides: object) -> RawScenario:
             _att("text/html", "browser.default", "<html/>"),
             _att("image/png", "browser.default", "", "web.png"),
         ],
+        raw_detail={"properties": {"x": "1"}},
     )
     base.update(overrides)
     return RawScenario(**base)  # type: ignore[arg-type]
 
 
-def test_web_scenario_full_findings(extractor: EvidenceExtractor) -> None:
-    findings = extractor.extract(_web_scenario(), bank="demo")
+def test_default_profile_full_findings(extractor: EvidenceExtractor) -> None:
+    findings = extractor.extract(_scenario())
 
-    assert findings.platform is Platform.WEB
-    assert findings.bank == "demo"
+    assert findings.parameter1 == "default"
+    assert findings.parameter2 == "default"
     assert findings.failed_step == "Adım iki"  # first FAILED step
     assert findings.error_message == "NoSuchElementException: #btn"
     labels = [b.label for b in findings.evidence_blocks]
@@ -56,37 +58,26 @@ def test_web_scenario_full_findings(extractor: EvidenceExtractor) -> None:
     assert BLOCK_DOM in labels
     assert BLOCK_ERROR in labels  # HATA = error_text
     assert findings.screenshot_paths == ["web.png"]
-    assert findings.missing_evidence == []
 
 
-def test_mobile_scenario_expects_mobile_shot(extractor: EvidenceExtractor) -> None:
-    scenario = RawScenario(
-        scenario_name="Mobil",
-        platform=Platform.MOBILE,
-        error_text="boom",
-        steps=[Step(name="x", status=StepStatus.FAILED)],
-        attachments=[
-            _att("text/plain", "test", "log"),
-            _att("image/png", "mobile.android.samsung", "", "m.png"),
-        ],
-    )
-    findings = extractor.extract(scenario)
+def test_parameters_are_stamped(extractor: EvidenceExtractor) -> None:
+    # parameter2 is free text (recorded only); parameter1 must name a profile.
+    findings = extractor.extract(_scenario(), parameter2="tipY")
+    assert findings.parameter1 == "default"
+    assert findings.parameter2 == "tipY"
+    assert findings.profile_name == "default"
     labels = [b.label for b in findings.evidence_blocks]
-    assert BLOCK_DOM not in labels and BLOCK_BROWSER not in labels
-    assert findings.screenshot_paths == ["m.png"]
-    assert findings.missing_evidence == []
+    assert BLOCK_DOM in labels and BLOCK_BROWSER in labels
 
 
-def test_missing_html_is_flagged(extractor: EvidenceExtractor) -> None:
-    scenario = _web_scenario(
-        attachments=[_att("text/plain", "test", "log")]  # only test.log
-    )
-    findings = extractor.extract(scenario)
-    assert "HtmlEvidence" in findings.missing_evidence
-    assert "BrowserLogEvidence" in findings.missing_evidence
+def test_unknown_profile_name_raises(extractor: EvidenceExtractor) -> None:
+    # Loud failure instead of silently analyzing with the wrong profile.
+    with pytest.raises(ValueError, match="Unknown profile"):
+        extractor.extract(_scenario(), parameter1="boyle-profil-yok")
 
 
-def test_jenkins_console_log_block(extractor: EvidenceExtractor) -> None:
-    findings = extractor.extract(_web_scenario(), jenkins_console_log="jenkins out")
-    console = [b for b in findings.evidence_blocks if b.label == BLOCK_CONSOLE]
-    assert console and "jenkins out" in console[0].content
+def test_jenkins_log_is_profile_controlled(extractor: EvidenceExtractor) -> None:
+    # The default profile does NOT send the job-level Jenkins log (it holds all
+    # scenarios and would bloat every prompt); a profile must opt in.
+    findings = extractor.extract(_scenario(), jenkins_console_log="jenkins out")
+    assert not [b for b in findings.evidence_blocks if b.label == BLOCK_CONSOLE]

@@ -7,18 +7,6 @@ contracts and must not change (plan.md B3.2).
 from enum import Enum
 
 
-class Platform(str, Enum):
-    """Test platform — comes as INPUT, never guessed (plan.md A4.2).
-
-    `hybrid` = a single scenario with both web and mobile steps (e.g. a web
-    transaction triggers a phone push, approved on the device, back to web).
-    """
-
-    WEB = "web"
-    MOBILE = "mobile"
-    HYBRID = "hybrid"
-
-
 class Verdict(str, Enum):
     """Action decision produced by the LLM (plan.md A10) — 6 values."""
 

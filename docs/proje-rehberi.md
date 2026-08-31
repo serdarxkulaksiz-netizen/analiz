@@ -12,7 +12,7 @@ Başarısız test senaryolarını (VisiumGo'dan) çekip, ham kanıtı bir LLM'e 
 diske yazan **asenkron FastAPI backend**. İki endpoint: **başlat** (POST) ve **sorgula** (GET).
 
 Tasarımın özü: **6 halka**, her biri bir **arayüz** arkasında; hangi gerçeklemenin kullanılacağı
-`.env`/config'ten seçilir. Kodda `if mock` / `if platform ==` **yoktur** — her varyant ayrı sınıf +
+`.env`/config'ten seçilir. Kodda `if mock` / `if type ==` **yoktur** — her varyant ayrı sınıf +
 registry + dependency injection.
 
 ```
@@ -56,7 +56,8 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `visiumgo_timeout_seconds` | `60` | VisiumGo HTTP timeout |
 | `visiumgo_verify_ssl` | `False` | VisiumGo SSL doğrulama (iç ağ için kapalı) |
 | `truncation_threshold_tokens` | `0` | Kırpma eşiği (0 = kapalı; dikiş hazır, henüz bağlı değil) |
-| `evidence_flags` | (kod default) | Her kanıt tipi LLM'e/depoya gider mi (`goes_to_llm`/`goes_to_store`) |
+| `profiles_config_path` | `config/profiles.json` | Analiz profilleri: job bazlı — hangi kanıt LLM'e/depoya gider + kırpma kuralları |
+| `visiumgo_jenkins_log_path` | boş | VisiumGo'nun jenkins-log endpoint'i (`{run_id}`); boş = atla |
 | `precheck_provider` | `noop` | LLM öncesi kancası (bugün sadece noop) |
 | `prompt_template_path` | `config/prompt_template.txt` | Prompt şablonunun yolu |
 | `confidence_buckets` | `[0.1,0.25,0.5,0.75,0.99]` | İzin verilen güven değerleri |
@@ -77,7 +78,6 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 
 | Enum | Değerler |
 |---|---|
-| `Platform` | `web`, `mobile`, `hybrid` (girdi olarak gelir, tahmin edilmez) |
 | `Verdict` | `test_maintenance`, `application_bug`, `environment_error`, `transient_error`, `unknown`, `inconclusive` |
 | `StepStatus` | `PASSED`, `FAILED`, `SKIPPED` |
 | `RunStatus` | `pending`, `running`, `done`, `failed` |
@@ -89,16 +89,25 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 
 **`Attachment`** (bir ham dosya) — `file_name`, `mime_type`, `device_id`, `content` (metin), `stored_path` (diskteki yolu).
 
-**`RawScenario`** (bir başarısız senaryonun ham hali) — `scenario_name`, `platform`, `scenario_id`,
-`error_text`, `steps: list[Step]`, `attachments: list[Attachment]`, `retry_info`.
+**`RawScenario`** (bir başarısız senaryonun ham hali) — `scenario_name`, `scenario_id`,
+`error_text`, `steps: list[Step]`, `attachments: list[Attachment]`, `retry_info`,
+`raw_detail` (senaryo-detay API cevabının HAM hali — her şey kaydedilir kuralı).
 
-**`JobData`** (bir job koşusunun tamamı) — `bank`, `job_id`, `run_id`, `platform`, `job_name`,
+**`JobData`** (bir job koşusunun tamamı) — `job_id`, `run_id`, `job_name`,
 `run_result` (özet dict), `total_scenario_count`, `failed_scenarios: list[RawScenario]`,
-`jenkins_console_log`, `raw_run_response`.
+`jenkins_console_log`, `raw_run_response`, `raw_results_response` (ham /results dizisi).
 
-**`Findings`** (Halka 2 → 3 sözleşmesi) — `platform`, `bank`, `scenario_name`, `failed_step`,
-`error_message`, `steps: list[Step]`, `evidence_blocks: list[EvidenceBlock]`, `missing_evidence: list`,
+**`Findings`** (Halka 2 → 3 sözleşmesi) — ayrıca `profile_name`, `extra_context`, `truncated`,
+`truncated_note` (hangi profil çalıştı, ek bağlam, kırpma olduysa görünür bayrak) —
+`parameter1`, `parameter2`, `scenario_name`, `failed_step`,
+`error_message`, `steps: list[Step]`, `evidence_blocks: list[EvidenceBlock]`,
 `screenshot_paths: list`, `retry_info`.
+
+**`Profile`** (analiz profili) — `name`, `job_ids: list`, `evidence_to_llm: list`,
+`evidence_to_store: list`, `rules_for(evidence_name) -> list[Rule]`, `extra_context`
+(`config/profiles.json`'dan; job_id ya da parameter1 ile seçilir).
+
+**`Rule`** (içerik kuralı) — `apply(text, ctx) -> str`. `RuleContext`: `scenario_name`, `error_text`.
 
 **`Step`** — `name`, `status` (StepStatus). **`EvidenceBlock`** — `label`, `content`.
 
@@ -107,8 +116,8 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 `summary`, `most_relevant_log_lines: list`, `error_signature`.
 
 **`AnalysisResult`** (diske yazılan teşhis satırı) — `result_id`, `analyzer_run_id` + tüm LLM alanları
-+ sistem meta: `platform`, `bank`, `truncated`, `truncated_note`, `screenshot_paths`,
-`missing_evidence`, `raw_llm_response`, `status` (AnalysisStatus), `meta`.
++ sistem meta: `parameter1`, `parameter2`, `truncated`, `truncated_note`, `screenshot_paths`,
+`raw_llm_response`, `status` (AnalysisStatus), `meta`.
 
 **`AnalysisMeta`** — `llm_model`, `input_tokens`, `output_tokens`, `duration_ms`, `analyzed_at`.
 
@@ -121,12 +130,12 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 **`Source`** (arayüz)
 | Method | Ne yapar |
 |---|---|
-| `fetch_job(bank, job_id, platform, run_id="")` | Bir job'ın başarısız senaryolarını `JobData` olarak döndürür. `platform` girdidir; `job_id` veya `run_id`'den biri koşumu belirler |
+| `fetch_job(job_id, run_id="")` | Bir job'ın başarısız senaryolarını `JobData` olarak döndürür. `job_id` veya `run_id`'den biri koşumu belirler (parametreler source'a gitmez — yalnız analiz tarafını özelleştirir) |
 
 **`MockSource`** (sahte veri; VisiumGo kapalıyken çalışır)
 | Method | Ne yapar |
 |---|---|
-| `fetch_job(...)` | 2 başarısız sahte senaryo döndürür (hepsi `MOCK_` etiketli). `job_id` sonu `-clean` → hatasız job. **Platform dallanması yok**: attachment seti platform'a göre bir sözlükten seçilir |
+| `fetch_job(...)` | 2 başarısız sahte senaryo döndürür (hepsi `MOCK_` etiketli). `job_id` sonu `-clean` → hatasız job. Her senaryo TÜM attachment tiplerini taşır; prompt'a ne gireceğini profil seçer |
 
 **`VisiumGoSource`** (gerçek VisiumGo API)
 | Method | Ne yapar |
@@ -134,7 +143,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `__init__(client, attachments_dir)` | HTTP client + inen dosyaların kaydedileceği klasör enjekte edilir |
 | `fetch_job(...)` | Zincir A-D'yi çalıştırır, `JobData` döndürür |
 | `_resolve_run(job_id, run_id)` | **Adım A**: `run_id` verildiyse onu kullanır; yoksa `/api/runs?jobId=` → `startTime` en büyük koşum |
-| `_build_scenario(run_id, record, platform)` | **Adım C**: senaryo detayını çeker (`errorText`, `stepResults`, `attachments`) → `RawScenario`. Adım adı `line`'dan alınır |
+| `_build_scenario(run_id, record)` | **Adım C**: senaryo detayını çeker (`errorText`, `stepResults`, `attachments`) → `RawScenario`; ham detay cevabı `raw_detail`'de saklanır. Adım adı `line`'dan alınır |
 | `_download_attachment(run_id, meta)` | **Adım D**: dosyayı indirir (URL-encode), diske kaydeder; inmezse boş `Attachment` (o kanıt "eksik" sayılır) |
 | `_save(run_id, file_name, data)` | İnen dosyayı `database/attachments/...` altına yazar (pathlib) |
 
@@ -154,13 +163,13 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 **`Extractor`** (arayüz)
 | Method | Ne yapar |
 |---|---|
-| `extract(scenario, *, bank="", jenkins_console_log="")` | `RawScenario` → `Findings` |
+| `extract(scenario, *, parameter1="default", parameter2="default", job_id="", jenkins_console_log="")` | `RawScenario` → `Findings` (profil job_id/parameter1 ile seçilir) |
 
 **`EvidenceExtractor`** (tek, kaynaktan bağımsız gerçekleme)
 | Method | Ne yapar |
 |---|---|
-| `__init__(registry)` | `EvidenceRegistry` enjekte edilir |
-| `extract(...)` | Attachment'ları Evidence'lara çevirir; LLM'e gidecek blokları, screenshot yollarını ve eksik kanıtları toplar; `error_text`'ten HATA bloğu, FAILED adımdan `failed_step`, jenkins log'undan CONSOLE.LOG bloğu ekler → `Findings`. **Alan-çıkaran parser yok** (parse-minimal) |
+| `__init__(registry, profiles)` | `EvidenceRegistry` + `ProfileRegistry` enjekte edilir |
+| `extract(...)` | Profili seçer; jenkins log'u **sentetik attachment** yapar (böylece profil+kural onu da yönetir); Attachment'ları Evidence'lara çevirip LLM bloklarını ve screenshot yollarını toplar; `error_text`'ten HATA bloğu, FAILED adımdan `failed_step`; kırpma olduysa `truncated`+not → `Findings`. **Alan-çıkaran parser yok** (parse-minimal) |
 
 **`Evidence`** (kanıt arayüzü — 2 aile: metin ve ekran görüntüsü)
 | Üye | Ne yapar |
@@ -170,14 +179,16 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `is_present` / `is_missing` | Kanıt geldi mi (eksik tolere edilir) |
 | `to_block()` | LLM'e gidecek `=== etiket ===` bloğu (uygunsa), yoksa `None` |
 | `screenshot_path` | Ekran görüntüsü yolu (metin kanıtlarında boş) |
-| `from_attachment(attachment, *, goes_to_llm, goes_to_store)` | Attachment'tan kendini kurar (tip-dallanması gerekmeden) |
-| `select_content()` (metin) | İçerik seçici — **bugün passthrough** (kırpma dikişi burada) |
+| `from_attachment(attachment, *, goes_to_llm, goes_to_store, rules, ctx)` | Attachment'tan kendini kurar (tip-dallanması gerekmeden) |
+| `select_content()` (metin) | İçerik seçici — profilin kurallarını **sırayla** uygular (kural yoksa passthrough) |
+| `was_trimmed` | Kurallar içeriği gerçekten değiştirdi mi (görünür bayrak) |
 
-**5 kanıt sınıfı** (yalnızca bunlar):
-| Sınıf | mimeType + deviceId | LLM'e gider mi |
+**6 kanıt sınıfı** (yalnızca bunlar):
+| Sınıf | mimeType + deviceId | Varsayılan profilde LLM'e |
 |---|---|---|
 | `TestLogEvidence` | text/plain + `test` → **ADIMLAR** | ✅ |
 | `BrowserLogEvidence` | text/plain + `browser.default` → **BROWSER LOG** | ✅ |
+| `JenkinsLogEvidence` | text/plain + `jenkins` → **CONSOLE.LOG** | ❌ (job-seviyesi; profil açar) |
 | `HtmlEvidence` | text/html + `browser.default` → **DOM** | ✅ |
 | `WebScreenshotEvidence` | image/png + `browser.default` | ❌ (sadece diske) |
 | `MobileScreenshotEvidence` | image/png + `mobile.*` | ❌ (sadece diske) |
@@ -185,10 +196,26 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 **`EvidenceRegistry`**
 | Method | Ne yapar |
 |---|---|
-| `__init__(evidence_flags, platform_evidence=None)` | Config bayrakları + platform→beklenen set |
-| `build_for(scenario)` | Attachment'ları (mimeType+deviceId ile) Evidence örneklerine eşler |
-| `expected_names(platform)` | Bu platformda beklenen kanıt tipleri |
-| `missing_names(platform, present)` | Beklenen ama gelmeyenler (`missing_evidence`) |
+| `build_for(scenario, profile, ctx=None)` | Attachment'ları (mimeType+deviceId ile) Evidence'lara eşler; bayrakları **ve kuralları** profilden enjekte eder |
+
+**`ProfileRegistry`** (`app/evidence/profiles.py`)
+| Method | Ne yapar |
+|---|---|
+| `__init__(config_path)` | `profiles.json`'ı yükler, kuralları **açılışta derler**; `default` profili yoksa / aynı job_id iki profildeyse / kural config'i bozuksa **açılışta patlar** (fail-fast) |
+| `get(job_id="", parameter1="")` | Profili döndürür; sıra: `parameter1` (profil adı) → `job_ids` eşleşmesi → `default`. Bilinmeyen profil adı → hata |
+
+**Kural motoru** (`app/evidence/rules.py`) — `Rule.apply(text, ctx)`; `RULE_REGISTRY`'den seçilir.
+| Kural | Ne yapar |
+|---|---|
+| `keep_scenario_section` | Job-seviyesi logdan yalnız bu senaryonun bölümü (`{scenario_name}`) |
+| `keep_last_lines` / `keep_first_lines` | Son/ilk N satır |
+| `drop_matching` / `keep_matching` | Regex ile satır ele/tut |
+| `strip_tags` | Etiketi **alt ağacıyla** siler (script/style/comment) |
+| `select_nth` | N'inci elementi alt ağacıyla alır (ör. ilk `LinearLayout`) |
+| `collapse_whitespace` · `max_chars` | Boşluk sıkıştır · karakter sınırı |
+
+Yeni kural tipi = 1 sınıf + registry'ye 1 satır. Kural eşleşmezse içerik **bozulmaz**.
+Kurallar yalnız prompt'u etkiler; `database/` ham içeriği tam tutar.
 
 ---
 
@@ -206,7 +233,7 @@ denmek istenirse yeni bir PreCheck yazılıp registry'ye eklenir; üst kod deği
 | Method | Ne yapar |
 |---|---|
 | `__init__(template_path, confidence_buckets)` | Şablonu dosyadan yükler (yoksa açılışta patlar = fail-fast) |
-| `build(findings)` | Şablondaki `$platform`, `$bank`, `$scenario_name`, `$failed_step`, `$error_message`, `$steps`, `$missing_evidence`, `$evidence_blocks`, `$confidence_buckets` yerlerini doldurur → prompt metni. **Prompt metni koddan değil, `config/prompt_template.txt`'ten gelir** |
+| `build(findings)` | Şablondaki `$parameter1`, `$parameter2`, `$scenario_name`, `$failed_step`, `$error_message`, `$steps`, `$evidence_blocks`, `$confidence_buckets` yerlerini doldurur → prompt metni. **Prompt metni koddan değil, `config/prompt_template.txt`'ten gelir** |
 
 ---
 
@@ -259,11 +286,11 @@ Tüm halkaları enjekte alır; hiçbirini kendisi yaratmaz.
 | Method | Ne yapar |
 |---|---|
 | `__init__(settings, repository, source, extractor, prompt_builder, llm_provider, precheck)` | Parçaları takar; run satırı kilidi kurar |
-| `create_run(bank, job_id, platform, run_id="")` | `runs/` tablosuna `pending` satır yazar, `analyzer_run_id` döndürür (POST bunu çağırır) |
+| `create_run(parameter1, job_id, parameter2, run_id="")` | `runs/` tablosuna `pending` satır yazar, `analyzer_run_id` döndürür (POST bunu çağırır) |
 | `run_analysis(analyzer_run_id)` | **Tek tetik** (arka plan girişi). `_run_job`'u sarar; job-seviyesi hata → `status=failed` + not |
 | `_run_job(run)` | `running` yapar → (cache açıksa kontrol) → `source.fetch_job` → run'ı günceller → hata yoksa `done` → varsa her senaryo için `_analyze_scenario` (paralel, `Semaphore`) → `done` |
 | `_analyze_scenario(...)` | **Asıl zincir** (aşağıda). Asla exception fırlatmaz (bir senaryo koşuyu düşürmez) |
-| `_find_cached_run(run)` | Aynı bank+job_id'nin daha önce tam analizli koşusunu bulur (cache) |
+| `_find_cached_run(run)` | Aynı parametreler+job_id'nin daha önce tam analizli koşusunu bulur (cache) |
 | `_screenshot_paths(scenario)` | Ham iz satırı için image attachment yollarını toplar |
 | `_increment_completed(id)` | Kilit altında `completed_count += 1` |
 | `_update_run(run, **fields)` | Run satırını güncelleyip diske yazar |
@@ -285,7 +312,7 @@ Tüm halkaları enjekte alır; hiçbirini kendisi yaratmaz.
 
 | Parça | Ne yapar |
 |---|---|
-| `AnalyzeRequest` | POST gövdesi: `bank`, `platform`, `job_id`/`run_id` (biri zorunlu, yoksa 422) |
+| `AnalyzeRequest` | POST gövdesi: `parameter1?`, `parameter2?` (verilmezse "default"), `job_id`/`run_id` (biri zorunlu, yoksa 422) |
 | `SOURCE_REGISTRY` / `LLM_REGISTRY` / `PRECHECK_REGISTRY` | ad→fabrika sözlükleri; `.env`'deki isme göre gerçekleme seçilir (dallanma yok) |
 | `_select(registry, key, kind)` | Registry'den fabrika bulur; bilinmeyen ad → net hata |
 | `build_service(settings)` | **DI kökü**: config'e göre tüm parçaları kurup `AnalyzerService` döndürür |
@@ -299,7 +326,7 @@ Tüm halkaları enjekte alır; hiçbirini kendisi yaratmaz.
 
 | Tablo (klasör) | Bir satırda ne var |
 |---|---|
-| `runs/` | Job durumu: bank, platform, job_id/run_id, status, sayaçlar, `run_result`, `raw_run_response` |
+| `runs/` | Job durumu: parameter1/2, job_id/run_id, status, sayaçlar, `run_result`, `raw_run_response`, `raw_results_response` |
 | `evidence/` | Senaryonun ham hali (`raw_scenario` + screenshot yolları) |
 | `prompts/` | Gönderilen `prompt` + tam `request` + tam ham `raw_response` |
 | `llm_responses/` | LLM'in cevabı ayrı: `request` + `raw_response` (tam zarf) + `content` + model/token/süre |
@@ -314,7 +341,7 @@ arasında bağlıdır. `analyzer_run_id` ise hepsini bir job koşusuna bağlar.
 ## 9. Uçtan uca akış (özet)
 
 ```
-POST {bank, platform, job_id|run_id}
+POST {parameter1?, parameter2?, job_id|run_id}
   → create_run  → runs/ (pending)  → HEMEN analyzer_run_id döner
   → (arka plan) run_analysis → _run_job
         → source.fetch_job → JobData (başarısız senaryolar)
@@ -335,7 +362,9 @@ GET /{analyzer_run_id}  → get_run → diskten oku → durum + teşhisler
 | Mock → gerçek LLM | `.env`: `LLM_PROVIDER=openai_compatible` + `LLM_BASE_URL` |
 | SSL kapat | `.env`: `VISIUMGO_VERIFY_SSL=false` / `LLM_VERIFY_SSL=false` |
 | Cache aç/kapa | `.env`: `CACHE_ENABLED=true/false` |
-| Hangi kanıt LLM'e gitsin | `.env`: `EVIDENCE_FLAGS={...}` (ör. HTML'i kapat) |
+| Hangi kanıt LLM'e gitsin | `config/profiles.json`: job'a profil satırı ekle (`job_ids` + `evidence_to_llm`) |
+| Kanıtın içini kes/seç | Aynı profilde `rules` (ör. `strip_tags`, `select_nth`, `keep_scenario_section`) |
+| Prompt'a job'a özel not | Profilde `extra_context` |
 | Prompt metni | `config/prompt_template.txt` (kod değil) |
 | Paralellik | `.env`: `MAX_CONCURRENCY=n` |
 | Yeni kaynak/LLM/precheck | İlgili `*_REGISTRY`'ye 1 satır + yeni sınıf |

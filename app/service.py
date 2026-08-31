@@ -19,7 +19,7 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.domain.enums import AnalysisStatus, Platform, RunStatus
+from app.domain.enums import AnalysisStatus, RunStatus
 from app.domain.findings import Findings
 from app.domain.result import AnalysisMeta, AnalysisResult, LLMAnalysis
 from app.extraction.base import Extractor
@@ -62,7 +62,11 @@ class AnalyzerService:
     # ------------------------------------------------------------------ runs
 
     def create_run(
-        self, bank: str, job_id: str, platform: Platform, run_id: str = ""
+        self,
+        parameter1: str,
+        job_id: str,
+        parameter2: str,
+        run_id: str = "",
     ) -> str:
         """Persist a pending run row and return its analyzer_run_id."""
         analyzer_run_id = str(uuid4())
@@ -72,10 +76,10 @@ class AnalyzerService:
             analyzer_run_id,
             {
                 "analyzer_run_id": analyzer_run_id,
-                "bank": bank,
+                "parameter1": parameter1,
+                "parameter2": parameter2,
                 "job_id": job_id,
                 "run_id": run_id,  # requested; resolved value filled after fetch
-                "platform": platform.value,
                 "status": RunStatus.PENDING.value,
                 "scenario_count": 0,
                 "completed_count": 0,
@@ -83,6 +87,7 @@ class AnalyzerService:
                 "job_name": "",
                 "run_result": {},
                 "raw_run_response": {},
+                "raw_results_response": [],
                 "note": "",
                 "cached_from": "",
                 "created_at": now,
@@ -148,20 +153,21 @@ class AnalyzerService:
                     completed_count=cached.get("completed_count", 0),
                     total_scenario_count=cached.get("total_scenario_count", 0),
                     cached_from=cached["analyzer_run_id"],
-                    note="cache: aynı bank+job_id daha önce analiz edildi, sonuçlar diskten",
+                    note="cache: aynı parametreler+job_id daha önce analiz edildi, sonuçlar diskten",
                 )
                 return
 
-        platform = Platform(run["platform"])
         job = await self._source.fetch_job(
-            run["bank"], run.get("job_id", ""), platform, run.get("run_id", "")
+            run.get("job_id", ""), run.get("run_id", "")
         )
         self._update_run(
             run,
             run_id=job.run_id,  # resolved run id (real source may derive it)
             job_name=job.job_name,
             run_result=job.run_result,
-            raw_run_response=job.raw_run_response,  # full raw trace (plan.md A12)
+            # Full raw traces (save-everything rule, plan.md A12).
+            raw_run_response=job.raw_run_response,
+            raw_results_response=job.raw_results_response,
             scenario_count=len(job.failed_scenarios),
             total_scenario_count=job.total_scenario_count,
         )
@@ -178,7 +184,9 @@ class AnalyzerService:
                 self._analyze_scenario(
                     run["analyzer_run_id"],
                     scenario,
-                    bank=job.bank,
+                    parameter1=run.get("parameter1", "default"),
+                    parameter2=run.get("parameter2", "default"),
+                    job_id=run.get("job_id", ""),
                     jenkins_console_log=job.jenkins_console_log,
                     semaphore=semaphore,
                 )
@@ -190,11 +198,12 @@ class AnalyzerService:
         self._update_run(run, status=RunStatus.DONE.value)
 
     def _find_cached_run(self, run: dict[str, Any]) -> dict[str, Any] | None:
-        """Find a previously finished run for the same bank+job_id."""
+        """Find a previously finished run for the same parameters+job_id."""
         for row in self._repo.list(self._settings.table_runs):
             if (
                 row.get("analyzer_run_id") != run["analyzer_run_id"]
-                and row.get("bank") == run["bank"]
+                and row.get("parameter1") == run["parameter1"]
+                and row.get("parameter2") == run["parameter2"]
                 and row.get("job_id") == run["job_id"]
                 and row.get("status") == RunStatus.DONE.value
                 and not row.get("cached_from")
@@ -217,7 +226,9 @@ class AnalyzerService:
         analyzer_run_id: str,
         scenario: RawScenario,
         *,
-        bank: str,
+        parameter1: str,
+        parameter2: str,
+        job_id: str,
         jenkins_console_log: str,
         semaphore: asyncio.Semaphore,
     ) -> None:
@@ -226,7 +237,8 @@ class AnalyzerService:
             settings = self._settings
             result_id = str(uuid4())
 
-            # Full trace, part 1: raw evidence as received (all raw paths).
+            # Full trace, part 1: raw evidence as received (raw_detail included
+            # in raw_scenario — save-everything rule).
             self._repo.save(
                 settings.table_evidence,
                 result_id,
@@ -234,7 +246,6 @@ class AnalyzerService:
                     "result_id": result_id,
                     "analyzer_run_id": analyzer_run_id,
                     "scenario_name": scenario.scenario_name,
-                    "platform": scenario.platform.value,
                     "screenshot_paths": self._screenshot_paths(scenario),
                     "raw_scenario": scenario.model_dump(mode="json"),
                 },
@@ -250,7 +261,11 @@ class AnalyzerService:
 
             try:
                 findings = self._extractor.extract(
-                    scenario, bank=bank, jenkins_console_log=jenkins_console_log
+                    scenario,
+                    parameter1=parameter1,
+                    parameter2=parameter2,
+                    job_id=job_id,
+                    jenkins_console_log=jenkins_console_log,
                 )
 
                 # PreCheck (plan.md A7): may short-circuit before the LLM.
@@ -291,9 +306,10 @@ class AnalyzerService:
                 if not raw_response:
                     raw_response = f"<no response — {type(exc).__name__}: {exc}>"
 
-            # Platform-appropriate (registry-filtered) stored screenshots.
-            missing_evidence = findings.missing_evidence if findings else []
+            # Profile-filtered stored screenshots + visible trim flags.
             result_screenshots = findings.screenshot_paths if findings else []
+            truncated = findings.truncated if findings else False
+            truncated_note = findings.truncated_note if findings else ""
 
             # Full trace, part 2: exact prompt + full request + full raw answer.
             self._repo.save(
@@ -334,10 +350,11 @@ class AnalyzerService:
                     result_id=result_id,
                     analyzer_run_id=analyzer_run_id,
                     **analysis.model_dump(),
-                    platform=scenario.platform.value,
-                    bank=bank,
+                    parameter1=parameter1,
+                    parameter2=parameter2,
                     screenshot_paths=result_screenshots,
-                    missing_evidence=missing_evidence,
+                    truncated=truncated,
+                    truncated_note=truncated_note,
                     raw_llm_response=raw_response,
                     status=AnalysisStatus.OK,
                     meta=meta,
@@ -349,10 +366,11 @@ class AnalyzerService:
                     result_id=result_id,
                     analyzer_run_id=analyzer_run_id,
                     scenario_name=scenario.scenario_name,
-                    platform=scenario.platform.value,
-                    bank=bank,
+                    parameter1=parameter1,
+                    parameter2=parameter2,
                     screenshot_paths=result_screenshots,
-                    missing_evidence=missing_evidence,
+                    truncated=truncated,
+                    truncated_note=truncated_note,
                     raw_llm_response=raw_response,
                     status=AnalysisStatus.ANALYSIS_FAILED,
                     meta=meta,

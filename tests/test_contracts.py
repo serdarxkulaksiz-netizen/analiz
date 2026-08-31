@@ -1,33 +1,29 @@
 """Contract tests: frozen field names and enum values (plan.md A6, A10, B3.2)."""
 
-from app.domain.enums import (
-    AnalysisStatus,
-    Platform,
-    RunStatus,
-    StepStatus,
-    Verdict,
-)
+from app.domain.enums import AnalysisStatus, RunStatus, StepStatus, Verdict
 from app.domain.findings import Findings
 from app.domain.result import AnalysisResult, LLMAnalysis
 
 
 def test_findings_contract_fields_are_frozen() -> None:
     assert set(Findings.model_fields) == {
-        "platform",
-        "bank",
+        "parameter1",
+        "parameter2",
         "scenario_name",
         "failed_step",
         "error_message",
         "steps",
         "evidence_blocks",
-        "missing_evidence",
         "screenshot_paths",
         "retry_info",
+        "profile_name",
+        "extra_context",
+        "truncated",
+        "truncated_note",
     }
 
 
 def test_llm_analysis_contract_fields_are_frozen() -> None:
-    # plan.md A10: the LLM does NOT produce `platform` (system attaches it).
     assert set(LLMAnalysis.model_fields) == {
         "scenario_name",
         "root_cause",
@@ -48,12 +44,11 @@ def test_analysis_result_adds_only_system_meta() -> None:
     assert system_fields == {
         "result_id",
         "analyzer_run_id",
-        "platform",
-        "bank",
+        "parameter1",
+        "parameter2",
         "truncated",
         "truncated_note",
         "screenshot_paths",
-        "missing_evidence",
         "raw_llm_response",
         "status",
         "meta",
@@ -71,8 +66,7 @@ def test_verdict_values_are_frozen() -> None:
     }
 
 
-def test_platform_and_status_values_are_frozen() -> None:
-    assert {platform.value for platform in Platform} == {"web", "mobile", "hybrid"}
+def test_status_values_are_frozen() -> None:
     assert {status.value for status in RunStatus} == {
         "pending",
         "running",

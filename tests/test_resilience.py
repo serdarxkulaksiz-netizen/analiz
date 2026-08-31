@@ -3,7 +3,7 @@
 import pytest
 
 from app.config import Settings
-from app.domain.enums import Platform
+from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
 from app.extraction.evidence_extractor import EvidenceExtractor
 from app.llm.provider import LLMError, LLMProvider, LLMResponse
@@ -34,7 +34,9 @@ def _service(settings: Settings, llm: LLMProvider) -> AnalyzerService:
         settings=settings,
         repository=FileRepository(settings.database_dir),
         source=MockSource(),
-        extractor=EvidenceExtractor(EvidenceRegistry(settings.evidence_flags)),
+        extractor=EvidenceExtractor(
+            EvidenceRegistry(), ProfileRegistry(settings.profiles_config_path)
+        ),
         prompt_builder=PromptBuilder(
             settings.prompt_template_path, settings.confidence_buckets
         ),
@@ -48,7 +50,7 @@ async def test_garbage_llm_marks_scenarios_failed_but_job_finishes(
     settings: Settings,
 ) -> None:
     service = _service(settings, GarbageLLMProvider())
-    run_id = service.create_run("demo", "job-1", Platform.WEB)
+    run_id = service.create_run("default", "job-1", "default")
 
     await service.run_analysis(run_id)
 
@@ -69,7 +71,7 @@ async def test_llm_timeout_marks_scenarios_failed_but_job_finishes(
     settings: Settings,
 ) -> None:
     service = _service(settings, TimeoutLLMProvider())
-    run_id = service.create_run("demo", "job-1", Platform.WEB)
+    run_id = service.create_run("default", "job-1", "default")
 
     await service.run_analysis(run_id)
 
@@ -84,7 +86,7 @@ async def test_llm_timeout_marks_scenarios_failed_but_job_finishes(
 class FailingSource(Source):
     """A source whose fetch fails (e.g. VisiumGo unreachable / auth error)."""
 
-    async def fetch_job(self, bank, job_id, platform, run_id=""):  # type: ignore[no-untyped-def]
+    async def fetch_job(self, job_id, run_id=""):  # type: ignore[no-untyped-def]
         raise RuntimeError("VisiumGo unreachable")
 
 
@@ -94,14 +96,16 @@ async def test_source_failure_finishes_run_with_note(settings: Settings) -> None
         settings=settings,
         repository=FileRepository(settings.database_dir),
         source=FailingSource(),
-        extractor=EvidenceExtractor(EvidenceRegistry(settings.evidence_flags)),
+        extractor=EvidenceExtractor(
+            EvidenceRegistry(), ProfileRegistry(settings.profiles_config_path)
+        ),
         prompt_builder=PromptBuilder(
             settings.prompt_template_path, settings.confidence_buckets
         ),
         llm_provider=GarbageLLMProvider(),
         precheck=NoOpPreCheck(),
     )
-    run_id = service.create_run("demo", "job-1", Platform.WEB)
+    run_id = service.create_run("default", "job-1", "default")
 
     await service.run_analysis(run_id)
 

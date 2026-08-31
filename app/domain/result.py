@@ -3,7 +3,7 @@
 `LLMAnalysis` = fields the LLM must return (field names English, text content
 Turkish). `AnalysisResult` = the stored row: the same flat fields plus
 system-side metadata the code attaches (the LLM never produces these — notably
-`platform`/`bank`, which come from the request/Findings, not the model).
+`parameter1`/`parameter2`, which come from the request, not the model).
 
 No fabricated defaults for text fields (plan.md A10): if the LLM leaves a
 field out, it stays empty.
@@ -29,8 +29,8 @@ class LLMAnalysis(BaseModel):
 
     `verdict` and `confidence` are mandatory: if missing or invalid the
     response is rejected and the scenario is marked `analysis_failed`
-    (plan.md A9). `confidence` is stored as returned — no mapping. `platform`
-    is NOT here — the system attaches it (A10 system-side meta).
+    (plan.md A9). `confidence` is stored as returned — no mapping. The
+    parameters are NOT here — the system attaches them (A10 system-side meta).
     """
 
     scenario_name: str = ""
@@ -50,7 +50,7 @@ class AnalysisResult(BaseModel):
     """Stored analysis row: LLM fields (flat) + system-side meta.
 
     On `status=analysis_failed`, LLM analysis fields stay empty/None; only
-    `scenario_name`/`platform`/`bank` are filled by the system from the
+    `scenario_name`/`parameter1`/`parameter2` are filled by the system from the
     request/Findings (factual identity, not fabricated analysis) so the row
     stays traceable.
     """
@@ -73,12 +73,11 @@ class AnalysisResult(BaseModel):
     error_signature: str = ""
 
     # --- system-side meta (plan.md A10; code attaches, LLM never produces) ---
-    platform: str = ""
-    bank: str = ""
+    parameter1: str = "default"
+    parameter2: str = "default"
     truncated: bool = False
     truncated_note: str = ""
     screenshot_paths: list[str] = []
-    missing_evidence: list[str] = []
     raw_llm_response: str = ""
     status: AnalysisStatus = AnalysisStatus.OK
     meta: AnalysisMeta = AnalysisMeta()
