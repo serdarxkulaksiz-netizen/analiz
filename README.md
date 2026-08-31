@@ -132,7 +132,6 @@ eşleşmesi → yoksa `default`. Var olmayan profil adı verilirse koşum `faile
 | Gerçek lokal LLM | `LLM_PROVIDER=openai_compatible`, `LLM_BASE_URL=<url>`, `LLM_ENDPOINT_PATH=/api/v1/extension/send` (auth yok; `model` body'de gönderilmez) |
 | Gerçek VisiumGo | `SOURCE_PROVIDER=visiumgo`, `VISIUMGO_BASE_URL=<url>`, `VISIUMGO_TOKEN=<JWT>` (extractor kaynaktan bağımsız, ayrı ayar yok) |
 | Jenkins log | `VISIUMGO_JENKINS_LOG_PATH=/api/runs/{run_id}/jenkins-log` (VisiumGo'nun kendi endpoint'i; boş = atla) |
-| Kırpma eşiği | `TRUNCATION_THRESHOLD_TOKENS=<model context'ine göre>` (0 = kesme yok; deterministik kırpma profil kurallarında) |
 | Kanıt akışı / kırpma | `config/profiles.json` → job bazlı profil + kurallar |
 | Paralellik | `MAX_CONCURRENCY=<n>` |
 | Önbellek | `CACHE_ENABLED=false` → aynı job tekrar analiz edilir |

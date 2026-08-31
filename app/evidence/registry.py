@@ -32,6 +32,18 @@ _EVIDENCE_CLASSES: tuple[type[Evidence], ...] = (
 )
 
 
+def evidence_name_for(attachment: Attachment) -> str:
+    """Evidence type this attachment maps to, or "" if none matches.
+
+    Public because persistence also needs the mapping (to honour a profile's
+    `evidence_to_store` when writing the raw evidence row).
+    """
+    for cls in _EVIDENCE_CLASSES:
+        if cls.matches(attachment):
+            return cls.evidence_name
+    return ""
+
+
 class EvidenceRegistry:
     """Builds Evidence instances for a scenario, flagged and ruled by profile."""
 
@@ -48,9 +60,7 @@ class EvidenceRegistry:
         ctx: RuleContext | None = None,
     ) -> list[Evidence]:
         """One Evidence per mapped attachment; flags and rules come from profile."""
-        context = ctx or RuleContext(
-            scenario_name=scenario.scenario_name, error_text=scenario.error_text
-        )
+        context = ctx or RuleContext(scenario_name=scenario.scenario_name)
         evidences: list[Evidence] = []
         for attachment in scenario.attachments:
             cls = self._class_for(attachment)

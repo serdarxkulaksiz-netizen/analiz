@@ -37,7 +37,6 @@ class RuleContext(BaseModel):
     """Per-scenario context a rule may need (e.g. to find its own section)."""
 
     scenario_name: str = ""
-    error_text: str = ""
 
 
 class Rule(ABC):

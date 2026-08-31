@@ -55,7 +55,6 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `visiumgo_base_url` / `visiumgo_token` | boş | Gerçek VisiumGo adres + JWT (Bearer header) |
 | `visiumgo_timeout_seconds` | `60` | VisiumGo HTTP timeout |
 | `visiumgo_verify_ssl` | `False` | VisiumGo SSL doğrulama (iç ağ için kapalı) |
-| `truncation_threshold_tokens` | `0` | Kırpma eşiği (0 = kapalı; dikiş hazır, henüz bağlı değil) |
 | `profiles_config_path` | `config/profiles.json` | Analiz profilleri: job bazlı — hangi kanıt LLM'e/depoya gider + kırpma kuralları |
 | `visiumgo_jenkins_log_path` | boş | VisiumGo'nun jenkins-log endpoint'i (`{run_id}`); boş = atla |
 | `precheck_provider` | `noop` | LLM öncesi kancası (bugün sadece noop) |
@@ -98,7 +97,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 `jenkins_console_log`, `raw_run_response`, `raw_results_response` (ham /results dizisi).
 
 **`Findings`** (Halka 2 → 3 sözleşmesi) — ayrıca `profile_name`, `extra_context`, `truncated`,
-`truncated_note` (hangi profil çalıştı, ek bağlam, kırpma olduysa görünür bayrak) —
+`truncated_note`, `excluded_from_store` (hangi profil çalıştı, ek bağlam, kırpma/saklama bayrakları) —
 `parameter1`, `parameter2`, `scenario_name`, `failed_step`,
 `error_message`, `steps: list[Step]`, `evidence_blocks: list[EvidenceBlock]`,
 `screenshot_paths: list`, `retry_info`.
@@ -107,7 +106,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 `evidence_to_store: list`, `rules_for(evidence_name) -> list[Rule]`, `extra_context`
 (`config/profiles.json`'dan; job_id ya da parameter1 ile seçilir).
 
-**`Rule`** (içerik kuralı) — `apply(text, ctx) -> str`. `RuleContext`: `scenario_name`, `error_text`.
+**`Rule`** (içerik kuralı) — `apply(text, ctx) -> str`. `RuleContext`: `scenario_name`.
 
 **`Step`** — `name`, `status` (StepStatus). **`EvidenceBlock`** — `label`, `content`.
 
@@ -116,7 +115,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 `summary`, `most_relevant_log_lines: list`, `error_signature`.
 
 **`AnalysisResult`** (diske yazılan teşhis satırı) — `result_id`, `analyzer_run_id` + tüm LLM alanları
-+ sistem meta: `parameter1`, `parameter2`, `truncated`, `truncated_note`, `screenshot_paths`,
++ sistem meta: `parameter1`, `parameter2`, `profile_name`, `truncated`, `truncated_note`, `screenshot_paths`,
 `raw_llm_response`, `status` (AnalysisStatus), `meta`.
 
 **`AnalysisMeta`** — `llm_model`, `input_tokens`, `output_tokens`, `duration_ms`, `analyzed_at`.
@@ -140,12 +139,13 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 **`VisiumGoSource`** (gerçek VisiumGo API)
 | Method | Ne yapar |
 |---|---|
-| `__init__(client, attachments_dir)` | HTTP client + inen dosyaların kaydedileceği klasör enjekte edilir |
+| `__init__(client, attachments_dir, jenkins_log_path="")` | HTTP client + indirme klasörü + (varsa) VisiumGo jenkins-log yolu |
 | `fetch_job(...)` | Zincir A-D'yi çalıştırır, `JobData` döndürür |
 | `_resolve_run(job_id, run_id)` | **Adım A**: `run_id` verildiyse onu kullanır; yoksa `/api/runs?jobId=` → `startTime` en büyük koşum |
 | `_build_scenario(run_id, record)` | **Adım C**: senaryo detayını çeker (`errorText`, `stepResults`, `attachments`) → `RawScenario`; ham detay cevabı `raw_detail`'de saklanır. Adım adı `line`'dan alınır |
 | `_download_attachment(run_id, meta)` | **Adım D**: dosyayı indirir (URL-encode), diske kaydeder; inmezse boş `Attachment` (o kanıt "eksik" sayılır) |
 | `_save(run_id, file_name, data)` | İnen dosyayı `database/attachments/...` altına yazar (pathlib) |
+| `_fetch_jenkins_log(run_id)` | VisiumGo'nun jenkins-log endpoint'i (yol boşsa atlar; hata olursa boş döner, job devam eder) |
 
 > **Adım B** (`fetch_job` içinde): `/api/runs/{run_id}/results` → `resultType == "FAILED"` filtresi; PASSED/flaky atlanır.
 
@@ -176,7 +176,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 |---|---|
 | `mime_type` / `device_id` (sınıf özelliği) | Bu kanıtın hangi attachment'a uyduğu |
 | `matches(attachment)` | mimeType eşit + deviceId tam/prefix eşleşiyor mu (mobil için `mobile.` prefix) |
-| `is_present` / `is_missing` | Kanıt geldi mi (eksik tolere edilir) |
+| `is_present` | Kanıt geldi mi (eksik tolere edilir) |
 | `to_block()` | LLM'e gidecek `=== etiket ===` bloğu (uygunsa), yoksa `None` |
 | `screenshot_path` | Ekran görüntüsü yolu (metin kanıtlarında boş) |
 | `from_attachment(attachment, *, goes_to_llm, goes_to_store, rules, ctx)` | Attachment'tan kendini kurar (tip-dallanması gerekmeden) |
@@ -327,9 +327,9 @@ Tüm halkaları enjekte alır; hiçbirini kendisi yaratmaz.
 | Tablo (klasör) | Bir satırda ne var |
 |---|---|
 | `runs/` | Job durumu: parameter1/2, job_id/run_id, status, sayaçlar, `run_result`, `raw_run_response`, `raw_results_response` |
-| `evidence/` | Senaryonun ham hali (`raw_scenario` + screenshot yolları) |
-| `prompts/` | Gönderilen `prompt` + tam `request` + tam ham `raw_response` |
-| `llm_responses/` | LLM'in cevabı ayrı: `request` + `raw_response` (tam zarf) + `content` + model/token/süre |
+| `evidence/` | Senaryonun ham hali (`raw_scenario` + screenshot yolları + `excluded_from_store`). Profilin `evidence_to_store`'a koymadığı kanıdın **içeriği boş**, metadata durur |
+| `prompts/` | **Giden** taraf: `prompt` + gönderilen tam `request` |
+| `llm_responses/` | **Gelen** taraf: `raw_response` (tam zarf) + `content` + model/token/süre |
 | `analysis_results/` | Nihai teşhis (`verdict`, `root_cause`... + sistem meta + `status`) |
 | `attachments/` | (gerçek VisiumGo) inen ham dosyalar |
 

@@ -59,3 +59,6 @@ class Findings(BaseModel):
     extra_context: str = ""
     truncated: bool = False
     truncated_note: str = ""
+    # Evidence types the profile keeps out of the store: their inline content is
+    # dropped from the `evidence` row (metadata stays, so the gap is visible).
+    excluded_from_store: list[str] = []

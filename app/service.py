@@ -6,9 +6,10 @@ Redis-ready boundaries (plan.md A13):
   2. Status/results are always read from disk (Repository), never from
      in-memory state.
 
-Full trace (plan.md A12): raw evidence -> `evidence`, prompt + raw answer ->
-`prompts`, parsed diagnosis -> `analysis_results`, run status -> `runs`.
-The same row id links a scenario's rows across evidence/prompts/analysis_results.
+Full trace (plan.md A12), one row per table per scenario, linked by the same
+`result_id`: raw evidence -> `evidence`, outgoing prompt+request -> `prompts`,
+incoming LLM answer -> `llm_responses`, parsed diagnosis -> `analysis_results`;
+run status -> `runs`.
 """
 
 import asyncio
@@ -22,6 +23,7 @@ from app.config import Settings
 from app.domain.enums import AnalysisStatus, RunStatus
 from app.domain.findings import Findings
 from app.domain.result import AnalysisMeta, AnalysisResult, LLMAnalysis
+from app.evidence.registry import evidence_name_for
 from app.extraction.base import Extractor
 from app.llm.provider import LLMProvider
 from app.parsing.json_parser import _try_json
@@ -213,13 +215,36 @@ class AnalyzerService:
         return None
 
     def _screenshot_paths(self, scenario: RawScenario) -> list[str]:
-        """Raw screenshot references from image attachments (for the trace row)."""
+        """Every screenshot the source delivered — "what arrived".
+
+        Deliberately different from `Findings.screenshot_paths`, which is
+        "what the analysis used" (profile-filtered). The evidence row records
+        the former; the diagnosis row the latter.
+        """
         return [
             attachment.stored_path or attachment.file_name
             for attachment in scenario.attachments
             if attachment.mime_type.startswith("image/")
             and (attachment.stored_path or attachment.file_name)
         ]
+
+    def _storable_scenario(
+        self, scenario: RawScenario, excluded: list[str]
+    ) -> dict[str, Any]:
+        """Raw scenario dump, honouring the profile's `evidence_to_store`.
+
+        Excluded evidence keeps its metadata (file name, type, stored path) so
+        the gap stays visible — only the inline content is dropped. The
+        downloaded file itself still lives under `database/attachments/`.
+        """
+        dump = scenario.model_dump(mode="json")
+        if not excluded:
+            return dump
+        for attachment, row in zip(scenario.attachments, dump.get("attachments", [])):
+            if evidence_name_for(attachment) in excluded:
+                row["content"] = ""
+                row["content_stored"] = False
+        return dump
 
     async def _analyze_scenario(
         self,
@@ -236,20 +261,6 @@ class AnalyzerService:
         async with semaphore:
             settings = self._settings
             result_id = str(uuid4())
-
-            # Full trace, part 1: raw evidence as received (raw_detail included
-            # in raw_scenario — save-everything rule).
-            self._repo.save(
-                settings.table_evidence,
-                result_id,
-                {
-                    "result_id": result_id,
-                    "analyzer_run_id": analyzer_run_id,
-                    "scenario_name": scenario.scenario_name,
-                    "screenshot_paths": self._screenshot_paths(scenario),
-                    "raw_scenario": scenario.model_dump(mode="json"),
-                },
-            )
 
             prompt = ""
             raw_response = ""  # full LLM envelope (kept even if parsing fails)
@@ -306,12 +317,30 @@ class AnalyzerService:
                 if not raw_response:
                     raw_response = f"<no response — {type(exc).__name__}: {exc}>"
 
-            # Profile-filtered stored screenshots + visible trim flags.
+            # Profile-driven flags (empty when extraction itself failed).
             result_screenshots = findings.screenshot_paths if findings else []
             truncated = findings.truncated if findings else False
             truncated_note = findings.truncated_note if findings else ""
+            profile_name = findings.profile_name if findings else ""
+            excluded = findings.excluded_from_store if findings else []
 
-            # Full trace, part 2: exact prompt + full request + full raw answer.
+            # Full trace, part 1: raw evidence as received (raw_detail included).
+            # Written after extraction so the profile's `evidence_to_store` can
+            # be honoured; if extraction failed, nothing is excluded.
+            self._repo.save(
+                settings.table_evidence,
+                result_id,
+                {
+                    "result_id": result_id,
+                    "analyzer_run_id": analyzer_run_id,
+                    "scenario_name": scenario.scenario_name,
+                    "screenshot_paths": self._screenshot_paths(scenario),
+                    "excluded_from_store": excluded,
+                    "raw_scenario": self._storable_scenario(scenario, excluded),
+                },
+            )
+
+            # Full trace, part 2: the OUTGOING side — prompt + exact request.
             self._repo.save(
                 settings.table_prompts,
                 result_id,
@@ -321,12 +350,11 @@ class AnalyzerService:
                     "scenario_name": scenario.scenario_name,
                     "prompt": prompt,
                     "request": llm_request,
-                    "raw_response": raw_response,
                 },
             )
 
-            # Full trace, part 2b: the LLM's answer in its own folder
-            # (database/llm_responses/) — exactly what the LLM returned.
+            # Full trace, part 3: the INCOMING side — exactly what the LLM
+            # returned (full envelope + extracted content + call meta).
             self._repo.save(
                 settings.table_llm_responses,
                 result_id,
@@ -334,7 +362,6 @@ class AnalyzerService:
                     "result_id": result_id,
                     "analyzer_run_id": analyzer_run_id,
                     "scenario_name": scenario.scenario_name,
-                    "request": llm_request,
                     "raw_response": raw_response,
                     "content": llm_content,
                     "model": meta.llm_model,
@@ -352,6 +379,7 @@ class AnalyzerService:
                     **analysis.model_dump(),
                     parameter1=parameter1,
                     parameter2=parameter2,
+                    profile_name=profile_name,
                     screenshot_paths=result_screenshots,
                     truncated=truncated,
                     truncated_note=truncated_note,
@@ -368,6 +396,7 @@ class AnalyzerService:
                     scenario_name=scenario.scenario_name,
                     parameter1=parameter1,
                     parameter2=parameter2,
+                    profile_name=profile_name,
                     screenshot_paths=result_screenshots,
                     truncated=truncated,
                     truncated_note=truncated_note,

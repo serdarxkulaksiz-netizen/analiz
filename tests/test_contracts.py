@@ -20,6 +20,7 @@ def test_findings_contract_fields_are_frozen() -> None:
         "extra_context",
         "truncated",
         "truncated_note",
+        "excluded_from_store",
     }
 
 
@@ -46,6 +47,7 @@ def test_analysis_result_adds_only_system_meta() -> None:
         "analyzer_run_id",
         "parameter1",
         "parameter2",
+        "profile_name",
         "truncated",
         "truncated_note",
         "screenshot_paths",

@@ -688,5 +688,59 @@ senaryoları içerdiği için her prompt'u şişirirdi). Göndermek isteyen prof
 - D → DOM'da script yok, **yalnız ilk buton** (49 karakter), `extra_context` prompt'ta
 - Ham kayıt: `evidence/` içindeki DOM **tam** duruyor (kırpma yalnız prompt'ta)
 
-**Sıradaki adım:** kullanıcı push kararı. Ertelenenler: bs4/bileşik CSS selector,
-`truncation_threshold_tokens` ile eşik-bazlı otomatik kırpma, profil bazlı farklı prompt şablonu.
+**Sıradaki adım:** ~~push~~ → atıl kod temizliği (aşağıya bak).
+
+---
+---
+
+# [Refactor] Değişiklikler sonrası atıl kalan kodun temizlenmesi (2026-09-01)
+
+> Gerçek kullanım taramasıyla (grep, tahmin değil) tespit edilen ölü/tekrar eden kod temizlendi.
+
+**Onaylı kararlar ve uygulananlar:**
+
+1. **`goes_to_store` artık İŞLEVSEL** (silinmedi, uygulandı). Profilin `evidence_to_store`'a
+   koymadığı kanıdın **inline içeriği** `evidence/` satırına yazılmaz; **metadata kalır**
+   (`file_name`/`mime_type`/`stored_path` + `content_stored: false`) → boşluk görünür.
+   İndirilen dosya `database/attachments/` altında durmaya devam eder (indirme Source'ta ve
+   profilden habersiz — bilinçli). Bu, metin kanıtlarının **çift kaydını** da çözer.
+   - `Findings.excluded_from_store` (yeni), `service._storable_scenario()`,
+     `evidence_name_for()` (registry'de public yardımcı).
+   - `evidence/` satırı artık **extraction sonrasında** yazılıyor (profil bilinsin diye);
+     extraction patlarsa hiçbir şey dışlanmaz (güvenli taraf).
+2. **`truncation_threshold_tokens` KALDIRILDI** (config + `.env.example` + README + rehber).
+   Kırpma artık tamamen profil kurallarında (deterministik, config'ten).
+3. **`prompts/` ↔ `llm_responses/` tekrarı bitti:**
+   - `prompts/` = **giden** taraf: `prompt` + `request`
+   - `llm_responses/` = **gelen** taraf: `raw_response` + `content` + model/token/süre
+   - (`AnalysisResult.raw_llm_response` teşhis satırında olduğu gibi kaldı.)
+
+**Silinen ölü üyeler:** `Evidence.is_missing` (çağıransız), `RuleContext.error_text`
+(hiçbir kural okumuyordu — ileride `keep_around_error` gibi bir kural gerekirse geri eklenir).
+
+**İşe yarar hale getirilen:** `Findings.profile_name` → artık `AnalysisResult.profile_name`
+olarak kaydediliyor (hangi profilin çalıştığı sonuçta görünüyor).
+
+**Belgelenen (silinmedi):** `service._screenshot_paths()` = "ne geldi" (evidence satırı) vs
+`Findings.screenshot_paths` = "analiz ne kullandı" (sonuç satırı) — Adım 1'den sonra gerçekten
+farklı anlam taşıyorlar; gerekçe yorumu eklendi.
+
+**Bayat metinler düzeltildi:** `prompting/__init__.py` ("platform-independent" → yeni dil),
+`service.py` modül docstring'i (4 tablo ayrımı), config docstring'i, rehber/README tabloları.
+
+**Doğrulama:** `pytest` → **87/87**; `compileall` temiz; statik tarama: `truncation_threshold`,
+`is_missing`, `RuleContext.error_text` kalıntısı yok. Canlı smoke:
+- varsayılan profil → tüm metin içerikleri dolu, `excluded_from_store: []` (davranış değişmedi)
+- kısıtlı profil → html içeriği boş, metadata + `content_stored:false` duruyor, test.log dolu
+- `prompts/` satırında `raw_response` YOK, `llm_responses/` satırında `request` YOK (tekrar bitti)
+- `analysis_results` satırında `profile_name` dolu
+
+**Dokunulmayanlar (bilinçli rezerve):** `error_signature` (plan A10), `Repository.exists()`
+(plan A12 arayüz sözleşmesi, testte kullanılıyor), `NoOpPreCheck` (plan A7), `retry_info`
+(kullanıcı kararı: yalnız kayıtta), kullanılmayan kural tipleri (kural sözlüğü), `parameter2`
+(kullanıcı kararı), `jenkins_console_log` (VisiumGo endpoint'i eklenince dolacak).
+
+**Kapsam dışı bulgu (düzeltmedim, bildiriyorum):** `JobData.jenkins_console_log` hiçbir tabloya
+yazılmıyor — job-seviyesi olduğu için doğal yeri `runs` satırı olurdu. "Her şey kaydedilsin"
+kuralıyla çelişiyor; istenirse tek satırla eklenir (ama tüm senaryoları içerdiği için `runs`
+satırını büyütür).

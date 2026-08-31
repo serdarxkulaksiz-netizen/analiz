@@ -68,6 +68,7 @@ class EvidenceExtractor(Extractor):
         evidence_blocks: list[EvidenceBlock] = []
         screenshot_paths: list[str] = []
         trimmed: list[str] = []
+        excluded_from_store: list[str] = []
         for evidence in evidences:
             block = evidence.to_block()
             if block is not None:
@@ -76,6 +77,8 @@ class EvidenceExtractor(Extractor):
                     trimmed.append(type(evidence).evidence_name)
             if evidence.screenshot_path:
                 screenshot_paths.append(evidence.screenshot_path)
+            if not evidence.goes_to_store:
+                excluded_from_store.append(type(evidence).evidence_name)
 
         # Findings fields taken straight from the scenario (no parsing).
         error_message = scenario.error_text
@@ -102,6 +105,7 @@ class EvidenceExtractor(Extractor):
             retry_info=scenario.retry_info,
             profile_name=profile.name,
             extra_context=profile.extra_context,
+            excluded_from_store=excluded_from_store,
             truncated=bool(trimmed),
             truncated_note=(
                 f"profil '{profile.name}' kuralları uygulandı: {', '.join(trimmed)} "

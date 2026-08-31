@@ -4,7 +4,7 @@ import pytest
 
 from app.evidence.rules import RuleContext, build_rule
 
-_CTX = RuleContext(scenario_name="Senaryo B", error_text="boom")
+_CTX = RuleContext(scenario_name="Senaryo B")
 
 
 def _apply(config: dict, text: str, ctx: RuleContext = _CTX) -> str:

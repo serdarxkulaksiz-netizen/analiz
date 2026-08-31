@@ -1,8 +1,8 @@
 """Single configuration layer (plan.md A0.2 — no hardcoded values).
 
-Every tunable — table names, URLs, model name, truncation threshold,
-concurrency, confidence buckets, evidence flags, prompt template location —
-lives here and is overridable via environment variables / `.env` (see
+Every tunable — table names, URLs, model name, concurrency, confidence
+buckets, profile/prompt file locations — lives here and is overridable via
+environment variables / `.env` (see
 `.env.example`). Defaults below mirror `.env.example`; only architecture-frozen
 constants (enum values, block labels) live in code instead.
 """
@@ -44,13 +44,10 @@ class Settings(BaseSettings):
     # side; nothing breaks until it exists).
     visiumgo_jenkins_log_path: str = ""
 
-    # --- extraction & size management / Halka 2 (plan.md A5, A11) ---
-    # Reserved for later (plan.md A11): the single "when to trim" threshold.
-    # Not wired yet — today everything is passthrough; real Evidence-level
-    # trimming + real token counting land on the work PC. 0 = passthrough.
-    truncation_threshold_tokens: int = 0
-    # Analysis profiles (parameter1/parameter2 -> which evidence goes to the
-    # LLM / to the store). New profile = a row in this file, not code.
+    # --- extraction / Halka 2 (plan.md A5) ---
+    # Analysis profiles: job_id (or parameter1) -> which evidence goes to the
+    # LLM / to the store, plus the content rules that trim each one.
+    # New job behaviour = a row in this file, not code.
     profiles_config_path: Path = Path("config") / "profiles.json"
 
     # --- precheck / Halka before-prompt (plan.md A7) — value = registry key ---

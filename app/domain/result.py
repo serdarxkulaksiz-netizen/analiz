@@ -75,6 +75,7 @@ class AnalysisResult(BaseModel):
     # --- system-side meta (plan.md A10; code attaches, LLM never produces) ---
     parameter1: str = "default"
     parameter2: str = "default"
+    profile_name: str = ""  # which analysis profile actually ran
     truncated: bool = False
     truncated_note: str = ""
     screenshot_paths: list[str] = []

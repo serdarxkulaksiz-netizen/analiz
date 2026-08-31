@@ -50,6 +50,7 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
         assert row["explanation"].startswith("MOCK_")  # mock-labeled content
         assert row["parameter1"] == "default"
         assert row["parameter2"] == "default"
+        assert row["profile_name"] == "default"  # which profile actually ran
         assert row["screenshot_paths"] and all(
             p.startswith("MOCK_") for p in row["screenshot_paths"]
         )
@@ -71,21 +72,59 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     )
     assert evidence_row["raw_scenario"]["raw_detail"]
 
-    # prompts row carries the full request + full raw envelope (plan.md A12).
+    # prompts row = OUTGOING side only (prompt + request), no response copy.
     prompt_row = json.loads(
         next((db / settings.table_prompts).glob("*.json")).read_text("utf-8")
     )
     assert prompt_row["prompt"]
     assert prompt_row["request"]["messages"]  # full sent request
-    assert '"choices"' in prompt_row["raw_response"]  # full raw envelope
+    assert "raw_response" not in prompt_row  # no duplication
 
-    # dedicated llm_responses folder: exactly what the LLM returned.
+    # llm_responses row = INCOMING side only (envelope + content + meta).
     llm_row = json.loads(
         next((db / settings.table_llm_responses).glob("*.json")).read_text("utf-8")
     )
     assert '"choices"' in llm_row["raw_response"]  # full raw envelope
     assert llm_row["content"]  # extracted message content
     assert llm_row["model"] and llm_row["duration_ms"] is not None
+    assert "request" not in llm_row  # no duplication
+
+
+def test_evidence_to_store_controls_inline_content(
+    settings: Settings, tmp_path
+) -> None:
+    """A profile can keep an evidence out of the store; metadata still shows it."""
+    profiles = {
+        "default": {
+            "evidence_to_llm": ["TestLogEvidence"],
+            # HtmlEvidence deliberately NOT stored
+            "evidence_to_store": ["TestLogEvidence"],
+        }
+    }
+    path = tmp_path / "p.json"
+    path.write_text(json.dumps(profiles), encoding="utf-8")
+    settings = settings.model_copy(update={"profiles_config_path": path})
+    client = _client(settings)
+
+    rid = client.post("/analyze/visiumgo", json={"job_id": "job-1"}).json()[
+        "analyzer_run_id"
+    ]
+    client.get(f"/analyze/visiumgo/{rid}")
+
+    row = json.loads(
+        next((settings.database_dir / settings.table_evidence).glob("*.json")).read_text(
+            "utf-8"
+        )
+    )
+    assert "HtmlEvidence" in row["excluded_from_store"]
+    by_file = {a["file_name"]: a for a in row["raw_scenario"]["attachments"]}
+    html = by_file["MOCK_browser.default.html"]
+    # Excluded: content dropped but the file is still visible in the trace.
+    assert html["content"] == ""
+    assert html["mime_type"] == "text/html" and html["stored_path"]  # metadata kept
+    assert html["content_stored"] is False
+    # Kept evidence is untouched.
+    assert by_file["MOCK_test.log"]["content"]
 
 
 def test_explicit_parameters_are_recorded(settings: Settings) -> None:

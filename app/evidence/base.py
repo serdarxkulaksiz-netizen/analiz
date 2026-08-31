@@ -20,6 +20,8 @@ from app.domain.findings import EvidenceBlock
 from app.evidence.rules import Rule, RuleContext
 from app.source.models import Attachment
 
+__all__ = ["Evidence", "ScreenshotEvidence", "TextEvidence"]
+
 
 class Evidence(ABC):
     """One piece of raw evidence for a scenario (plan.md A5.1)."""
@@ -53,10 +55,6 @@ class Evidence(ABC):
     @abstractmethod
     def is_present(self) -> bool:
         """True if this evidence actually arrived (A5.4)."""
-
-    @property
-    def is_missing(self) -> bool:
-        return not self.is_present
 
     def to_block(self) -> EvidenceBlock | None:
         """LLM-facing labeled block, or None (not present / not for LLM / no label)."""
