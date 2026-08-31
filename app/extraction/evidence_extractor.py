@@ -13,9 +13,14 @@ profile + rule machinery as every other evidence. No field-extracting parsing
 """
 
 from app.domain.enums import StepStatus
-from app.domain.findings import BLOCK_ERROR, EvidenceBlock, Findings
+from app.domain.findings import (
+    BLOCK_ERROR,
+    EVIDENCE_UNAVAILABLE,
+    EvidenceBlock,
+    Findings,
+)
 from app.evidence.profiles import ProfileRegistry
-from app.evidence.registry import EvidenceRegistry
+from app.evidence.registry import EvidenceRegistry, evidence_class_by_name
 from app.evidence.rules import RuleContext
 from app.extraction.base import Extractor
 from app.source.models import Attachment, RawScenario
@@ -79,6 +84,19 @@ class EvidenceExtractor(Extractor):
                 screenshot_paths.append(evidence.screenshot_path)
             if not evidence.goes_to_store:
                 excluded_from_store.append(type(evidence).evidence_name)
+
+        # An evidence the profile asked for but that never arrived (or arrived
+        # empty) still gets its block — with a "not available" placeholder — so
+        # the LLM sees the gap instead of the block vanishing silently.
+        present_labels = {block.label for block in evidence_blocks}
+        for name in profile.evidence_to_llm:
+            cls = evidence_class_by_name(name)
+            label = getattr(cls, "block_label", "")  # screenshots have none
+            if label and label not in present_labels:
+                evidence_blocks.append(
+                    EvidenceBlock(label=label, content=EVIDENCE_UNAVAILABLE)
+                )
+                present_labels.add(label)
 
         # Findings fields taken straight from the scenario (no parsing).
         error_message = scenario.error_text

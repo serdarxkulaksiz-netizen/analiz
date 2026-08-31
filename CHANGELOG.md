@@ -789,5 +789,67 @@ hiç eşleşme yok.
 listesi), `docs/proje-rehberi.md` (`resolve_run_id` satırı, `_find_cached_run`, `cache_enabled`),
 `.env.example` (`CACHE_ENABLED` yorumu).
 
-**Sıradaki adım:** kullanıcı push kararı. Ertelenenler: eksik kanıt bildirimi (`missing_evidence`),
-PreCheck kuralları, attachment sayısı özeti.
+**Sıradaki adım:** ~~push~~ → PreCheck + eksik kanıt yer tutucusu (aşağıya bak).
+
+---
+---
+
+# [PreCheck + eksik kanıt yer tutucusu] (2026-09-01)
+
+## Bölüm 1 — Eksik kanıt yer tutucusu
+
+**İstek:** Profil DOM istediği hâlde DOM gelmezse blok prompt'tan tamamen düşüyordu (LLM eksiği
+fark etmiyordu). Artık blok **kalıyor**, içinde `(bu kanıt alınamadı / bulunmuyor)` yazıyor.
+*(Kullanıcı kararı: silinen `missing_evidence` mekanizması GERİ GELMEDİ — ayrı alan/rapor yok,
+sadece prompt'ta yer tutucu.)*
+
+- `app/domain/findings.py` — `EVIDENCE_UNAVAILABLE` sabiti.
+- `app/evidence/registry.py` — `evidence_class_by_name()` (ad→sınıf, blok etiketi için).
+- `app/extraction/evidence_extractor.py` — profilin `evidence_to_llm` listesindeki bir kanıdın
+  bloğu yoksa yer tutucu blok eklenir. Ekran görüntüleri (block_label yok) atlanır.
+  İki durumu da kapsar: attachment hiç gelmedi **ve** geldi ama içerik boş (indirme patladı).
+- Testler: `test_missing_evidence_gets_placeholder_block`, `test_empty_evidence_also_gets_placeholder`.
+
+## Bölüm 2 — PreCheck: kural tabanlı, LLM'siz hazır cevap
+
+**İstek:** "DB bilgileri değişti" gibi hatalar birçok projede aynı; böyle bir hatada LLM'e hiç
+gitmeden son kullanıcıya hazır cevap dönmek. Kanca (plan.md A7) vardı, içi boştu — dolduruldu.
+
+**Tasarım kararları:**
+- Kurallar **koda değil config'e**: `config/precheck_rules.json` (yolu `.env`'den). Yeni durum =
+  config satırı.
+- **Global liste** (profil başına değil): motive eden vaka birçok projede aynı; "neyi kısa devre
+  yapıyoruz?" tek yerden gözden geçirilebilir (A7'nin kural-birikmesi uyarısı için önemli).
+- **İlk eşleşen kazanır** (dosya sırası) — belirlenebilir davranış.
+- **Sözleşme değişmedi:** `PreCheck.check` imzası aynı, `AnalysisStatus`'a yeni değer eklenmedi,
+  yeni alan yok. Görünürlük mevcut alanlardan: `meta.llm_model="precheck"` (LLM'e gidilmedi) +
+  `error_signature` (hangi kural cevapladı; boşsa kural adına düşer).
+
+**Yeni dosyalar:** `app/precheck/rules.py` (`PreCheckRule` + `load_rules`, pydantic doğrulamalı),
+`app/precheck/rule_based.py` (`RuleBasedPreCheck`), `config/precheck_rules.json` (**boş liste**).
+**Değişen:** `app/config.py` (`precheck_provider: noop|rules`, `precheck_rules_path`),
+`app/main.py` (registry'ye `"rules"` satırı), `.env.example`, README, `docs/proje-rehberi.md`.
+
+**Fail-fast:** bozuk regex, bilinmeyen `verdict`, kova dışı `confidence` (0.1/0.25/0.5/0.75/0.99),
+boş `name`/`match`, liste olmayan JSON → **açılışta** hata, analiz ortasında sürpriz yok.
+
+**Eşleşme:** regex; varsayılan `error_message`'da, `search_in: "evidence"` ile kanıt bloklarında.
+
+**Varsayılan davranış korundu:** `PRECHECK_PROVIDER=noop` ve kural dosyası boş — açmak kullanıcının
+kararı.
+
+**Testler (105/105):** 12 PreCheck birim testi (eşleşme, `search_in`, ilk-eşleşen-kazanır, ad→imza
+düşüşü, 5 fail-fast senaryosu) + uçtan uca:
+`test_precheck_rule_answers_without_calling_llm` (hazır cevap döner, `meta.llm_model="precheck"`,
+`prompts/` satırında **prompt boş**, `llm_responses/` ham cevap **boş** → LLM gerçekten çağrılmadı)
+ve `test_precheck_miss_falls_through_to_llm`.
+
+**Canlı smoke:** DOM/CONSOLE.LOG yer tutucuları prompt'ta göründü; PreCheck kuralı eşleşmeyen
+senaryoda normal LLM yoluna düştü (doğru davranış).
+
+**Mentor uyarısı (README ve rehberde de var):** PreCheck LLM'i **tamamen** atlar. Fazla geniş bir
+kalıp her senaryoyu yanlış etiketler ve kimse fark etmez → kalıpları dar yazın (`ORA-01017` gibi
+kesin imzalar), `error`/`failed` gibi genel kelimeler kullanmayın, listeyi kısa tutun.
+
+**Sıradaki adım:** kullanıcı push kararı. Ertelenenler: profil bazlı PreCheck kuralları,
+attachment sayısı özeti, `jenkins_console_log`'un `runs` satırına yazılması.

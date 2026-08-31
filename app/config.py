@@ -51,7 +51,10 @@ class Settings(BaseSettings):
     profiles_config_path: Path = Path("config") / "profiles.json"
 
     # --- precheck / Halka before-prompt (plan.md A7) — value = registry key ---
-    precheck_provider: str = "noop"  # noop (only implementation today)
+    # noop = always go to the LLM (default). rules = answer known failures from
+    # `precheck_rules_path` without calling the LLM.
+    precheck_provider: str = "noop"  # noop | rules
+    precheck_rules_path: Path = Path("config") / "precheck_rules.json"
 
     # --- prompt / Halka 3 (plan.md A8) ---
     prompt_template_path: Path = Path("config") / "prompt_template.txt"

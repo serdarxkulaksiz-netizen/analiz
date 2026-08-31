@@ -57,7 +57,8 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `visiumgo_verify_ssl` | `False` | VisiumGo SSL doğrulama (iç ağ için kapalı) |
 | `profiles_config_path` | `config/profiles.json` | Analiz profilleri: job bazlı — hangi kanıt LLM'e/depoya gider + kırpma kuralları |
 | `visiumgo_jenkins_log_path` | boş | VisiumGo'nun jenkins-log endpoint'i (`{run_id}`); boş = atla |
-| `precheck_provider` | `noop` | LLM öncesi kancası (bugün sadece noop) |
+| `precheck_provider` | `noop` | `noop` = hep LLM'e git · `rules` = bilinen hatalara LLM'siz hazır cevap |
+| `precheck_rules_path` | `config/precheck_rules.json` | PreCheck kural listesi (boş listeyle gelir) |
 | `prompt_template_path` | `config/prompt_template.txt` | Prompt şablonunun yolu |
 | `confidence_buckets` | `[0.1,0.25,0.5,0.75,0.99]` | İzin verilen güven değerleri |
 | `llm_provider` | `mock` | LLM: `mock` \| `openai_compatible` |
@@ -222,9 +223,20 @@ Kurallar yalnız prompt'u etkiler; `database/` ham içeriği tam tutar.
 
 ### PreCheck (LLM öncesi kanca) · `app/precheck/`
 
-**`PreCheck`** (arayüz) → `check(findings) -> LLMAnalysis | None`.
-**`NoOpPreCheck`** → **her zaman `None`** (kural yok, herkes LLM'e gider). İleride "şu durumda LLM'i atla"
-denmek istenirse yeni bir PreCheck yazılıp registry'ye eklenir; üst kod değişmez.
+**`PreCheck`** (arayüz) → `check(findings) -> LLMAnalysis | None`. `None` → LLM'e git;
+bir analiz → **LLM atlanır**, o cevap kaydedilir.
+
+| Gerçekleme | Ne yapar |
+|---|---|
+| `NoOpPreCheck` | Her zaman `None` — herkes LLM'e gider (varsayılan) |
+| `RuleBasedPreCheck` | `precheck_rules.json`'daki kurallardan **ilk eşleşen** kazanır → hazır cevap döner, LLM çağrılmaz |
+
+**Kural alanları:** `name`, `match` (regex), `search_in` (`error_message` \| `evidence`),
+`verdict`, `confidence` (5 kovadan biri), `suggestion`/`explanation`/`root_cause`/`summary`/
+`error_type`/`confidence_reason`, `error_signature` (hangi kuralın cevapladığı sonuçta görünür).
+Bozuk regex / bilinmeyen verdict / kova dışı confidence → **açılışta** hata (fail-fast).
+
+⚠️ Kural LLM'i tamamen atlar: kalıplar dar olmalı, liste kısa tutulmalı (plan.md A7).
 
 ---
 

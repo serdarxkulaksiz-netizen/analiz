@@ -76,6 +76,35 @@ def test_unknown_profile_name_raises(extractor: EvidenceExtractor) -> None:
         extractor.extract(_scenario(), parameter1="boyle-profil-yok")
 
 
+def test_missing_evidence_gets_placeholder_block(
+    extractor: EvidenceExtractor,
+) -> None:
+    """Profile wants DOM but it never arrived -> block stays, says so."""
+    scenario = _scenario(
+        attachments=[_att("text/plain", "test", "test log")]  # no html at all
+    )
+    findings = extractor.extract(scenario)
+
+    dom = next(b for b in findings.evidence_blocks if b.label == BLOCK_DOM)
+    assert "alınamadı" in dom.content
+    # Present evidence is untouched.
+    steps = next(b for b in findings.evidence_blocks if b.label == BLOCK_STEPS)
+    assert steps.content == "test log"
+
+
+def test_empty_evidence_also_gets_placeholder(extractor: EvidenceExtractor) -> None:
+    # Attachment arrived but the download failed -> empty content, same result.
+    scenario = _scenario(
+        attachments=[
+            _att("text/plain", "test", "test log"),
+            _att("text/html", "browser.default", ""),
+        ]
+    )
+    findings = extractor.extract(scenario)
+    dom = next(b for b in findings.evidence_blocks if b.label == BLOCK_DOM)
+    assert "alınamadı" in dom.content
+
+
 def test_jenkins_log_is_profile_controlled(extractor: EvidenceExtractor) -> None:
     # The default profile does NOT send the job-level Jenkins log (it holds all
     # scenarios and would bloat every prompt); a profile must opt in.

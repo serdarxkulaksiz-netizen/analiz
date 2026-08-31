@@ -127,6 +127,74 @@ def test_evidence_to_store_controls_inline_content(
     assert by_file["MOCK_test.log"]["content"]
 
 
+def test_precheck_rule_answers_without_calling_llm(
+    settings: Settings, tmp_path
+) -> None:
+    """A matching PreCheck rule must skip the LLM entirely, end to end."""
+    rules = [
+        {
+            "name": "mock_selector",
+            # MockSource's error text contains this.
+            "match": "NoSuchElementException",
+            "verdict": "test_maintenance",
+            "confidence": 0.99,
+            "suggestion": "Lütfen selector'ı güncelleyin.",
+            "error_signature": "hazir-cevap",
+        }
+    ]
+    path = tmp_path / "rules.json"
+    path.write_text(json.dumps(rules), encoding="utf-8")
+    settings = settings.model_copy(
+        update={"precheck_provider": "rules", "precheck_rules_path": path}
+    )
+    client = _client(settings)
+
+    rid = client.post("/analyze/visiumgo", json={"job_id": "job-1"}).json()[
+        "analyzer_run_id"
+    ]
+    result = client.get(f"/analyze/visiumgo/{rid}").json()
+
+    row = result["results"][0]
+    assert row["suggestion"] == "Lütfen selector'ı güncelleyin."  # canned answer
+    assert row["error_signature"] == "hazir-cevap"  # which rule answered
+    assert row["meta"]["llm_model"] == "precheck"  # LLM was not called
+    assert row["status"] == "ok"
+
+    db = settings.database_dir
+    # No prompt was built and no LLM answer came back.
+    prompt_row = json.loads(
+        next((db / settings.table_prompts).glob("*.json")).read_text("utf-8")
+    )
+    assert prompt_row["prompt"] == ""
+    llm_row = json.loads(
+        next((db / settings.table_llm_responses).glob("*.json")).read_text("utf-8")
+    )
+    assert llm_row["raw_response"] == "" and llm_row["content"] == ""
+
+
+def test_precheck_miss_falls_through_to_llm(settings: Settings, tmp_path) -> None:
+    rules = [
+        {
+            "name": "nope",
+            "match": "BOYLE_BIR_HATA_YOK",
+            "verdict": "environment_error",
+            "confidence": 0.5,
+        }
+    ]
+    path = tmp_path / "rules.json"
+    path.write_text(json.dumps(rules), encoding="utf-8")
+    settings = settings.model_copy(
+        update={"precheck_provider": "rules", "precheck_rules_path": path}
+    )
+    client = _client(settings)
+
+    rid = client.post("/analyze/visiumgo", json={"job_id": "job-1"}).json()[
+        "analyzer_run_id"
+    ]
+    row = client.get(f"/analyze/visiumgo/{rid}").json()["results"][0]
+    assert row["meta"]["llm_model"] == f"MOCK_{settings.llm_model}"  # LLM ran
+
+
 def test_explicit_parameters_are_recorded(settings: Settings) -> None:
     client = _client(settings)
 

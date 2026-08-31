@@ -11,6 +11,11 @@ from app.domain.enums import StepStatus
 
 # Labeled evidence block names (plan.md A6) — contract constants, not config.
 # BROWSER LOG = browser.default.log; CONSOLE.LOG = Jenkins console.log (job-level).
+#: Written in place of an evidence the profile asked for but that never arrived
+#: (or arrived empty), so the gap is visible to the LLM instead of the block
+#: silently disappearing from the prompt.
+EVIDENCE_UNAVAILABLE = "(bu kanıt alınamadı / bulunmuyor)"
+
 BLOCK_STEPS = "ADIMLAR"
 BLOCK_ERROR = "HATA"
 BLOCK_DOM = "DOM"

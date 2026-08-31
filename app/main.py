@@ -26,6 +26,8 @@ from app.llm.provider import LLMProvider
 from app.persistence.file_repository import FileRepository
 from app.precheck.base import PreCheck
 from app.precheck.noop import NoOpPreCheck
+from app.precheck.rule_based import RuleBasedPreCheck
+from app.precheck.rules import load_rules
 from app.prompting.builder import PromptBuilder
 from app.service import AnalyzerService
 from app.source.base import Source
@@ -90,6 +92,7 @@ LLM_REGISTRY: dict[str, Callable[[Settings], LLMProvider]] = {
 
 PRECHECK_REGISTRY: dict[str, Callable[[Settings], PreCheck]] = {
     "noop": lambda s: NoOpPreCheck(),
+    "rules": lambda s: RuleBasedPreCheck(load_rules(s.precheck_rules_path)),
 }
 
 

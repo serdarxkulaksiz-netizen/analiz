@@ -127,6 +127,38 @@ eşleşmesi → yoksa `default`. Var olmayan profil adı verilirse koşum `faile
 > Kurallar **yalnız prompt'u** etkiler; `database/` altına ham içerik **tam** yazılır.
 > Kesme olduysa sonuçta `truncated=true` + `truncated_note` görünür (sessiz kayıp yok).
 
+**Eksik kanıt:** profil bir kanıt istediği hâlde o kanıt gelmediyse (ör. tarayıcı açılmadığı için
+DOM yok) blok prompt'tan düşmez — `=== DOM ===` başlığı altında
+`(bu kanıt alınamadı / bulunmuyor)` yazar. Böylece LLM eksiği bilir.
+
+## PreCheck — bilinen hatalara LLM'siz cevap (`config/precheck_rules.json`)
+
+Bazı hatalar analiz gerektirmez ("DB bilgileri değişmiş" gibi). Bir kural eşleşirse **LLM hiç
+çağrılmaz**, hazır cevap döner:
+
+```json
+[
+  { "name": "db_credentials",
+    "match": "ORA-01017|invalid credentials",
+    "verdict": "environment_error",
+    "confidence": 0.99,
+    "suggestion": "Lütfen veritabanı bilgilerinizi güncelleyin.",
+    "error_signature": "db-credentials" }
+]
+```
+
+Açmak için `.env`: `PRECHECK_PROVIDER=rules`. Varsayılan `noop` (her senaryo LLM'e gider) ve
+dosya **boş listeyle** gelir.
+
+- `match` regex'tir; varsayılan olarak hata mesajında aranır, `"search_in": "evidence"` denirse
+  kanıt bloklarında aranır. **İlk eşleşen kural kazanır** (dosya sırası).
+- Sonuçta `meta.llm_model = "precheck"` (LLM'e gidilmedi) ve `error_signature` (hangi kural).
+- Bozuk regex / bilinmeyen verdict / kova dışı confidence → **açılışta** hata.
+
+> ⚠️ Kural LLM'i **tamamen** atlar. Fazla geniş bir kalıp her senaryoyu yanlış etiketler ve kimse
+> fark etmez. Kalıpları dar yazın (`ORA-01017` gibi kesin imzalar), `error`/`failed` gibi genel
+> kelimeler **kullanmayın**, listeyi kısa tutun.
+
 ## Mock → Gerçek geçişi (kod değişmeden, yalnızca `.env`)
 
 | Ne | `.env` değişikliği |

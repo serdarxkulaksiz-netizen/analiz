@@ -32,6 +32,14 @@ _EVIDENCE_CLASSES: tuple[type[Evidence], ...] = (
 )
 
 
+def evidence_class_by_name(name: str) -> type[Evidence] | None:
+    """Evidence class registered under this name, or None if unknown."""
+    for cls in _EVIDENCE_CLASSES:
+        if cls.evidence_name == name:
+            return cls
+    return None
+
+
 def evidence_name_for(attachment: Attachment) -> str:
     """Evidence type this attachment maps to, or "" if none matches.
 
