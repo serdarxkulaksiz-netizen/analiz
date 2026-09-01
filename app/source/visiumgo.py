@@ -18,6 +18,8 @@ evidence empty but the scenario continues; the service marks a fully-failing
 scenario `analysis_failed` and the job goes on.
 """
 
+import io
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -48,10 +50,12 @@ class VisiumGoSource(Source):
         client: VisiumGoClient,
         attachments_dir: Path,
         jenkins_log_path: str = "",
+        jenkins_log_entry: str = "build.log",
     ) -> None:
         self._client = client
         self._attachments_dir = attachments_dir
         self._jenkins_log_path = jenkins_log_path
+        self._jenkins_log_entry = jenkins_log_entry
 
     async def resolve_run_id(self, job_id: str, run_id: str = "") -> str:
         """Which run to analyze — no evidence fetched (see Source docstring)."""
@@ -85,18 +89,34 @@ class VisiumGoSource(Source):
         )
 
     async def _fetch_jenkins_log(self, run_id: str) -> str:
-        """Job-level Jenkins console log, served by VisiumGo (plan.md A4.1).
+        """Job-level build log, served by VisiumGo (plan.md A4.1).
 
-        Optional: unset path = skip; a failure leaves it empty and the job
-        continues (the analysis simply has one evidence less).
+        The endpoint (`/api/runs/{run_id}/logs`) returns a **ZIP archive**, not
+        plain text; the wanted entry (`build.log` by default) is extracted from
+        it. The archive itself is not kept — only the extracted text.
+
+        Optional: unset path = skip; any failure (network, not a zip, entry
+        missing) leaves the log empty and the job continues.
         """
         if not self._jenkins_log_path:
             return ""
         path = self._jenkins_log_path.format(run_id=encode_segment(run_id))
         try:
-            return await self._client.get_text(path)
+            archive = await self._client.get_bytes(path)
+            return self._extract_log(archive)
         except Exception:
             return ""
+
+    def _extract_log(self, archive: bytes) -> str:
+        """Read the configured entry out of the ZIP (matched on its ending)."""
+        with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+            wanted = next(
+                (n for n in bundle.namelist() if n.endswith(self._jenkins_log_entry)),
+                "",
+            )
+            if not wanted:
+                return ""
+            return bundle.read(wanted).decode("utf-8", errors="replace")
 
     async def _resolve_run(
         self, job_id: str, run_id: str

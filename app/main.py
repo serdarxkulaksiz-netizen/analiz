@@ -73,6 +73,7 @@ SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
         ),
         _attachments_dir(s),
         jenkins_log_path=s.visiumgo_jenkins_log_path,
+        jenkins_log_entry=s.visiumgo_jenkins_log_entry,
     ),
 }
 

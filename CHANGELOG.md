@@ -868,8 +868,34 @@ hiçbir tabloya yazılmıyordu ("her şey kaydedilsin" kuralıyla çelişiyordu)
   yalnız YOL yazılacağı (base URL otomatik eklenir), `{run_id}` yer tutucusu, düz metin beklendiği,
   boşsa atlanacağı ve hata durumunda analizin devam edeceği açıkça yazıldı.
 
-**Servis tarafı (kullanıcıda):** VisiumGo'ya jenkins-log endpoint'i eklenince tek yapılacak
-`.env`'de `VISIUMGO_JENKINS_LOG_PATH` doldurmak — kod değişmez.
+**Servis tarafı:** aşağıya bak — endpoint netleşti ve **ZIP** döndürüyor.
+
+## [Ertelenen #1b] Build log endpoint'i ZIP döndürüyor — TAMAM (2026-09-01)
+
+**Kullanıcıdan gelen gerçek bilgi:** VisiumGo ön yüzünde run'a tıklayıp **Logs** butonuna basınca
+düz log değil **ZIP** iniyor. Endpoint: `GET {BASE}/api/runs/{run_id}/logs`, ZIP içinde
+**`build.log`** var. Kullanıcı kararı: ham ZIP saklanmasın, yalnız `build.log` kaydedilsin.
+
+*(Önceki varsayımımız "endpoint düz metin döndürür" idi — yanlıştı, düzeltildi.)*
+
+- `app/source/visiumgo.py` — `_fetch_jenkins_log` artık `get_text` yerine **`get_bytes`** çağırıyor;
+  yeni `_extract_log()` ZIP'i `zipfile` + `io.BytesIO` ile açıp yapılandırılmış dosyayı okuyor
+  (**stdlib, yeni bağımlılık yok**). Eşleşme dosya adının **sonuna** göre → `logs/build.log` de tutar.
+  Decode `utf-8, errors="replace"` (bozuk bayt analizi düşürmez).
+- `app/config.py` — `visiumgo_jenkins_log_entry: str = "build.log"` (ZIP içinde hangi dosya).
+- `app/main.py` — registry'de yeni parametre enjekte edilir.
+- `.env.example` — gerçek yol yazıldı: `VISIUMGO_JENKINS_LOG_PATH=/api/runs/{run_id}/logs`
+  (**yalnız yol**; host `VISIUMGO_BASE_URL`'de, iç ağ adresi repoya girmiyor) + ZIP açıklaması.
+- **Dayanıklılık korundu:** yol boşsa adım atlanır; ağ hatası / ZIP değil / dosya yok → log boş
+  kalır, **analiz normal devam eder** (senaryolar etkilenmez).
+
+**Testler (107/107):** ZIP'ten `build.log` çıkarma (yanlış girdi seçilmiyor), iç içe yol
+(`logs/build.log`), ZIP olmayan cevap tolere ediliyor, `build.log` içermeyen ZIP tolere ediliyor,
+yol boş/endpoint hatalı senaryoları.
+
+**Not (isimlendirme):** alan adı `jenkins_console_log` ve `JenkinsLogEvidence` olarak **kaldı**
+(plan.md A4.1 dili). Gerçekte dosya VisiumGo `/logs`'tan gelen `build.log`; yeniden adlandırma
+sözleşmeye dokunacağı için yapılmadı — istenirse ayrı bir iş olarak ele alınır.
 
 **Doğrulama:** `pytest` 105/105; canlı smoke: `runs/{id}.json` içinde `jenkins_console_log` dolu.
 

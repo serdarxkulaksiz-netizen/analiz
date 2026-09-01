@@ -56,7 +56,8 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `visiumgo_timeout_seconds` | `60` | VisiumGo HTTP timeout |
 | `visiumgo_verify_ssl` | `False` | VisiumGo SSL doğrulama (iç ağ için kapalı) |
 | `profiles_config_path` | `config/profiles.json` | Analiz profilleri: job bazlı — hangi kanıt LLM'e/depoya gider + kırpma kuralları |
-| `visiumgo_jenkins_log_path` | boş | VisiumGo'nun jenkins-log endpoint'i (`{run_id}`); boş = atla |
+| `visiumgo_jenkins_log_path` | boş | VisiumGo `/logs` endpoint'i (`{run_id}`) — **ZIP** döner; boş = atla |
+| `visiumgo_jenkins_log_entry` | `build.log` | ZIP içinde okunacak dosya (sonuna göre eşleşir) |
 | `precheck_provider` | `noop` | `noop` = hep LLM'e git · `rules` = bilinen hatalara LLM'siz hazır cevap |
 | `precheck_rules_path` | `config/precheck_rules.json` | PreCheck kural listesi (boş listeyle gelir) |
 | `prompt_template_path` | `config/prompt_template.txt` | Prompt şablonunun yolu |
@@ -141,13 +142,14 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 **`VisiumGoSource`** (gerçek VisiumGo API)
 | Method | Ne yapar |
 |---|---|
-| `__init__(client, attachments_dir, jenkins_log_path="")` | HTTP client + indirme klasörü + (varsa) VisiumGo jenkins-log yolu |
+| `__init__(client, attachments_dir, jenkins_log_path="", jenkins_log_entry="build.log")` | HTTP client + indirme klasörü + (varsa) `/logs` yolu ve ZIP içinden okunacak dosya |
 | `fetch_job(...)` | Zincir A-D'yi çalıştırır, `JobData` döndürür |
 | `_resolve_run(job_id, run_id)` | **Adım A**: `run_id` verildiyse onu kullanır; yoksa `/api/runs?jobId=` → `startTime` en büyük koşum |
 | `_build_scenario(run_id, record)` | **Adım C**: senaryo detayını çeker (`errorText`, `stepResults`, `attachments`) → `RawScenario`; ham detay cevabı `raw_detail`'de saklanır. Adım adı `line`'dan alınır |
 | `_download_attachment(run_id, meta)` | **Adım D**: dosyayı indirir (URL-encode), diske kaydeder; inmezse boş `Attachment` (o kanıt "eksik" sayılır) |
 | `_save(run_id, file_name, data)` | İnen dosyayı `database/attachments/...` altına yazar (pathlib) |
-| `_fetch_jenkins_log(run_id)` | VisiumGo'nun jenkins-log endpoint'i (yol boşsa atlar; hata olursa boş döner, job devam eder) |
+| `_fetch_jenkins_log(run_id)` | VisiumGo `/logs`'tan **ZIP** indirir, `_extract_log` ile `build.log`'u çıkarır (yol boşsa atlar; ağ/ZIP/dosya hatasında boş döner, job devam eder) |
+| `_extract_log(archive)` | ZIP'ten yapılandırılmış dosyayı okur (ham ZIP saklanmaz) |
 
 > **Adım B** (`fetch_job` içinde): `/api/runs/{run_id}/results` → `resultType == "FAILED"` filtresi; PASSED/flaky atlanır.
 

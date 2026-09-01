@@ -39,10 +39,12 @@ class Settings(BaseSettings):
     visiumgo_timeout_seconds: float = 60.0
     # SSL verification off (internal self-signed certs); true to enable via .env.
     visiumgo_verify_ssl: bool = False
-    # VisiumGo endpoint serving the job's Jenkins console log; `{run_id}` is
-    # substituted. Empty = skip (the endpoint is being added on the VisiumGo
-    # side; nothing breaks until it exists).
+    # VisiumGo endpoint serving the run's logs; `{run_id}` is substituted.
+    # The response is a ZIP archive, not plain text. Empty = skip the step.
     visiumgo_jenkins_log_path: str = ""
+    # Which file to read from inside that ZIP (matched on the entry's ending,
+    # so `logs/build.log` matches too).
+    visiumgo_jenkins_log_entry: str = "build.log"
 
     # --- extraction / Halka 2 (plan.md A5) ---
     # Analysis profiles: job_id (or parameter1) -> which evidence goes to the
