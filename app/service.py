@@ -90,6 +90,7 @@ class AnalyzerService:
                 "run_result": {},
                 "raw_run_response": {},
                 "raw_results_response": [],
+                "jenkins_console_log": "",
                 "note": "",
                 "cached_from": "",
                 "created_at": now,
@@ -177,9 +178,12 @@ class AnalyzerService:
             run_id=job.run_id,  # resolved run id (real source may derive it)
             job_name=job.job_name,
             run_result=job.run_result,
-            # Full raw traces (save-everything rule, plan.md A12).
+            # Full raw traces (save-everything rule, plan.md A12). The Jenkins
+            # console log is job-level (it covers every scenario), so it belongs
+            # to the run row — note this can make the row large.
             raw_run_response=job.raw_run_response,
             raw_results_response=job.raw_results_response,
+            jenkins_console_log=job.jenkins_console_log,
             scenario_count=len(job.failed_scenarios),
             total_scenario_count=job.total_scenario_count,
         )

@@ -37,6 +37,8 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     # Job-level raw traces are persisted (save-everything rule).
     assert result["raw_run_response"]["jobName"] == "MOCK_nightly-test"
     assert len(result["raw_results_response"]) == 2
+    # The Jenkins console log is job-level -> stored on the run row.
+    assert "Scenario:" in result["jenkins_console_log"]
 
     names = {row["scenario_name"] for row in result["results"]}
     assert names == {

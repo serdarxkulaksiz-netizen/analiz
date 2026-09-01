@@ -851,5 +851,28 @@ senaryoda normal LLM yoluna düştü (doğru davranış).
 kalıp her senaryoyu yanlış etiketler ve kimse fark etmez → kalıpları dar yazın (`ORA-01017` gibi
 kesin imzalar), `error`/`failed` gibi genel kelimeler kullanmayın, listeyi kısa tutun.
 
-**Sıradaki adım:** kullanıcı push kararı. Ertelenenler: profil bazlı PreCheck kuralları,
-attachment sayısı özeti, `jenkins_console_log`'un `runs` satırına yazılması.
+**Sıradaki adım:** ~~push~~ → jenkins log kaydı (aşağıya bak).
+
+---
+
+## [Ertelenen #1] Jenkins console.log artık kaydediliyor — TAMAM (2026-09-01)
+
+Önceki turda "kapsam dışı bulgu" olarak bildirilen eksik kapatıldı: `JobData.jenkins_console_log`
+hiçbir tabloya yazılmıyordu ("her şey kaydedilsin" kuralıyla çelişiyordu).
+
+- `app/service.py` — `create_run`'da alan başlatılır; `_run_job`'da `_update_run(...,
+  jenkins_console_log=job.jenkins_console_log)`. **Job-seviyesi** olduğu için yeri `runs` satırı
+  (senaryo başına değil). Not: tüm senaryoları içerdiği için `runs` satırını büyütebilir.
+- `tests/test_api_smoke.py` — `runs` satırında log'un varlığı doğrulanır.
+- `.env.example` — `VISIUMGO_JENKINS_LOG_PATH` bloğu **doldurulmaya hazır** hale getirildi:
+  yalnız YOL yazılacağı (base URL otomatik eklenir), `{run_id}` yer tutucusu, düz metin beklendiği,
+  boşsa atlanacağı ve hata durumunda analizin devam edeceği açıkça yazıldı.
+
+**Servis tarafı (kullanıcıda):** VisiumGo'ya jenkins-log endpoint'i eklenince tek yapılacak
+`.env`'de `VISIUMGO_JENKINS_LOG_PATH` doldurmak — kod değişmez.
+
+**Doğrulama:** `pytest` 105/105; canlı smoke: `runs/{id}.json` içinde `jenkins_console_log` dolu.
+
+**Kalan ertelenenler:** attachment sayısı özeti · ruff/mypy kurulumu · transport hatasında
+`prompts.request` · profil bazlı PreCheck · profil bazlı prompt şablonu · eşik-bazlı otomatik
+kırpma (önce ölçüm) · bs4/bileşik CSS selector (önce gerçek DOM).
