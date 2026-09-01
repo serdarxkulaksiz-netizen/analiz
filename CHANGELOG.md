@@ -902,3 +902,49 @@ sözleşmeye dokunacağı için yapılmadı — istenirse ayrı bir iş olarak e
 **Kalan ertelenenler:** attachment sayısı özeti · ruff/mypy kurulumu · transport hatasında
 `prompts.request` · profil bazlı PreCheck · profil bazlı prompt şablonu · eşik-bazlı otomatik
 kırpma (önce ölçüm) · bs4/bileşik CSS selector (önce gerçek DOM).
+
+---
+
+## [İsimlendirme] jenkins → build log (2026-09-01)
+
+Kullanıcı kararı: gerçek dosya `build.log` (VisiumGo `/logs` ZIP'i içinden), Jenkins yalnızca
+kaynağı; isimlendirme dosyaya göre olsun.
+
+**Mekanik yeniden adlandırma (20 dosya):** `jenkins_console_log`→`build_log` ·
+`JenkinsLogEvidence`→`BuildLogEvidence` · `BLOCK_CONSOLE`→`BLOCK_BUILD` (değer
+`"CONSOLE.LOG"`→`"BUILD LOG"`) · `VISIUMGO_JENKINS_LOG_*`→`VISIUMGO_BUILD_LOG_*` ·
+`visiumgo_jenkins_log_*`→`visiumgo_build_log_*` · `_fetch_jenkins_log`→`_fetch_build_log` ·
+sentetik attachment `device_id` `"jenkins"`→`"build"`, dosya adı `jenkins-console.log`→`build.log`.
+`config/profiles.json` ve tüm docs/testler güncellendi. Testler **107/107**.
+
+> **plan.md'den sapma:** A4.1/A6 "Jenkins console.log" ve `=== CONSOLE.LOG ===` diyor; kullanıcı
+> kararıyla `build log` / `=== BUILD LOG ===` oldu. plan.md güncellemesi kullanıcıya bırakıldı.
+
+⚠️ **Work-PC `.env` etkisi:** anahtar adları değişti — `VISIUMGO_JENKINS_LOG_PATH` yerine
+`VISIUMGO_BUILD_LOG_PATH` (ve `..._ENTRY`) yazılmalı.
+
+## [Doğrulama] build.log senaryo dilimleme — gerçek formatla test edildi
+
+Kullanıcının verdiği gerçek format:
+`beforeScenario:63 - [2]  > Scenario [Vadesiz Hesap Acilis] started`, bir sonraki
+`beforeScenario:` satırına kadar o senaryoya ait; blokta `TestCaseFinished ... result:FAILED`
+varsa senaryo başarısız.
+
+**Mevcut `keep_scenario_section` kuralı bu formatla çalışıyor — ek kod GEREKMEDİ.** Doğru config:
+`start: "> Scenario [{scenario_name}] started"`, `end: "beforeScenario:"`.
+
+**Mimari doğrulaması (kullanıcı sorusu "mevcutta da böyle mi yapıyoruz?"):** Evet —
+build.log **her koşumda bütün olarak** çekilip `runs` satırına kaydediliyor (profilden bağımsız);
+LLM'e gitmesi ve kesilmesi **job bazlı** (profil `evidence_to_llm` + `rules`). Varsayılan profilde
+LLM'e gitmiyor.
+
+**Kullanıcı teyidi:** test.log üretmeyen o özel joblarda da `/api/runs/{run_id}/results` senaryoları
+FAILED olarak listelemeye devam ediyor → senaryo listesi yine API'den geliyor, build log yalnızca
+o senaryonun **detayını** sağlıyor. Dolayısıyla **build.log'dan senaryo keşfetme yeteneğine gerek
+yok**; o joblar için tek yapılacak `profiles.json`'a bir satır.
+
+- `README.md` — yeni "Build log — senaryo özelinde dilimleme" bölümü + örnek profil gerçek
+  işaretlerle güncellendi.
+- **Açık risk:** `/results`'taki senaryo adı ile build.log'daki `[...]` içeriği **birebir**
+  eşleşmezse kural hiçbir şey kesmez (log tam kalır — sessiz kayıp yok, ama dilimleme de olmaz).
+  İş-pc'de gerçek veriyle doğrulanmalı.

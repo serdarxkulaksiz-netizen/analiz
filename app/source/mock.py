@@ -36,7 +36,7 @@ _ERROR_TEXT = "MOCK_NoSuchElementException: Unable to locate element #login-subm
 
 # Job-level log: contains EVERY scenario, like the real one. Profiles can slice
 # it per scenario with a `keep_scenario_section` rule.
-_JENKINS_LOG = """MOCK_[jenkins] build started
+_BUILD_LOG = """MOCK_[jenkins] build started
 Scenario: MOCK_Login - geçerli kullanıcı ile giriş
 MOCK_  adım 1 ok
 MOCK_  adım 2 FAILED: #login-submit yok
@@ -135,7 +135,7 @@ class MockSource(Source):
             },
             total_scenario_count=100,
             failed_scenarios=failed,
-            jenkins_console_log=_JENKINS_LOG,
+            build_log=_BUILD_LOG,
             raw_run_response={"jobName": "MOCK_nightly-test", "state": "FAILED"},
             raw_results_response=[
                 {"id": s.scenario_id, "name": s.scenario_name, "resultType": "FAILED"}

@@ -41,10 +41,10 @@ class Settings(BaseSettings):
     visiumgo_verify_ssl: bool = False
     # VisiumGo endpoint serving the run's logs; `{run_id}` is substituted.
     # The response is a ZIP archive, not plain text. Empty = skip the step.
-    visiumgo_jenkins_log_path: str = ""
+    visiumgo_build_log_path: str = ""
     # Which file to read from inside that ZIP (matched on the entry's ending,
     # so `logs/build.log` matches too).
-    visiumgo_jenkins_log_entry: str = "build.log"
+    visiumgo_build_log_entry: str = "build.log"
 
     # --- extraction / Halka 2 (plan.md A5) ---
     # Analysis profiles: job_id (or parameter1) -> which evidence goes to the

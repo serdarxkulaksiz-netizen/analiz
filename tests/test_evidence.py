@@ -9,7 +9,7 @@ _ALL = [
     "TestLogEvidence",
     "HtmlEvidence",
     "BrowserLogEvidence",
-    "JenkinsLogEvidence",
+    "BuildLogEvidence",
     "WebScreenshotEvidence",
     "MobileScreenshotEvidence",
 ]
@@ -115,13 +115,13 @@ def test_unknown_attachment_is_skipped() -> None:
     assert evidences == []
 
 
-def test_jenkins_attachment_maps_to_jenkins_evidence() -> None:
-    profile = _profile(["JenkinsLogEvidence"])
+def test_build_log_attachment_maps_to_build_evidence() -> None:
+    profile = _profile(["BuildLogEvidence"])
     evidences = EvidenceRegistry().build_for(
-        _scenario([_att("text/plain", "jenkins", "job log")]), profile
+        _scenario([_att("text/plain", "build", "job log")]), profile
     )
-    assert [type(e).evidence_name for e in evidences] == ["JenkinsLogEvidence"]
-    assert evidences[0].to_block().label == "CONSOLE.LOG"
+    assert [type(e).evidence_name for e in evidences] == ["BuildLogEvidence"]
+    assert evidences[0].to_block().label == "BUILD LOG"
 
 
 def test_profile_rules_are_applied_to_content() -> None:

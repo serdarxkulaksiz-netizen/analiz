@@ -49,13 +49,13 @@ class VisiumGoSource(Source):
         self,
         client: VisiumGoClient,
         attachments_dir: Path,
-        jenkins_log_path: str = "",
-        jenkins_log_entry: str = "build.log",
+        build_log_path: str = "",
+        build_log_entry: str = "build.log",
     ) -> None:
         self._client = client
         self._attachments_dir = attachments_dir
-        self._jenkins_log_path = jenkins_log_path
-        self._jenkins_log_entry = jenkins_log_entry
+        self._build_log_path = build_log_path
+        self._build_log_entry = build_log_entry
 
     async def resolve_run_id(self, job_id: str, run_id: str = "") -> str:
         """Which run to analyze — no evidence fetched (see Source docstring)."""
@@ -83,12 +83,12 @@ class VisiumGoSource(Source):
             run_result=run_result,
             total_scenario_count=total,
             failed_scenarios=scenarios,
-            jenkins_console_log=await self._fetch_jenkins_log(resolved_run_id),
+            build_log=await self._fetch_build_log(resolved_run_id),
             raw_run_response=raw_run or {},
             raw_results_response=results,
         )
 
-    async def _fetch_jenkins_log(self, run_id: str) -> str:
+    async def _fetch_build_log(self, run_id: str) -> str:
         """Job-level build log, served by VisiumGo (plan.md A4.1).
 
         The endpoint (`/api/runs/{run_id}/logs`) returns a **ZIP archive**, not
@@ -98,9 +98,9 @@ class VisiumGoSource(Source):
         Optional: unset path = skip; any failure (network, not a zip, entry
         missing) leaves the log empty and the job continues.
         """
-        if not self._jenkins_log_path:
+        if not self._build_log_path:
             return ""
-        path = self._jenkins_log_path.format(run_id=encode_segment(run_id))
+        path = self._build_log_path.format(run_id=encode_segment(run_id))
         try:
             archive = await self._client.get_bytes(path)
             return self._extract_log(archive)
@@ -111,7 +111,7 @@ class VisiumGoSource(Source):
         """Read the configured entry out of the ZIP (matched on its ending)."""
         with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
             wanted = next(
-                (n for n in bundle.namelist() if n.endswith(self._jenkins_log_entry)),
+                (n for n in bundle.namelist() if n.endswith(self._build_log_entry)),
                 "",
             )
             if not wanted:

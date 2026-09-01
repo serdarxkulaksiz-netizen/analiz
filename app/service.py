@@ -90,7 +90,7 @@ class AnalyzerService:
                 "run_result": {},
                 "raw_run_response": {},
                 "raw_results_response": [],
-                "jenkins_console_log": "",
+                "build_log": "",
                 "note": "",
                 "cached_from": "",
                 "created_at": now,
@@ -178,12 +178,12 @@ class AnalyzerService:
             run_id=job.run_id,  # resolved run id (real source may derive it)
             job_name=job.job_name,
             run_result=job.run_result,
-            # Full raw traces (save-everything rule, plan.md A12). The Jenkins
-            # console log is job-level (it covers every scenario), so it belongs
-            # to the run row — note this can make the row large.
+            # Full raw traces (save-everything rule, plan.md A12). The build log
+            # is job-level (it covers the whole run), so it belongs to the run
+            # row — note this can make the row large.
             raw_run_response=job.raw_run_response,
             raw_results_response=job.raw_results_response,
-            jenkins_console_log=job.jenkins_console_log,
+            build_log=job.build_log,
             scenario_count=len(job.failed_scenarios),
             total_scenario_count=job.total_scenario_count,
         )
@@ -203,7 +203,7 @@ class AnalyzerService:
                     parameter1=run.get("parameter1", "default"),
                     parameter2=run.get("parameter2", "default"),
                     job_id=run.get("job_id", ""),
-                    jenkins_console_log=job.jenkins_console_log,
+                    build_log=job.build_log,
                     semaphore=semaphore,
                 )
                 for scenario in job.failed_scenarios
@@ -277,7 +277,7 @@ class AnalyzerService:
         parameter1: str,
         parameter2: str,
         job_id: str,
-        jenkins_console_log: str,
+        build_log: str,
         semaphore: asyncio.Semaphore,
     ) -> None:
         """Analyze one failed scenario; never raises (plan.md A9)."""
@@ -299,7 +299,7 @@ class AnalyzerService:
                     parameter1=parameter1,
                     parameter2=parameter2,
                     job_id=job_id,
-                    jenkins_console_log=jenkins_console_log,
+                    build_log=build_log,
                 )
 
                 # PreCheck (plan.md A7): may short-circuit before the LLM.

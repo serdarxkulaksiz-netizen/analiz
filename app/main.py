@@ -72,8 +72,8 @@ SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
             verify_ssl=s.visiumgo_verify_ssl,
         ),
         _attachments_dir(s),
-        jenkins_log_path=s.visiumgo_jenkins_log_path,
-        jenkins_log_entry=s.visiumgo_jenkins_log_entry,
+        build_log_path=s.visiumgo_build_log_path,
+        build_log_entry=s.visiumgo_build_log_entry,
     ),
 }
 

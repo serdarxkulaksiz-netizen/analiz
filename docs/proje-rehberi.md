@@ -56,8 +56,8 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `visiumgo_timeout_seconds` | `60` | VisiumGo HTTP timeout |
 | `visiumgo_verify_ssl` | `False` | VisiumGo SSL doğrulama (iç ağ için kapalı) |
 | `profiles_config_path` | `config/profiles.json` | Analiz profilleri: job bazlı — hangi kanıt LLM'e/depoya gider + kırpma kuralları |
-| `visiumgo_jenkins_log_path` | boş | VisiumGo `/logs` endpoint'i (`{run_id}`) — **ZIP** döner; boş = atla |
-| `visiumgo_jenkins_log_entry` | `build.log` | ZIP içinde okunacak dosya (sonuna göre eşleşir) |
+| `visiumgo_build_log_path` | boş | VisiumGo `/logs` endpoint'i (`{run_id}`) — **ZIP** döner; boş = atla |
+| `visiumgo_build_log_entry` | `build.log` | ZIP içinde okunacak dosya (sonuna göre eşleşir) |
 | `precheck_provider` | `noop` | `noop` = hep LLM'e git · `rules` = bilinen hatalara LLM'siz hazır cevap |
 | `precheck_rules_path` | `config/precheck_rules.json` | PreCheck kural listesi (boş listeyle gelir) |
 | `prompt_template_path` | `config/prompt_template.txt` | Prompt şablonunun yolu |
@@ -96,7 +96,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 
 **`JobData`** (bir job koşusunun tamamı) — `job_id`, `run_id`, `job_name`,
 `run_result` (özet dict), `total_scenario_count`, `failed_scenarios: list[RawScenario]`,
-`jenkins_console_log`, `raw_run_response`, `raw_results_response` (ham /results dizisi).
+`build_log`, `raw_run_response`, `raw_results_response` (ham /results dizisi).
 
 **`Findings`** (Halka 2 → 3 sözleşmesi) — ayrıca `profile_name`, `extra_context`, `truncated`,
 `truncated_note`, `excluded_from_store` (hangi profil çalıştı, ek bağlam, kırpma/saklama bayrakları) —
@@ -142,13 +142,13 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 **`VisiumGoSource`** (gerçek VisiumGo API)
 | Method | Ne yapar |
 |---|---|
-| `__init__(client, attachments_dir, jenkins_log_path="", jenkins_log_entry="build.log")` | HTTP client + indirme klasörü + (varsa) `/logs` yolu ve ZIP içinden okunacak dosya |
+| `__init__(client, attachments_dir, build_log_path="", build_log_entry="build.log")` | HTTP client + indirme klasörü + (varsa) `/logs` yolu ve ZIP içinden okunacak dosya |
 | `fetch_job(...)` | Zincir A-D'yi çalıştırır, `JobData` döndürür |
 | `_resolve_run(job_id, run_id)` | **Adım A**: `run_id` verildiyse onu kullanır; yoksa `/api/runs?jobId=` → `startTime` en büyük koşum |
 | `_build_scenario(run_id, record)` | **Adım C**: senaryo detayını çeker (`errorText`, `stepResults`, `attachments`) → `RawScenario`; ham detay cevabı `raw_detail`'de saklanır. Adım adı `line`'dan alınır |
 | `_download_attachment(run_id, meta)` | **Adım D**: dosyayı indirir (URL-encode), diske kaydeder; inmezse boş `Attachment` (o kanıt "eksik" sayılır) |
 | `_save(run_id, file_name, data)` | İnen dosyayı `database/attachments/...` altına yazar (pathlib) |
-| `_fetch_jenkins_log(run_id)` | VisiumGo `/logs`'tan **ZIP** indirir, `_extract_log` ile `build.log`'u çıkarır (yol boşsa atlar; ağ/ZIP/dosya hatasında boş döner, job devam eder) |
+| `_fetch_build_log(run_id)` | VisiumGo `/logs`'tan **ZIP** indirir, `_extract_log` ile `build.log`'u çıkarır (yol boşsa atlar; ağ/ZIP/dosya hatasında boş döner, job devam eder) |
 | `_extract_log(archive)` | ZIP'ten yapılandırılmış dosyayı okur (ham ZIP saklanmaz) |
 
 > **Adım B** (`fetch_job` içinde): `/api/runs/{run_id}/results` → `resultType == "FAILED"` filtresi; PASSED/flaky atlanır.
@@ -167,13 +167,13 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 **`Extractor`** (arayüz)
 | Method | Ne yapar |
 |---|---|
-| `extract(scenario, *, parameter1="default", parameter2="default", job_id="", jenkins_console_log="")` | `RawScenario` → `Findings` (profil job_id/parameter1 ile seçilir) |
+| `extract(scenario, *, parameter1="default", parameter2="default", job_id="", build_log="")` | `RawScenario` → `Findings` (profil job_id/parameter1 ile seçilir) |
 
 **`EvidenceExtractor`** (tek, kaynaktan bağımsız gerçekleme)
 | Method | Ne yapar |
 |---|---|
 | `__init__(registry, profiles)` | `EvidenceRegistry` + `ProfileRegistry` enjekte edilir |
-| `extract(...)` | Profili seçer; jenkins log'u **sentetik attachment** yapar (böylece profil+kural onu da yönetir); Attachment'ları Evidence'lara çevirip LLM bloklarını ve screenshot yollarını toplar; `error_text`'ten HATA bloğu, FAILED adımdan `failed_step`; kırpma olduysa `truncated`+not → `Findings`. **Alan-çıkaran parser yok** (parse-minimal) |
+| `extract(...)` | Profili seçer; build log'u **sentetik attachment** yapar (böylece profil+kural onu da yönetir); Attachment'ları Evidence'lara çevirip LLM bloklarını ve screenshot yollarını toplar; `error_text`'ten HATA bloğu, FAILED adımdan `failed_step`; kırpma olduysa `truncated`+not → `Findings`. **Alan-çıkaran parser yok** (parse-minimal) |
 
 **`Evidence`** (kanıt arayüzü — 2 aile: metin ve ekran görüntüsü)
 | Üye | Ne yapar |
@@ -192,7 +192,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 |---|---|---|
 | `TestLogEvidence` | text/plain + `test` → **ADIMLAR** | ✅ |
 | `BrowserLogEvidence` | text/plain + `browser.default` → **BROWSER LOG** | ✅ |
-| `JenkinsLogEvidence` | text/plain + `jenkins` → **CONSOLE.LOG** | ❌ (job-seviyesi; profil açar) |
+| `BuildLogEvidence` | text/plain + `build` → **BUILD LOG** | ❌ (job-seviyesi; profil açar) |
 | `HtmlEvidence` | text/html + `browser.default` → **DOM** | ✅ |
 | `WebScreenshotEvidence` | image/png + `browser.default` | ❌ (sadece diske) |
 | `MobileScreenshotEvidence` | image/png + `mobile.*` | ❌ (sadece diske) |

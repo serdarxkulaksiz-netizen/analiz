@@ -5,7 +5,7 @@ import pytest
 from app.domain.enums import StepStatus
 from app.domain.findings import (
     BLOCK_BROWSER,
-    BLOCK_CONSOLE,
+    BLOCK_BUILD,
     BLOCK_DOM,
     BLOCK_ERROR,
     BLOCK_STEPS,
@@ -105,8 +105,8 @@ def test_empty_evidence_also_gets_placeholder(extractor: EvidenceExtractor) -> N
     assert "alınamadı" in dom.content
 
 
-def test_jenkins_log_is_profile_controlled(extractor: EvidenceExtractor) -> None:
-    # The default profile does NOT send the job-level Jenkins log (it holds all
+def test_build_log_is_profile_controlled(extractor: EvidenceExtractor) -> None:
+    # The default profile does NOT send the job-level build log (it holds all
     # scenarios and would bloat every prompt); a profile must opt in.
-    findings = extractor.extract(_scenario(), jenkins_console_log="jenkins out")
-    assert not [b for b in findings.evidence_blocks if b.label == BLOCK_CONSOLE]
+    findings = extractor.extract(_scenario(), build_log="build out")
+    assert not [b for b in findings.evidence_blocks if b.label == BLOCK_BUILD]

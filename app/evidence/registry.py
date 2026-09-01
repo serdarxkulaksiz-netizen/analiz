@@ -15,7 +15,7 @@ from app.evidence.rules import RuleContext
 from app.evidence.types import (
     BrowserLogEvidence,
     HtmlEvidence,
-    JenkinsLogEvidence,
+    BuildLogEvidence,
     MobileScreenshotEvidence,
     TestLogEvidence,
     WebScreenshotEvidence,
@@ -25,7 +25,7 @@ from app.source.models import Attachment, RawScenario
 _EVIDENCE_CLASSES: tuple[type[Evidence], ...] = (
     TestLogEvidence,
     BrowserLogEvidence,
-    JenkinsLogEvidence,
+    BuildLogEvidence,
     HtmlEvidence,
     WebScreenshotEvidence,
     MobileScreenshotEvidence,

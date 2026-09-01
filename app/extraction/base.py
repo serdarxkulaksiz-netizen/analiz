@@ -5,9 +5,9 @@ Raw evidence goes out as labeled blocks; interpretation belongs to the LLM
 
 `parameter1` (profile name override) and `job_id` select the analysis profile —
 which evidence reaches the prompt and how its content is shaped. `parameter2`
-is carried through for the record/prompt context. `jenkins_console_log` is
-job-level context (plan.md A4.1) that becomes the `=== CONSOLE.LOG ===` block
-when the profile includes it.
+is carried through for the record/prompt context. `build_log` is job-level
+context (plan.md A4.1 — VisiumGo `/logs` -> `build.log`) that becomes the
+`=== BUILD LOG ===` block when the profile includes it.
 """
 
 from abc import ABC, abstractmethod
@@ -27,6 +27,6 @@ class Extractor(ABC):
         parameter1: str = "default",
         parameter2: str = "default",
         job_id: str = "",
-        jenkins_console_log: str = "",
+        build_log: str = "",
     ) -> Findings:
         """Build Findings (labeled blocks + minimal fields) from raw evidence."""

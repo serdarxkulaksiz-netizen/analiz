@@ -6,8 +6,8 @@ mock/real difference lives entirely in the Source).
 
 The run's job_id / `parameter1` select an analysis Profile, which decides which
 evidence types become prompt blocks and how each one's content is shaped
-(content rules). The `=== HATA ===` block is `error_text`. The job-level Jenkins
-log is injected as a synthetic `jenkins` attachment so it flows through the same
+(content rules). The `=== HATA ===` block is `error_text`. The job-level build
+log is injected as a synthetic `build` attachment so it flows through the same
 profile + rule machinery as every other evidence. No field-extracting parsing
 (parse-minimal).
 """
@@ -25,8 +25,8 @@ from app.evidence.rules import RuleContext
 from app.extraction.base import Extractor
 from app.source.models import Attachment, RawScenario
 
-#: device_id of the synthetic attachment carrying the job-level Jenkins log.
-JENKINS_DEVICE_ID = "jenkins"
+#: device_id of the synthetic attachment carrying the job-level build log.
+BUILD_LOG_DEVICE_ID = "build"
 
 
 class EvidenceExtractor(Extractor):
@@ -43,23 +43,23 @@ class EvidenceExtractor(Extractor):
         parameter1: str = "default",
         parameter2: str = "default",
         job_id: str = "",
-        jenkins_console_log: str = "",
+        build_log: str = "",
     ) -> Findings:
         profile = self._profiles.get(job_id=job_id, parameter1=parameter1)
 
-        # The job-level Jenkins log becomes a normal attachment, so the profile
+        # The job-level build log becomes a normal attachment, so the profile
         # can include/exclude it and its rules can slice it per scenario.
         scenario_for_evidence = scenario
-        if jenkins_console_log:
+        if build_log:
             scenario_for_evidence = scenario.model_copy(
                 update={
                     "attachments": [
                         *scenario.attachments,
                         Attachment(
-                            file_name="jenkins-console.log",
+                            file_name="build.log",
                             mime_type="text/plain",
-                            device_id=JENKINS_DEVICE_ID,
-                            content=jenkins_console_log,
+                            device_id=BUILD_LOG_DEVICE_ID,
+                            content=build_log,
                         ),
                     ]
                 }

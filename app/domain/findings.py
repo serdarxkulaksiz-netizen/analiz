@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from app.domain.enums import StepStatus
 
 # Labeled evidence block names (plan.md A6) — contract constants, not config.
-# BROWSER LOG = browser.default.log; CONSOLE.LOG = Jenkins console.log (job-level).
+# BROWSER LOG = browser.default.log; BUILD LOG = VisiumGo /logs -> build.log (job-level).
 #: Written in place of an evidence the profile asked for but that never arrived
 #: (or arrived empty), so the gap is visible to the LLM instead of the block
 #: silently disappearing from the prompt.
@@ -20,7 +20,7 @@ BLOCK_STEPS = "ADIMLAR"
 BLOCK_ERROR = "HATA"
 BLOCK_DOM = "DOM"
 BLOCK_BROWSER = "BROWSER LOG"
-BLOCK_CONSOLE = "CONSOLE.LOG"
+BLOCK_BUILD = "BUILD LOG"
 
 
 class Step(BaseModel):

@@ -10,7 +10,7 @@
       "TestLogEvidence",
       "HtmlEvidence",
       "BrowserLogEvidence",
-      "JenkinsLogEvidence",
+      "BuildLogEvidence",
       "WebScreenshotEvidence",
       "MobileScreenshotEvidence"
     ]

@@ -99,13 +99,15 @@ Kod değişmez; profil `job_id` ile otomatik bulunur.
 {
   "default":     { "evidence_to_llm": ["TestLogEvidence","HtmlEvidence","BrowserLogEvidence"],
                    "evidence_to_store": ["TestLogEvidence","HtmlEvidence","BrowserLogEvidence",
-                                         "JenkinsLogEvidence","WebScreenshotEvidence","MobileScreenshotEvidence"] },
+                                         "BuildLogEvidence","WebScreenshotEvidence","MobileScreenshotEvidence"] },
 
   "B_testlog":   { "job_ids": ["901"], "evidence_to_llm": ["TestLogEvidence"] },
 
-  "C_jenkins":   { "job_ids": ["1204"], "evidence_to_llm": ["JenkinsLogEvidence"],
-                   "rules": { "JenkinsLogEvidence": [
-                     {"type":"keep_scenario_section","start":"Scenario: {scenario_name}","end":"Scenario: "}]}},
+  "C_buildlog":  { "job_ids": ["1204"], "evidence_to_llm": ["BuildLogEvidence"],
+                   "rules": { "BuildLogEvidence": [
+                     {"type":"keep_scenario_section",
+                      "start":"> Scenario [{scenario_name}] started",
+                      "end":"beforeScenario:"}]}},
 
   "D_dom_sec":   { "job_ids": ["1350"], "evidence_to_llm": ["TestLogEvidence","HtmlEvidence"],
                    "rules": { "HtmlEvidence": [
@@ -130,6 +132,34 @@ eşleşmesi → yoksa `default`. Var olmayan profil adı verilirse koşum `faile
 **Eksik kanıt:** profil bir kanıt istediği hâlde o kanıt gelmediyse (ör. tarayıcı açılmadığı için
 DOM yok) blok prompt'tan düşmez — `=== DOM ===` başlığı altında
 `(bu kanıt alınamadı / bulunmuyor)` yazar. Böylece LLM eksiği bilir.
+
+## Build log — senaryo özelinde dilimleme
+
+`build.log` **her koşumda bütün olarak** çekilir ve `runs` satırına kaydedilir — profilden bağımsız.
+Ama LLM'e **gitmesi** ve **kesilmesi** job bazlıdır (profil kararı). Varsayılan profilde LLM'e gitmez.
+
+Bazı joblarda senaryo özelinde `test.log`/DOM üretilmez; o joblarda tek kanıt build log olur.
+Başarısız senaryoların listesi yine VisiumGo `/results`'tan gelir; build log yalnızca o senaryonun
+**detayını** sağlar. Profilde tek yapılacak, logu senaryo bazında dilimlemek:
+
+```json
+"C_buildlog": {
+  "job_ids": ["1204"],
+  "evidence_to_llm": ["BuildLogEvidence"],
+  "evidence_to_store": ["BuildLogEvidence"],
+  "rules": { "BuildLogEvidence": [
+    {"type": "keep_scenario_section",
+     "start": "> Scenario [{scenario_name}] started",
+     "end": "beforeScenario:"}]}
+}
+```
+
+Log formatı: `beforeScenario:63 - [2]  > Scenario [Vadesiz Hesap Acilis] started` ile başlar, bir
+sonraki `beforeScenario:` satırına kadar o senaryoya aittir (blok içinde
+`TestCaseFinished ... result:FAILED` varsa senaryo başarısızdır).
+
+> `{scenario_name}` VisiumGo'nun `/results`'ta verdiği adla değiştirilir — ad log'daki `[...]`
+> içeriğiyle **birebir** eşleşmezse kural hiçbir şey kesmez (log olduğu gibi kalır, sessiz kayıp yok).
 
 ## PreCheck — bilinen hatalara LLM'siz cevap (`config/precheck_rules.json`)
 
@@ -165,7 +195,7 @@ dosya **boş listeyle** gelir.
 |---|---|
 | Gerçek lokal LLM | `LLM_PROVIDER=openai_compatible`, `LLM_BASE_URL=<url>`, `LLM_ENDPOINT_PATH=/api/v1/extension/send` (auth yok; `model` body'de gönderilmez) |
 | Gerçek VisiumGo | `SOURCE_PROVIDER=visiumgo`, `VISIUMGO_BASE_URL=<url>`, `VISIUMGO_TOKEN=<JWT>` (extractor kaynaktan bağımsız, ayrı ayar yok) |
-| Build log | `VISIUMGO_JENKINS_LOG_PATH=/api/runs/{run_id}/logs` — endpoint **ZIP** döndürür, içinden `build.log` çıkarılır (`VISIUMGO_JENKINS_LOG_ENTRY`); boş = atla |
+| Build log | `VISIUMGO_BUILD_LOG_PATH=/api/runs/{run_id}/logs` — endpoint **ZIP** döndürür, içinden `build.log` çıkarılır (`VISIUMGO_BUILD_LOG_ENTRY`); boş = atla |
 | Kanıt akışı / kırpma | `config/profiles.json` → job bazlı profil + kurallar |
 | Paralellik | `MAX_CONCURRENCY=<n>` |
 | Önbellek | `CACHE_ENABLED=true` → aynı **run_id + parametreler** daha önce analiz edildiyse LLM çağrılmaz, sonuç diskten döner (job bazlı değil: bir job'ın her koşumu ayrı analiz edilir) |

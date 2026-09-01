@@ -116,16 +116,16 @@ Scenario: Ucuncu senaryo
   ucuncu adım"""
 
 
-def test_job_c_only_jenkins_sliced_per_scenario(tmp_path: Path) -> None:
-    """Job C: sadece Jenkins log, ve yalnız bu senaryonun bölümü."""
+def test_job_c_only_build_log_sliced_per_scenario(tmp_path: Path) -> None:
+    """Job C: sadece build log, ve yalnız bu senaryonun bölümü."""
     config = {
         "default": {"evidence_to_llm": ["TestLogEvidence"], "evidence_to_store": []},
-        "C_jenkins_dilim": {
+        "C_build_log_dilim": {
             "job_ids": ["1204"],
-            "evidence_to_llm": ["JenkinsLogEvidence"],
-            "evidence_to_store": ["JenkinsLogEvidence"],
+            "evidence_to_llm": ["BuildLogEvidence"],
+            "evidence_to_store": ["BuildLogEvidence"],
             "rules": {
-                "JenkinsLogEvidence": [
+                "BuildLogEvidence": [
                     {
                         "type": "keep_scenario_section",
                         "start": "Scenario: {scenario_name}",
@@ -138,17 +138,17 @@ def test_job_c_only_jenkins_sliced_per_scenario(tmp_path: Path) -> None:
     extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
 
     findings = extractor.extract(
-        _scenario(), job_id="1204", jenkins_console_log=_JOB_LOG
+        _scenario(), job_id="1204", build_log=_JOB_LOG
     )
 
     labels = [b.label for b in findings.evidence_blocks]
-    assert "CONSOLE.LOG" in labels  # jenkins in
+    assert "BUILD LOG" in labels  # build log in
     assert "ADIMLAR" not in labels and "DOM" not in labels  # others out
 
-    console = next(b for b in findings.evidence_blocks if b.label == "CONSOLE.LOG")
+    console = next(b for b in findings.evidence_blocks if b.label == "BUILD LOG")
     assert "bizim adım FAILED" in console.content  # only this scenario's part
     assert "baska adım" not in console.content
     assert "ucuncu adım" not in console.content
     # Trimming is visible, never silent.
     assert findings.truncated is True
-    assert "JenkinsLogEvidence" in findings.truncated_note
+    assert "BuildLogEvidence" in findings.truncated_note

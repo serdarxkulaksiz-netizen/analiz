@@ -84,7 +84,7 @@ def _handler(request: httpx.Request) -> httpx.Response:
     return httpx.Response(404)
 
 
-def _source(attachments_dir: Path, jenkins_log_path: str = "") -> VisiumGoSource:
+def _source(attachments_dir: Path, build_log_path: str = "") -> VisiumGoSource:
     _CAPTURED.clear()
     client = VisiumGoClient(
         base_url="https://visiumgo.test.local",
@@ -92,7 +92,7 @@ def _source(attachments_dir: Path, jenkins_log_path: str = "") -> VisiumGoSource
         timeout_seconds=5.0,
         transport=httpx.MockTransport(_handler),
     )
-    return VisiumGoSource(client, attachments_dir, jenkins_log_path=jenkins_log_path)
+    return VisiumGoSource(client, attachments_dir, build_log_path=build_log_path)
 
 
 @pytest.mark.asyncio
@@ -179,17 +179,17 @@ def _zip_source(tmp_path: Path, entries: dict[str, str], path: str) -> VisiumGoS
         timeout_seconds=5.0,
         transport=httpx.MockTransport(handler),
     )
-    return VisiumGoSource(client, tmp_path / "attachments", jenkins_log_path=path)
+    return VisiumGoSource(client, tmp_path / "attachments", build_log_path=path)
 
 
 @pytest.mark.asyncio
 async def test_build_log_extracted_from_zip(tmp_path: Path) -> None:
     # /logs returns a ZIP; build.log is pulled out of it (raw zip not kept).
     source = _source(
-        tmp_path / "attachments", jenkins_log_path="/api/runs/{run_id}/logs"
+        tmp_path / "attachments", build_log_path="/api/runs/{run_id}/logs"
     )
     job = await source.fetch_job("job-42")
-    assert job.jenkins_console_log == "MOCK build log"  # not the other entry
+    assert job.build_log == "MOCK build log"  # not the other entry
 
 
 @pytest.mark.asyncio
@@ -199,19 +199,19 @@ async def test_build_log_matches_nested_entry(tmp_path: Path) -> None:
         tmp_path, {"logs/build.log": "iç içe"}, "/api/runs/{run_id}/logs"
     )
     job = await source.fetch_job("job-42")
-    assert job.jenkins_console_log == "iç içe"
+    assert job.build_log == "iç içe"
 
 
 @pytest.mark.asyncio
 async def test_build_log_skipped_when_unset_or_endpoint_fails(tmp_path: Path) -> None:
     # Unset path -> step skipped entirely.
     source = _source(tmp_path / "attachments")
-    assert (await source.fetch_job("job-42")).jenkins_console_log == ""
+    assert (await source.fetch_job("job-42")).build_log == ""
 
     # Endpoint errors -> empty log, job continues.
-    broken = _source(tmp_path / "attachments", jenkins_log_path="/api/does-not-exist")
+    broken = _source(tmp_path / "attachments", build_log_path="/api/does-not-exist")
     job = await broken.fetch_job("job-42")
-    assert job.jenkins_console_log == ""
+    assert job.build_log == ""
     assert len(job.failed_scenarios) == 1  # analysis still happened
 
 
@@ -219,7 +219,7 @@ async def test_build_log_skipped_when_unset_or_endpoint_fails(tmp_path: Path) ->
 async def test_missing_entry_or_non_zip_is_tolerated(tmp_path: Path) -> None:
     # A ZIP without build.log -> empty, no crash.
     source = _zip_source(tmp_path, {"baska.txt": "x"}, "/api/runs/{run_id}/logs")
-    assert (await source.fetch_job("job-42")).jenkins_console_log == ""
+    assert (await source.fetch_job("job-42")).build_log == ""
 
     # Not a ZIP at all -> empty, no crash.
     def handler(request: httpx.Request) -> httpx.Response:
@@ -234,9 +234,9 @@ async def test_missing_entry_or_non_zip_is_tolerated(tmp_path: Path) -> None:
         transport=httpx.MockTransport(handler),
     )
     bad = VisiumGoSource(
-        client, tmp_path / "attachments", jenkins_log_path="/api/runs/{run_id}/logs"
+        client, tmp_path / "attachments", build_log_path="/api/runs/{run_id}/logs"
     )
-    assert (await bad.fetch_job("job-42")).jenkins_console_log == ""
+    assert (await bad.fetch_job("job-42")).build_log == ""
 
 
 @pytest.mark.asyncio

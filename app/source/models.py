@@ -55,9 +55,9 @@ class JobData(BaseModel):
     run_result: dict = {}  # state / totals summary (raw, from VisiumGo)
     total_scenario_count: int = 0
     failed_scenarios: list[RawScenario] = []
-    # Jenkins console.log: fetch method not yet known (plan.md A4) — the
-    # contract slot exists, filled on the work PC.
-    jenkins_console_log: str = ""
+    # Job-level build log (VisiumGo `/logs` -> `build.log`); empty when the
+    # endpoint is not configured.
+    build_log: str = ""
     # Raw job-level responses for observability (plan.md A12).
     raw_run_response: dict = {}
     raw_results_response: list = []
