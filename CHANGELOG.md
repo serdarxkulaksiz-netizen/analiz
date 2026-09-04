@@ -1156,3 +1156,87 @@ Salt biçim commit'i, mantık değişikliklerinden **ayrı tutuldu** ki git geç
 okunur kalsın. 22 dosya, net −93 satır (100 karakter sınırıyla gereksiz sarmalar açıldı).
 Doğrulama: `ruff check` temiz, `mypy` temiz, `pytest` 115/115 — davranış değişmedi.
 Bundan sonra `ruff format --check .` temiz kalır, yani ileriki diff'lerde biçim gürültüsü olmaz.
+
+---
+
+# [Son hâl] Tam denetim: kod + config + tüm dokümanlar (2026-09-04)
+
+Kullanıcı artık iş bilgisayarında **manuel iş yapmayacak**; tüm geliştirme burada. İstek: projeyi
+düzenle, bütün dosyaları kontrol et, hata kalmasın. 57 Python dosyası, 3 config, 5 doküman
+denetlendi. **Yeni özellik eklenmedi.**
+
+## 1. Kod: sessizce yutulan senaryo çökmesi (tek gerçek kod hatası)
+
+`app/service.py` — `asyncio.gather(..., return_exceptions=True)` sonucu **hiç okunmuyordu**.
+`_analyze_scenario`'nun `try/except`'i yalnız extraction+PreCheck+LLM+parse'ı sarıyor; **dört
+`repo.save` ve `_increment_completed` bloğun DIŞINDA**. Disk dolu / izin hatası durumunda hata
+`gather` tarafından yutuluyor, koşum `done` görünüyor, sonuç satırı eksik kalıyor ve **sebebi
+hiçbir yere yazılmıyordu**.
+
+> Projeyi daha önce ısıran hata sınıfının aynısı (sessiz senaryo kaybı).
+
+**Düzeltme:** `gather` sonucundaki istisnalar toplanıp koşumun **mevcut `note` alanına** yazılıyor
+(yeni alan yok). Sessiz kayıp → görünür kayıp. Test: `analysis_results` yazarken patlayan sahte
+repository ile koşum `done` oluyor ama `note` "kaydedilemedi" + gerçek sebebi söylüyor.
+
+## 2. Yerel `.env` bozuktu (burada çalıştırmayı engelliyordu)
+
+Dosya, projenin **ilk sürümündeki** `.env.example`'ın kopyasıydı; hiç güncellenmemişti. Config
+katılığı sayesinde açılışta hata veriyordu. Güncel şablondan yeniden kuruldu:
+ölü anahtarlar (`BANKS_CONFIG_PATH`, `EXTRACTOR_PROVIDER`, `TOKEN_CHARS_RATIO`,
+`TRUNCATION_THRESHOLD_TOKENS`, `LLM_API_URL`) silindi; eksik yeni anahtarlar eklendi;
+**`CACHE_ENABLED=true` → `false`** (kullanıcının açık isteğiyle çelişiyordu); bu makinede gerçek
+servislere erişim olmadığı için mock mod. *(`.env` git'e girmez; eski hâli scratchpad'e yedeklendi.)*
+
+## 3. `plan.md` → **v3**: belge gerçeği anlatıyor
+
+Her doküman "tek doğru kaynak: plan.md" diyordu ama belge eskimişti: 19 yerde `bank/banka`,
+9 yerde Jenkins/CONSOLE.LOG, silinmiş `missing_evidence`, tamamlanmış `TODO(work-pc)` stub'ları;
+buna karşılık `profiles.json`, PreCheck kuralları, GET sadeleştirmesi **hiç geçmiyordu**.
+
+Kararların **gerekçeleri korundu**; değişen kararlarda hem yeni durum hem **neden değiştiği**
+yazıldı. Güncellenen bölümler: A3 (zincir) · A4.1 (build log ZIP) · A4.2 (`bank`+`platform` →
+`parameter1`/`parameter2`) · A4.3 (dosya tipleri + build.log satırı) · A5.1 (6 sınıf) ·
+A5.2 (bayraklar → profiller) · A5.3 (9 kural tipi, bs4 yok) · A5.4 (`missing_evidence` yerine yer
+tutucu) · A6 (Findings gerçek alanları, `BUILD LOG`) · A7 (PreCheck artık dolu + kural birikmesi
+uyarısı korundu) · A8 ("KANIT HAKKINDA" + pes etme dengesi) · A11 (token eşiği kaldırıldı, gerekçesi
+yazıldı) · A12 (5 tablo, `prompts`/`llm_responses` ayrımı, `run_id` bazlı önbellek + eski job_id
+hatasının anlatımı) · A13 (GET görünümü + **config katılığı** yeni alt bölüm) · A16 (ne bitti/ne
+kaldı) · A17 (kilitli kararlar) · B2/B4 (stub ölçütü kaldırıldı, ruff/mypy eklendi).
+
+## 4. `docs/nasil-calisir.md` — 5 olgusal hata (koda karşı doğrulandı)
+
+1. Zincir listesi **PreCheck'i atlıyordu**.
+2. "PreCheck her zaman `None` döner" — artık kural eşleşirse LLM'e **hiç gidilmiyor**.
+3. **Yazma sırası tersti**: doküman "önce kanıtı yaz, sonra extract" diyordu; kodda kanıt
+   extraction'dan **sonra** yazılıyor (profilin `evidence_to_store` kararı uygulanmalı).
+4. "`prompts/` … + ham cevap" — `prompts` satırında `raw_response` **yok**; gelen taraf ayrı tabloda.
+5. "`Findings` … + eksik kanıtlar" — o alan kaldırılmıştı.
+
+Ayrıca eklendi: build log çekimi, önbellek adımı, GET'in yalnız teşhis döndürmesi.
+
+## 5. `docs/akis-semasi.md` — mermaid şemaları yanlıştı
+
+PreCheck kutusu "hep None" gösteriyor ve **kısa devre dalı yoktu**; "Halkalar" şeması PreCheck'i
+hiç içermiyordu; GET şeması projeksiyonu göstermiyordu; Source kutusu `resolve_run_id`/önbellek/
+build log'u atlıyordu. Dördü de düzeltildi (4 blok, parantez/tırnak dengesi doğrulandı).
+
+## 6. README
+
+Zincir satırı diğer dokümanlarla hizalandı (PreCheck dahil); `plan.md` referansı **v3**.
+
+## Doğrulama
+
+`ruff check .` temiz · `ruff format --check` temiz · `mypy` temiz · `pytest` **116/116** ·
+gerçek `.env` ile `uvicorn app.main:app` uçtan uca çalışıyor (POST → GET sade, `database/` tam,
+hatasız job yolu, 422 ve 404 doğru) · dokümanlarda ölü terim taraması temiz.
+
+## Kapsam dışı (düzeltilmedi, bildiriliyor)
+
+- **Build log çekimi sessizce boş dönüyor** (`app/source/visiumgo.py`): endpoint yanlışsa/404
+  verirse `build_log` boş kalır ve **sebebi hiçbir yere yazılmaz**. Job'ın devam etmesi doğru,
+  ama teşhis edilebilirlik zayıf. Düzeltmek `Source` sözleşmesine sebep taşıyan yeni bir alan
+  eklemeyi gerektirir → **sorulmadan yapılmadı.**
+- ruff/mypy `[lint]` grubunda **kalıyor** (kullanıcı teyidi: uygulama sonunda iş-pc'de çalışacak).
+
+**Sıradaki adım:** kullanıcının yeni isterleri.

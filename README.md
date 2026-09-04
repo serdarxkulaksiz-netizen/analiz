@@ -5,14 +5,16 @@ Başarısız otomasyon test koşumlarının ham kanıtını
 backend. Çıktı: **güven seviyeli, gerekçeli ön teşhis** — "test hatası mı,
 uygulama hatası mı, ortam mı, geçici mi (yoksa unknown/inconclusive mı)?"
 
-Mimari ve tüm kararlar için tek doğru kaynak: [`plan.md`](plan.md) (v2).
+Mimari ve tüm kararlar için tek doğru kaynak: [`plan.md`](plan.md) (v3).
 Yapım geçmişi ve açık noktalar: [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Mimari (tak-çıkar halkalar)
 
 ```
-Source (VisiumGo) → Extraction (Evidence → Findings) → PreCheck → Prompt → LLM (tek atış) → Parse (JSON) → Persist + API
+Source → Extraction → [PreCheck] → Prompt → LLM (tek atış) → Parse (JSON) → Persist + API
 ```
+
+`PreCheck` eşleşirse Prompt + LLM **atlanır**; varsayılan `NoOpPreCheck` hiç eşleşmez.
 
 - **Davranış dallanması YOK:** `if mock` / `if type ==` yerine
   ayrı sınıf + arayüz + registry + DI. Yeni varyant = registry'ye bir satır.

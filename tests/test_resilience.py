@@ -6,6 +6,7 @@ from app.config import Settings
 from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
 from app.extraction.evidence_extractor import EvidenceExtractor
+from app.llm.mock import MockLLMProvider
 from app.llm.provider import LLMError, LLMProvider, LLMResponse
 from app.persistence.file_repository import FileRepository
 from app.precheck.noop import NoOpPreCheck
@@ -112,3 +113,38 @@ async def test_source_failure_finishes_run_with_note(settings: Settings) -> None
     assert run is not None
     assert run["status"] == "failed"
     assert "job failed" in run["note"]
+
+
+class BrokenResultsRepository(FileRepository):
+    """A repository whose `analysis_results` writes fail (disk full / permission).
+
+    Those writes sit OUTSIDE `_analyze_scenario`'s try block, so the failure
+    escapes into `asyncio.gather` — the exact path that used to be swallowed.
+    """
+
+    def save(self, table: str, row_id: str, data: dict) -> None:  # type: ignore[override]
+        if table.endswith("analysis_results"):
+            raise OSError("disk dolu")
+        super().save(table, row_id, data)
+
+
+@pytest.mark.asyncio
+async def test_persistence_failure_is_reported_not_swallowed(settings: Settings) -> None:
+    """A scenario that cannot be saved must leave a trace, not vanish.
+
+    Regression: `gather(..., return_exceptions=True)` discarded these, so the
+    run reported `done` with missing results and no explanation anywhere.
+    """
+    service = _service(settings, MockLLMProvider(settings.llm_model))
+    service._repo = BrokenResultsRepository(settings.database_dir)
+    run_id = service.create_run("default", "job-1", "default")
+
+    await service.run_analysis(run_id)
+
+    run = service.get_run(run_id)
+    assert run is not None
+    assert run["status"] == "done"  # the job still finishes
+    assert run["completed_count"] == 0  # nothing was actually completed
+    assert "kaydedilemedi" in run["note"]  # and it says so
+    assert "disk dolu" in run["note"]  # naming the real cause
+    assert run["results"] == []

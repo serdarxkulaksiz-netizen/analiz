@@ -196,7 +196,7 @@ class AnalyzerService:
             return
 
         semaphore = asyncio.Semaphore(settings.max_concurrency)
-        await asyncio.gather(
+        outcomes = await asyncio.gather(
             *(
                 self._analyze_scenario(
                     run["analyzer_run_id"],
@@ -211,8 +211,23 @@ class AnalyzerService:
             ),
             return_exceptions=True,
         )
+
+        # `_analyze_scenario` handles its own errors, but its four repository
+        # writes sit outside that guard: a disk/permission/serialization failure
+        # would escape here. `return_exceptions=True` would then DROP it
+        # silently — the run would report `done` with a missing result row and
+        # nobody would ever learn why. So record what escaped.
+        escaped = [o for o in outcomes if isinstance(o, BaseException)]
+
         run = self._repo.get(settings.table_runs, run["analyzer_run_id"]) or run
-        self._update_run(run, status=RunStatus.DONE.value)
+        note = ""
+        if escaped:
+            kinds = ", ".join(sorted({f"{type(e).__name__}: {e}" for e in escaped}))
+            note = (
+                f"{len(escaped)}/{len(job.failed_scenarios)} senaryo kaydedilemedi "
+                f"({kinds}) — bu senaryoların sonucu diskte yok"
+            )
+        self._update_run(run, status=RunStatus.DONE.value, note=note)
 
     def _find_cached_run(self, run: dict[str, Any]) -> dict[str, Any] | None:
         """Find a previously finished analysis of the same run + parameters.
