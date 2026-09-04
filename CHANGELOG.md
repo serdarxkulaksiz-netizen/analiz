@@ -1090,3 +1090,62 @@ biçim değişikliği olduğu ve geçmişi bulanıklaştıracağı için yapılm
 
 **Sıradaki adım:** iş-pc'de gerçek koşumla GET sadeleşmesi + prompt düzeltmesi doğrulanacak;
 ardından kullanıcının yeni isterleri.
+
+---
+
+# [Sertleştirme] Sessiz yapılandırma tuzakları kapatıldı (2026-09-04)
+
+Yeni isterler gelmeden önce projeyi en iyi hâline getirme turu. **Yeni özellik eklenmedi** (proje
+kuralı: spekülatif geliştirme yok); bugüne kadar biriken **sessiz tuzaklar** kapatıldı.
+
+## 1. `.env`'de tanınmayan anahtar artık HATA (asıl kazanç)
+
+**Tuzak:** `Settings` `extra="ignore"` idi. `.env`'de yanlış yazılmış ya da yeniden adlandırılmış
+bir anahtar **sessizce yok sayılıyordu**. Bu teorik değil, **canlı bir risk**ti: build log
+yeniden adlandırmasından sonra iş-pc'deki `.env` hâlâ `VISIUMGO_JENKINS_LOG_PATH` taşıyorsa
+build log **hiç çekilmeyecek** ve hiçbir yerde uyarı çıkmayacaktı.
+
+- `extra="forbid"` + `get_settings()` içinde okunaklı hata: hangi anahtar tanınmadı, muhtemel
+  sebep (yeniden adlandırma örneğiyle) ve nereye bakılacağı (`.env.example`).
+- **Deneyle doğrulandı:** `.env`'deki ölü anahtar hata veriyor; makinenin **alakasız ortam
+  değişkenleri etkilenmiyor** (yalnız `.env` dosyasının kendi anahtarları denetleniyor).
+- `.env.example` ↔ `Settings` alan listesi **birebir senkron** (kontrol edildi, sapma yok).
+
+## 2. `app/main.py` import edilince `.env` okuyordu
+
+Yukarıdaki değişiklik gizli bir tasarım kokusunu ortaya çıkardı: modül seviyesindeki
+`app = create_app()` yüzünden **modülü import etmek** bile config okuyup tüm sağlayıcıları
+kuruyordu. Sonuç: test sonuçları geliştiricinin `.env`'ine bağımlıydı ve bozuk bir `.env`
+alakasız testleri çökertiyordu.
+
+- PEP 562 `__getattr__` ile app **istendiğinde** kuruluyor. `uvicorn app.main:app` **aynen
+  çalışıyor** (temiz bir kopyada uçtan uca doğrulandı: FastAPI örneği ve 2 rota geldi).
+- Testler artık `.env`'den tamamen bağımsız.
+
+## 3. Yeni testler — `tests/test_config_and_app.py` (5 test)
+
+Ölü anahtar hatası (mesaj anahtarı ve `.env.example`'ı içeriyor mu) · bilinen anahtarlar hâlâ
+yükleniyor mu · alakasız OS değişkenleri açılışı bozmuyor mu · **import yan etkisiz mi**
+(bozuk `.env`'li dizinde alt süreçte: import başarılı, `app` erişimi hata — tembelliğin kanıtı) ·
+`uvicorn` tarzı erişim çalışıyor mu.
+
+## 4. Doküman kayması düzeltildi
+
+- `docs/proje-rehberi.md`: "`app/precheck/` (bugün boş)" **yanlıştı** → `RuleBasedPreCheck`
+  eklendi; klasör haritasına `api.py`; yeni **7.1 API görünümü** bölümü; ayarlara config
+  katılığı notu.
+- `README.md`: "PreCheck kancası: kural listesi yok" **yanlıştı** → düzeltildi; "her şey
+  kaydedilir, az şey gösterilir" ve "config katıdır" maddeleri eklendi.
+
+## Durum
+
+`ruff check .` temiz · `mypy` temiz · `pytest` **115/115**.
+
+## ⚠️ Kullanıcı için: `.env` temizliği gerekiyor
+
+`extra="forbid"` yüzünden bayat `.env` dosyaları artık **açılışta hata verir** (bu kasıtlı:
+sessiz yanlış yapılandırmadan iyidir). Mac'teki yerel `.env` şu ölü anahtarları taşıyor ve
+silinmeleri gerekiyor: `BANKS_CONFIG_PATH`, `EXTRACTOR_PROVIDER`, `TOKEN_CHARS_RATIO`,
+`TRUNCATION_THRESHOLD_TOKENS`. İş-pc'deki `.env` de aynı gözden geçirmeden geçmeli — özellikle
+`VISIUMGO_JENKINS_LOG_PATH` → `VISIUMGO_BUILD_LOG_PATH`. Hata mesajı hangi anahtarın sorunlu
+olduğunu zaten söylüyor.

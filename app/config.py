@@ -10,6 +10,7 @@ constants (enum values, block labels) live in code instead.
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,7 +20,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore",
+        # A key in `.env` that no setting owns is an ERROR, not something to
+        # skip quietly: a typo or a renamed key would otherwise leave the
+        # feature silently off (e.g. the old VISIUMGO_JENKINS_LOG_PATH after
+        # the build-log rename -> no build log, no warning, nobody notices).
+        # Unrelated OS environment variables are unaffected; only the `.env`
+        # file's own keys are checked.
+        extra="forbid",
     )
 
     # --- persistence / DB simulation (plan.md A12) ---
@@ -84,5 +91,25 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Return the process-wide settings instance."""
-    return Settings()
+    """Return the process-wide settings instance.
+
+    A `.env` key that matches no setting fails here, at startup, with a message
+    naming the key — instead of the feature silently staying off.
+    """
+    try:
+        return Settings()
+    except ValidationError as exc:
+        unknown = [
+            str(error["loc"][0])
+            for error in exc.errors()
+            if error["type"] == "extra_forbidden" and error["loc"]
+        ]
+        if not unknown:
+            raise
+        names = ", ".join(sorted(k.upper() for k in unknown))
+        raise ValueError(
+            f".env dosyasında tanınmayan ayar(lar): {names}. "
+            "Yazım hatası olabilir ya da anahtar yeniden adlandırılmış olabilir "
+            "(ör. VISIUMGO_JENKINS_LOG_PATH -> VISIUMGO_BUILD_LOG_PATH). "
+            "Geçerli anahtarların tam listesi: .env.example"
+        ) from None

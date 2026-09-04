@@ -24,9 +24,13 @@ Source (VisiumGo) → Extraction (Evidence → Findings) → PreCheck → Prompt
   (kes/seç/ekle) belirler. Yeni job = **config'e satır**, kod değişmez.
 - **Evidence mimarisi:** 6 kanıt sınıfı + registry (`mimeType`+`deviceId` eşleme);
   her kanıtın content selector'ı profil kurallarını uygular.
-- **Her şey kaydedilir:** VisiumGo'dan gelen tüm ham cevaplar (run, results,
-  senaryo detayı, attachment dosyaları) `database/` altına yazılır.
-- **PreCheck kancası:** bugün `NoOpPreCheck` (her zaman LLM'e gider); kural listesi yok.
+- **Her şey kaydedilir, az şey gösterilir:** VisiumGo'dan gelen tüm ham cevaplar (run, results,
+  senaryo detayı, attachment dosyaları, build log) `database/` altına yazılır; **GET cevabı**
+  yalnız LLM'in teşhisini döndürür.
+- **Config katıdır:** `.env`'de tanınmayan bir anahtar **açılışta hata** verir — yazım hatası
+  ya da yeniden adlandırılmış ayar sessizce yok sayılmaz.
+- **PreCheck:** varsayılan `NoOpPreCheck` (her senaryo LLM'e gider); `PRECHECK_PROVIDER=rules`
+  ile bilinen hatalara LLM'e hiç gitmeden hazır cevap dönülür (kural listesi config'te, boş gelir).
 - **DB simülasyonu:** `database/<tablo>/<id>.json`; Repository arayüzü arkasında
   (ileride SQLite/Oracle tak-çıkar).
 - **Halka 1-2 gerçek:** `VisiumGoSource` gerçek API'ye bağlı (run çöz → FAILED

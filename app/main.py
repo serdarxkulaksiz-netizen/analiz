@@ -172,4 +172,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+def __getattr__(name: str) -> FastAPI:
+    """Build the ASGI app only when something actually asks for it (PEP 562).
+
+    `uvicorn app.main:app` keeps working, but merely IMPORTING this module no
+    longer reads `.env` and wires every provider. That matters because config
+    errors used to surface as import failures in unrelated tests, and the test
+    suite silently depended on whatever `.env` the developer happened to have.
+    """
+    if name == "app":
+        return create_app()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

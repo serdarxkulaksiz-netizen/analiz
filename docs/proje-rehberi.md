@@ -28,11 +28,11 @@ Source → Extraction(+Evidence) → PreCheck → Prompt → LLM → Parse → P
 | `app/main.py` | FastAPI app, 2 endpoint, registry'ler, `build_service` (DI kökü) |
 | `app/service.py` | `AnalyzerService` — asıl orchestrator (akışı yöneten beyin) |
 | `app/config.py` | `Settings` — tüm ayarlar (kontrol paneli) |
-| `app/domain/` | Sözleşmeler: enum'lar, `Findings`, `LLMAnalysis`/`AnalysisResult` |
+| `app/domain/` | Sözleşmeler: enum'lar, `Findings`, `LLMAnalysis`/`AnalysisResult`, `api.py` (GET görünümü) |
 | `app/source/` | Halka 1 — veri çekme (Mock + VisiumGo + HTTP client) |
 | `app/evidence/` | Kanıt sınıfları + registry (mimeType+deviceId eşleme) |
 | `app/extraction/` | Halka 2 — ham veri → `Findings` |
-| `app/precheck/` | LLM öncesi kısa devre kancası (bugün boş) |
+| `app/precheck/` | LLM öncesi kısa devre: `NoOpPreCheck` + kural tabanlı `RuleBasedPreCheck` |
 | `app/prompting/` | Halka 3 — `Findings` → prompt metni |
 | `app/llm/` | Halka 4 — LLM'e çağrı (Mock + gerçek) |
 | `app/parsing/` | Halka 5 — LLM cevabından JSON çıkar |
@@ -72,6 +72,13 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `cache_enabled` | `False` | Aynı **koşumu** (run_id + parametreler) tekrar analiz etmeme (kapalı) |
 
 `get_settings()` → süreç boyunca tek `Settings` örneği döndürür (`@lru_cache`).
+
+> **Config katıdır (`extra="forbid"`).** `.env`'de hiçbir ayara karşılık gelmeyen bir anahtar
+> **açılışta hata** verir ve anahtarın adını söyler. Sebep: yeniden adlandırılmış ya da yanlış
+> yazılmış bir anahtar sessizce yok sayılınca özellik kapalı kalıyor ve kimse fark etmiyordu
+> (ör. `VISIUMGO_JENKINS_LOG_PATH` → `VISIUMGO_BUILD_LOG_PATH` sonrası build log hiç çekilmezdi).
+> Makinenin alakasız ortam değişkenleri etkilenmez; yalnız `.env` dosyasının kendi anahtarları
+> denetlenir.
 
 ---
 
@@ -333,7 +340,27 @@ Tüm halkaları enjekte alır; hiçbirini kendisi yaratmaz.
 | `build_service(settings)` | **DI kökü**: config'e göre tüm parçaları kurup `AnalyzerService` döndürür |
 | `create_app(settings=None)` | FastAPI app'i kurar; 2 endpoint'i tanımlar |
 | `POST /analyze/visiumgo` → `start_analysis` | `create_run` çağırır, `run_analysis`'i arka plana atar, **hemen** `analyzer_run_id` döner |
-| `GET /analyze/visiumgo/{id}` → `get_analysis` | `get_run` çağırır; yoksa 404 |
+| `GET /analyze/visiumgo/{id}` → `get_analysis` | `get_run` çağırır; yoksa 404. Cevabı **`build_run_view` ile sadeleştirir** |
+| `__getattr__("app")` | ASGI app'i **istendiğinde** kurar (PEP 562). `uvicorn app.main:app` çalışır ama modülü *import etmek* `.env` okumaz |
+
+### 7.1 API görünümü — `app/domain/api.py`
+
+Diskte **her şey** saklanır, API'de **yalnız teşhis** gösterilir. Projeksiyon servis katmanında
+değil, **API sınırında** yapılır: `AnalyzerService.get_run()` tam kaydı döndürmeye devam eder
+(iç hata ayıklama ve testler için).
+
+| Parça | Ne yapar |
+|---|---|
+| `DiagnosisView` | Bir teşhisin API görünümü: LLM alanları + `status` + `meta` + `result_id` (ham ize join anahtarı) |
+| `RunView` | Koşum durumu/kimliği + `results: list[DiagnosisView]` |
+| `build_run_view(run)` | Disk satırını görünüme çevirir |
+
+**API'de görünmeyen (diskte tam duran):** `raw_run_response`, `raw_results_response`,
+`run_result`, `build_log`, `raw_llm_response`, `profile_name`, `truncated(_note)`,
+`screenshot_paths`, satır seviyesi `parameter1/2`.
+
+> Pydantic tanımsız anahtarları düşürdüğü için, `runs` satırına ileride eklenecek yeni alanlar
+> API'ye **kazara sızmaz** — bu davranış bir testle kilitlidir.
 
 ---
 
