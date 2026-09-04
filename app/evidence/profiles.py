@@ -79,8 +79,7 @@ class ProfileRegistry:
 
         if DEFAULT_PROFILE_NAME not in self._profiles:
             raise ValueError(
-                f"profiles config {config_path} must contain a "
-                f'"{DEFAULT_PROFILE_NAME}" profile.'
+                f'profiles config {config_path} must contain a "{DEFAULT_PROFILE_NAME}" profile.'
             )
 
     def get(self, job_id: str = "", parameter1: str = "") -> Profile:
@@ -89,9 +88,7 @@ class ProfileRegistry:
             profile = self._profiles.get(parameter1)
             if profile is None:
                 known = ", ".join(sorted(self._profiles))
-                raise ValueError(
-                    f"Unknown profile {parameter1!r}. Known profiles: {known}"
-                )
+                raise ValueError(f"Unknown profile {parameter1!r}. Known profiles: {known}")
             return profile
         if job_id and job_id in self._by_job_id:
             return self._by_job_id[job_id]

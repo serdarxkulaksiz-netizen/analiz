@@ -25,9 +25,7 @@ class PromptBuilder:
 
     def build(self, findings: Findings) -> str:
         """Build the full prompt for one failed scenario."""
-        steps_text = "\n".join(
-            f"- {step.name}: {step.status.value}" for step in findings.steps
-        )
+        steps_text = "\n".join(f"- {step.name}: {step.status.value}" for step in findings.steps)
         evidence_text = "\n\n".join(
             f"=== {block.label} ===\n{block.content}"
             for block in findings.evidence_blocks

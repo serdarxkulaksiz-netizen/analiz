@@ -192,9 +192,7 @@ class AnalyzerService:
         )
 
         if not job.failed_scenarios:
-            self._update_run(
-                run, status=RunStatus.DONE.value, note="analiz edilecek hata yok"
-            )
+            self._update_run(run, status=RunStatus.DONE.value, note="analiz edilecek hata yok")
             return
 
         semaphore = asyncio.Semaphore(settings.max_concurrency)
@@ -254,9 +252,7 @@ class AnalyzerService:
             and (attachment.stored_path or attachment.file_name)
         ]
 
-    def _storable_scenario(
-        self, scenario: RawScenario, excluded: list[str]
-    ) -> dict[str, Any]:
+    def _storable_scenario(self, scenario: RawScenario, excluded: list[str]) -> dict[str, Any]:
         """Raw scenario dump, honouring the profile's `evidence_to_store`.
 
         Excluded evidence keeps its metadata (file name, type, stored path) so
@@ -266,9 +262,7 @@ class AnalyzerService:
         dump = scenario.model_dump(mode="json")
         if not excluded:
             return dump
-        for attachment, row in zip(
-            scenario.attachments, dump.get("attachments", []), strict=True
-        ):
+        for attachment, row in zip(scenario.attachments, dump.get("attachments", []), strict=True):
             if evidence_name_for(attachment) in excluded:
                 row["content"] = ""
                 row["content_stored"] = False

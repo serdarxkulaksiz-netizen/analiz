@@ -38,9 +38,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not base_url:
-            raise ValueError(
-                "LLM_BASE_URL is empty — set it in .env (or use LLM_PROVIDER=mock)."
-            )
+            raise ValueError("LLM_BASE_URL is empty — set it in .env (or use LLM_PROVIDER=mock).")
         self._url = base_url.rstrip("/") + endpoint_path
         self._api_key = api_key
         self._model = model  # kept for meta only; not sent in the body
@@ -78,9 +76,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         # to keep — only that raises LLMError.
         try:
             async with httpx.AsyncClient(**client_kwargs) as client:
-                response = await client.post(
-                    self._url, json=payload, headers=self._headers()
-                )
+                response = await client.post(self._url, json=payload, headers=self._headers())
         except Exception as exc:
             raise LLMError(f"{type(exc).__name__}: {exc}") from exc
 

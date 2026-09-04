@@ -118,9 +118,7 @@ class VisiumGoSource(Source):
                 return ""
             return bundle.read(wanted).decode("utf-8", errors="replace")
 
-    async def _resolve_run(
-        self, job_id: str, run_id: str
-    ) -> tuple[str, dict[str, Any]]:
+    async def _resolve_run(self, job_id: str, run_id: str) -> tuple[str, dict[str, Any]]:
         """Adım A: run_id wins; else newest run for job_id by startTime."""
         if run_id:
             return run_id, {}
@@ -137,9 +135,7 @@ class VisiumGoSource(Source):
             raise ValueError(f"Run record for job_id={job_id!r} has no id.")
         return str(resolved), latest
 
-    async def _build_scenario(
-        self, run_id: str, record: dict[str, Any]
-    ) -> RawScenario:
+    async def _build_scenario(self, run_id: str, record: dict[str, Any]) -> RawScenario:
         """Adım C: fetch scenario detail and its attachments."""
         scenario_id = str(record.get("id", ""))
         detail = await self._client.get_json(
@@ -170,9 +166,7 @@ class VisiumGoSource(Source):
             raw_detail=detail,  # full raw response, persisted (save everything)
         )
 
-    async def _download_attachment(
-        self, run_id: str, meta: dict[str, Any]
-    ) -> Attachment:
+    async def _download_attachment(self, run_id: str, meta: dict[str, Any]) -> Attachment:
         """Adım D: download one attachment (URL-encoded) and save it to disk."""
         file_name = str(meta.get("fileName", ""))
         mime_type = str(meta.get("mimeType", ""))
@@ -201,9 +195,7 @@ class VisiumGoSource(Source):
         except Exception:
             # A failed download leaves this evidence empty — the scenario
             # continues (real-spec Bölüm 5).
-            return Attachment(
-                file_name=file_name, mime_type=mime_type, device_id=device_id
-            )
+            return Attachment(file_name=file_name, mime_type=mime_type, device_id=device_id)
 
     def _save(self, run_id: str, file_name: str, data: bytes) -> Path:
         dest = self._attachments_dir / _safe_path_part(run_id) / _safe_path_part(file_name)

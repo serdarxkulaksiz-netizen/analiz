@@ -128,13 +128,9 @@ def build_service(settings: Settings) -> AnalyzerService:
         extractor=EvidenceExtractor(
             EvidenceRegistry(), ProfileRegistry(settings.profiles_config_path)
         ),
-        prompt_builder=PromptBuilder(
-            settings.prompt_template_path, settings.confidence_buckets
-        ),
+        prompt_builder=PromptBuilder(settings.prompt_template_path, settings.confidence_buckets),
         llm_provider=_select(LLM_REGISTRY, settings.llm_provider, "llm")(settings),
-        precheck=_select(PRECHECK_REGISTRY, settings.precheck_provider, "precheck")(
-            settings
-        ),
+        precheck=_select(PRECHECK_REGISTRY, settings.precheck_provider, "precheck")(settings),
     )
 
 

@@ -62,9 +62,7 @@ def test_drop_and_keep_matching() -> None:
     assert _apply({"type": "drop_matching", "patterns": ["DEBUG"]}, text) == (
         "INFO ok\nERROR patladı"
     )
-    assert _apply({"type": "keep_matching", "patterns": ["ERROR"]}, text) == (
-        "ERROR patladı"
-    )
+    assert _apply({"type": "keep_matching", "patterns": ["ERROR"]}, text) == ("ERROR patladı")
 
 
 def test_max_chars_and_collapse_whitespace() -> None:
@@ -99,26 +97,20 @@ def test_strip_tags_handles_void_tags_without_eating_rest() -> None:
 
 def test_select_nth_takes_first_linearlayout_with_subtree() -> None:
     # Job D: "4 LinearLayout gelecek, ilkini al"
-    out = _apply(
-        {"type": "select_nth", "match": {"tag": "LinearLayout"}, "index": 0}, _HTML
-    )
+    out = _apply({"type": "select_nth", "match": {"tag": "LinearLayout"}, "index": 0}, _HTML)
     assert "Tamam" in out  # first one's subtree
     assert "İptal" not in out and "second" not in out
     assert "<script>" not in out
 
 
 def test_select_nth_second_element() -> None:
-    out = _apply(
-        {"type": "select_nth", "match": {"tag": "LinearLayout"}, "index": 1}, _HTML
-    )
+    out = _apply({"type": "select_nth", "match": {"tag": "LinearLayout"}, "index": 1}, _HTML)
     assert "İptal" in out and "Tamam" not in out
 
 
 def test_select_nth_by_class() -> None:
     html = '<div class="a">bir</div><div class="target">iki</div>'
-    out = _apply(
-        {"type": "select_nth", "match": {"tag": "div", "class": "target"}}, html
-    )
+    out = _apply({"type": "select_nth", "match": {"tag": "div", "class": "target"}}, html)
     assert "iki" in out and "bir" not in out
 
 
@@ -145,9 +137,7 @@ def test_bad_params_raise() -> None:
 def test_rules_apply_in_order() -> None:
     # strip script first, then take the first LinearLayout
     text = _apply({"type": "strip_tags", "tags": ["script", "style"]}, _HTML)
-    out = _apply(
-        {"type": "select_nth", "match": {"tag": "LinearLayout"}, "index": 0}, text
-    )
+    out = _apply({"type": "select_nth", "match": {"tag": "LinearLayout"}, "index": 0}, text)
     assert "Tamam" in out and "İptal" not in out
 
 

@@ -46,9 +46,8 @@ class Evidence(ABC):
         """
         if attachment.mime_type != cls.mime_type:
             return False
-        return (
-            attachment.device_id == cls.device_id
-            or attachment.device_id.startswith(cls.device_id + ".")
+        return attachment.device_id == cls.device_id or attachment.device_id.startswith(
+            cls.device_id + "."
         )
 
     @property

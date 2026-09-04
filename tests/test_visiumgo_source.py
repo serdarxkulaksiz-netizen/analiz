@@ -25,6 +25,7 @@ def _zip_bytes(entries: dict[str, str]) -> bytes:
             bundle.writestr(name, content)
     return buffer.getvalue()
 
+
 _RUNS = [
     {
         "id": "RUN_OLD",
@@ -88,9 +89,7 @@ def _handler(request: httpx.Request) -> httpx.Response:
         # The real endpoint returns a ZIP archive containing build.log.
         return httpx.Response(
             200,
-            content=_zip_bytes(
-                {"build.log": "MOCK build log", "other.txt": "ilgisiz"}
-            ),
+            content=_zip_bytes({"build.log": "MOCK build log", "other.txt": "ilgisiz"}),
         )
     if "/attachments/" in path:
         if path.endswith(".png"):
@@ -207,9 +206,7 @@ def _zip_source(tmp_path: Path, entries: dict[str, str], path: str) -> VisiumGoS
 @pytest.mark.asyncio
 async def test_build_log_extracted_from_zip(tmp_path: Path) -> None:
     # /logs returns a ZIP; build.log is pulled out of it (raw zip not kept).
-    source = _source(
-        tmp_path / "attachments", build_log_path="/api/runs/{run_id}/logs"
-    )
+    source = _source(tmp_path / "attachments", build_log_path="/api/runs/{run_id}/logs")
     job = await source.fetch_job("job-42")
     assert job.build_log == "MOCK build log"  # not the other entry
 
@@ -217,9 +214,7 @@ async def test_build_log_extracted_from_zip(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_build_log_matches_nested_entry(tmp_path: Path) -> None:
     # Entry matched on its ending, so `logs/build.log` works too.
-    source = _zip_source(
-        tmp_path, {"logs/build.log": "iç içe"}, "/api/runs/{run_id}/logs"
-    )
+    source = _zip_source(tmp_path, {"logs/build.log": "iç içe"}, "/api/runs/{run_id}/logs")
     job = await source.fetch_job("job-42")
     assert job.build_log == "iç içe"
 
@@ -255,9 +250,7 @@ async def test_missing_entry_or_non_zip_is_tolerated(tmp_path: Path) -> None:
         timeout_seconds=5.0,
         transport=httpx.MockTransport(handler),
     )
-    bad = VisiumGoSource(
-        client, tmp_path / "attachments", build_log_path="/api/runs/{run_id}/logs"
-    )
+    bad = VisiumGoSource(client, tmp_path / "attachments", build_log_path="/api/runs/{run_id}/logs")
     assert (await bad.fetch_job("job-42")).build_log == ""
 
 
@@ -277,9 +270,7 @@ async def test_auth_header_and_segment_encoding(tmp_path: Path) -> None:
     await source.fetch_job("job-42")
 
     # Every request carries the Bearer token (never hardcoded; from config).
-    assert all(
-        r.headers.get("Authorization") == "Bearer eyJmock" for r in _CAPTURED
-    )
+    assert all(r.headers.get("Authorization") == "Bearer eyJmock" for r in _CAPTURED)
     # The scenario id (with '/' and ':') is percent-encoded into one segment.
     detail_reqs = [r for r in _CAPTURED if "/results/" in r.url.path]
     assert detail_reqs

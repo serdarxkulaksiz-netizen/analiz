@@ -33,8 +33,7 @@ class VisiumGoClient:
     ) -> None:
         if not base_url:
             raise ValueError(
-                "VISIUMGO_BASE_URL is empty — set it in .env "
-                "(or use SOURCE_PROVIDER=mock)."
+                "VISIUMGO_BASE_URL is empty — set it in .env (or use SOURCE_PROVIDER=mock)."
             )
         self._base_url = base_url.rstrip("/")
         self._token = token

@@ -18,9 +18,7 @@ _ALL = [
 def _profile(to_llm: list[str], rules: dict | None = None) -> Profile:
     return Profile(
         "test",
-        ProfileConfig(
-            evidence_to_llm=to_llm, evidence_to_store=_ALL, rules=rules or {}
-        ),
+        ProfileConfig(evidence_to_llm=to_llm, evidence_to_store=_ALL, rules=rules or {}),
     )
 
 
@@ -51,9 +49,7 @@ def _scenario(attachments: list[Attachment]) -> RawScenario:
 
 
 def test_attachments_map_to_expected_classes() -> None:
-    evidences = EvidenceRegistry().build_for(
-        _scenario(_web_attachments()), _FULL_PROFILE
-    )
+    evidences = EvidenceRegistry().build_for(_scenario(_web_attachments()), _FULL_PROFILE)
     names = {type(e).evidence_name for e in evidences}
     assert names == {
         "TestLogEvidence",
@@ -66,9 +62,7 @@ def test_attachments_map_to_expected_classes() -> None:
 def test_two_text_plain_split_by_device_id() -> None:
     # text/plain + test -> TestLog ; text/plain + browser.default -> BrowserLog
     evidences = EvidenceRegistry().build_for(
-        _scenario(
-            [_att("text/plain", "test", "T"), _att("text/plain", "browser.default", "B")]
-        ),
+        _scenario([_att("text/plain", "test", "T"), _att("text/plain", "browser.default", "B")]),
         _FULL_PROFILE,
     )
     by_name = {type(e).evidence_name: e for e in evidences}
@@ -78,9 +72,7 @@ def test_two_text_plain_split_by_device_id() -> None:
 
 def test_mobile_png_prefix_matches_mobile_screenshot() -> None:
     evidences = EvidenceRegistry().build_for(
-        _scenario(
-            [_att("image/png", "mobile.ios.iPhone 14 Pro Max", "", "m.png")]
-        ),
+        _scenario([_att("image/png", "mobile.ios.iPhone 14 Pro Max", "", "m.png")]),
         _FULL_PROFILE,
     )
     by_name = {type(e).evidence_name: e for e in evidences}
@@ -89,9 +81,7 @@ def test_mobile_png_prefix_matches_mobile_screenshot() -> None:
 
 
 def test_html_block_and_png_no_block() -> None:
-    evidences = EvidenceRegistry().build_for(
-        _scenario(_web_attachments()), _FULL_PROFILE
-    )
+    evidences = EvidenceRegistry().build_for(_scenario(_web_attachments()), _FULL_PROFILE)
     by_name = {type(e).evidence_name: e for e in evidences}
     assert by_name["HtmlEvidence"].to_block().label == BLOCK_DOM
     assert by_name["WebScreenshotEvidence"].to_block() is None

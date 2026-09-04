@@ -31,9 +31,7 @@ def _findings(error: str = "", blocks: list[str] | None = None) -> Findings:
     return Findings(
         scenario_name="S",
         error_message=error,
-        evidence_blocks=[
-            EvidenceBlock(label="ADIMLAR", content=text) for text in (blocks or [])
-        ],
+        evidence_blocks=[EvidenceBlock(label="ADIMLAR", content=text) for text in (blocks or [])],
     )
 
 

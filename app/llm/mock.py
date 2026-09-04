@@ -38,18 +38,15 @@ class MockLLMProvider(LLMProvider):
         payload = {
             "scenario_name": self._echo_scenario_name(prompt),
             "root_cause": (
-                "MOCK_örnek kök neden: bu sahte bir teşhistir, "
-                "gerçek LLM bağlanınca değişecek."
+                "MOCK_örnek kök neden: bu sahte bir teşhistir, gerçek LLM bağlanınca değişecek."
             ),
             "error_type": "MOCK_ExampleError",
             "verdict": "test_maintenance",
             "explanation": (
-                "MOCK_ bu sahte bir açıklamadır; kanıta dayalı gerçek yorum "
-                "yerine sabit örnek."
+                "MOCK_ bu sahte bir açıklamadır; kanıta dayalı gerçek yorum yerine sabit örnek."
             ),
             "suggestion": (
-                "MOCK_ örnek öneri: gerçek LLM sağlayıcısını .env üzerinden "
-                "etkinleştirin."
+                "MOCK_ örnek öneri: gerçek LLM sağlayıcısını .env üzerinden etkinleştirin."
             ),
             "confidence": self._confidence,
             "confidence_reason": "MOCK_ sabit örnek güven gerekçesi (sahte).",

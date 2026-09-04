@@ -37,9 +37,7 @@ def _service(settings: Settings, llm: LLMProvider) -> AnalyzerService:
         extractor=EvidenceExtractor(
             EvidenceRegistry(), ProfileRegistry(settings.profiles_config_path)
         ),
-        prompt_builder=PromptBuilder(
-            settings.prompt_template_path, settings.confidence_buckets
-        ),
+        prompt_builder=PromptBuilder(settings.prompt_template_path, settings.confidence_buckets),
         llm_provider=llm,
         precheck=NoOpPreCheck(),
     )
@@ -102,9 +100,7 @@ async def test_source_failure_finishes_run_with_note(settings: Settings) -> None
         extractor=EvidenceExtractor(
             EvidenceRegistry(), ProfileRegistry(settings.profiles_config_path)
         ),
-        prompt_builder=PromptBuilder(
-            settings.prompt_template_path, settings.confidence_buckets
-        ),
+        prompt_builder=PromptBuilder(settings.prompt_template_path, settings.confidence_buckets),
         llm_provider=GarbageLLMProvider(),
         precheck=NoOpPreCheck(),
     )

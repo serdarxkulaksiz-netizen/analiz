@@ -4,9 +4,7 @@ from app.parsing.json_parser import _try_json
 
 
 def test_plain_json_object() -> None:
-    assert _try_json('{"verdict": "test_maintenance"}') == {
-        "verdict": "test_maintenance"
-    }
+    assert _try_json('{"verdict": "test_maintenance"}') == {"verdict": "test_maintenance"}
 
 
 def test_markdown_fenced_json() -> None:

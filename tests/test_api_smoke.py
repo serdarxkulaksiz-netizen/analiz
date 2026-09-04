@@ -50,9 +50,7 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
 
     # The API view is slim, but the RUN ROW on disk keeps every raw trace.
     run_row = json.loads(
-        (settings.database_dir / settings.table_runs / f"{analyzer_run_id}.json").read_text(
-            "utf-8"
-        )
+        (settings.database_dir / settings.table_runs / f"{analyzer_run_id}.json").read_text("utf-8")
     )
     assert run_row["raw_run_response"]["jobName"] == "MOCK_nightly-test"
     assert len(run_row["raw_results_response"]) == 2
@@ -85,9 +83,7 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     assert evidence_row["raw_scenario"]["raw_detail"]
 
     # prompts row = OUTGOING side only (prompt + request), no response copy.
-    prompt_row = json.loads(
-        next((db / settings.table_prompts).glob("*.json")).read_text("utf-8")
-    )
+    prompt_row = json.loads(next((db / settings.table_prompts).glob("*.json")).read_text("utf-8"))
     assert prompt_row["prompt"]
     assert prompt_row["request"]["messages"]  # full sent request
     assert "raw_response" not in prompt_row  # no duplication
@@ -102,9 +98,7 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     assert "request" not in llm_row  # no duplication
 
 
-def test_evidence_to_store_controls_inline_content(
-    settings: Settings, tmp_path
-) -> None:
+def test_evidence_to_store_controls_inline_content(settings: Settings, tmp_path) -> None:
     """A profile can keep an evidence out of the store; metadata still shows it."""
     profiles = {
         "default": {
@@ -118,15 +112,11 @@ def test_evidence_to_store_controls_inline_content(
     settings = settings.model_copy(update={"profiles_config_path": path})
     client = _client(settings)
 
-    rid = client.post("/analyze/visiumgo", json={"job_id": "job-1"}).json()[
-        "analyzer_run_id"
-    ]
+    rid = client.post("/analyze/visiumgo", json={"job_id": "job-1"}).json()["analyzer_run_id"]
     client.get(f"/analyze/visiumgo/{rid}")
 
     row = json.loads(
-        next((settings.database_dir / settings.table_evidence).glob("*.json")).read_text(
-            "utf-8"
-        )
+        next((settings.database_dir / settings.table_evidence).glob("*.json")).read_text("utf-8")
     )
     assert "HtmlEvidence" in row["excluded_from_store"]
     by_file = {a["file_name"]: a for a in row["raw_scenario"]["attachments"]}
@@ -139,9 +129,7 @@ def test_evidence_to_store_controls_inline_content(
     assert by_file["MOCK_test.log"]["content"]
 
 
-def test_precheck_rule_answers_without_calling_llm(
-    settings: Settings, tmp_path
-) -> None:
+def test_precheck_rule_answers_without_calling_llm(settings: Settings, tmp_path) -> None:
     """A matching PreCheck rule must skip the LLM entirely, end to end."""
     rules = [
         {
@@ -161,9 +149,7 @@ def test_precheck_rule_answers_without_calling_llm(
     )
     client = _client(settings)
 
-    rid = client.post("/analyze/visiumgo", json={"job_id": "job-1"}).json()[
-        "analyzer_run_id"
-    ]
+    rid = client.post("/analyze/visiumgo", json={"job_id": "job-1"}).json()["analyzer_run_id"]
     result = client.get(f"/analyze/visiumgo/{rid}").json()
 
     row = result["results"][0]
@@ -174,9 +160,7 @@ def test_precheck_rule_answers_without_calling_llm(
 
     db = settings.database_dir
     # No prompt was built and no LLM answer came back.
-    prompt_row = json.loads(
-        next((db / settings.table_prompts).glob("*.json")).read_text("utf-8")
-    )
+    prompt_row = json.loads(next((db / settings.table_prompts).glob("*.json")).read_text("utf-8"))
     assert prompt_row["prompt"] == ""
     llm_row = json.loads(
         next((db / settings.table_llm_responses).glob("*.json")).read_text("utf-8")
@@ -200,9 +184,7 @@ def test_precheck_miss_falls_through_to_llm(settings: Settings, tmp_path) -> Non
     )
     client = _client(settings)
 
-    rid = client.post("/analyze/visiumgo", json={"job_id": "job-1"}).json()[
-        "analyzer_run_id"
-    ]
+    rid = client.post("/analyze/visiumgo", json={"job_id": "job-1"}).json()["analyzer_run_id"]
     row = client.get(f"/analyze/visiumgo/{rid}").json()["results"][0]
     assert row["meta"]["llm_model"] == f"MOCK_{settings.llm_model}"  # LLM ran
 
@@ -212,9 +194,7 @@ def test_get_exposes_only_the_diagnosis_not_the_raw_trace(
 ) -> None:
     """GET returns the LLM's answer; every raw trace stays in `database/`."""
     client = _client(settings)
-    rid = client.post("/analyze/visiumgo", json={"job_id": "job-42"}).json()[
-        "analyzer_run_id"
-    ]
+    rid = client.post("/analyze/visiumgo", json={"job_id": "job-42"}).json()["analyzer_run_id"]
     body = client.get(f"/analyze/visiumgo/{rid}").json()
 
     # Bulky raw fields must NOT be in the API response...
@@ -240,9 +220,9 @@ def test_get_exposes_only_the_diagnosis_not_the_raw_trace(
     )
     assert run_row["raw_run_response"] and run_row["build_log"]
     stored = json.loads(
-        next(
-            (settings.database_dir / settings.table_analysis_results).glob("*.json")
-        ).read_text("utf-8")
+        next((settings.database_dir / settings.table_analysis_results).glob("*.json")).read_text(
+            "utf-8"
+        )
     )
     assert stored["raw_llm_response"] and stored["screenshot_paths"]
 
@@ -270,9 +250,9 @@ def test_explicit_parameters_are_recorded(settings: Settings) -> None:
 def test_clean_job_returns_nothing_to_analyze(settings: Settings) -> None:
     client = _client(settings)
 
-    analyzer_run_id = client.post(
-        "/analyze/visiumgo", json={"job_id": "job-clean"}
-    ).json()["analyzer_run_id"]
+    analyzer_run_id = client.post("/analyze/visiumgo", json={"job_id": "job-clean"}).json()[
+        "analyzer_run_id"
+    ]
 
     result = client.get(f"/analyze/visiumgo/{analyzer_run_id}").json()
     assert result["status"] == "done"
@@ -326,9 +306,9 @@ def test_cache_key_is_run_not_job(settings: Settings) -> None:
     """
     client = _client(settings)
 
-    first_id = client.post(
-        "/analyze/visiumgo", json={"job_id": "job-7", "run_id": "RUN_1"}
-    ).json()["analyzer_run_id"]
+    first_id = client.post("/analyze/visiumgo", json={"job_id": "job-7", "run_id": "RUN_1"}).json()[
+        "analyzer_run_id"
+    ]
     second_id = client.post(
         "/analyze/visiumgo", json={"job_id": "job-7", "run_id": "RUN_2"}
     ).json()["analyzer_run_id"]
@@ -341,9 +321,9 @@ def test_cache_key_is_run_not_job(settings: Settings) -> None:
     assert len(list((db / settings.table_analysis_results).glob("*.json"))) == 4
 
     # Same run again -> now it IS cached.
-    third_id = client.post(
-        "/analyze/visiumgo", json={"job_id": "job-7", "run_id": "RUN_2"}
-    ).json()["analyzer_run_id"]
+    third_id = client.post("/analyze/visiumgo", json={"job_id": "job-7", "run_id": "RUN_2"}).json()[
+        "analyzer_run_id"
+    ]
     third = client.get(f"/analyze/visiumgo/{third_id}").json()
     assert third["cached_from"] == second_id
 

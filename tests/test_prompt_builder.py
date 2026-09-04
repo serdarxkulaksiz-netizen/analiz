@@ -88,9 +88,7 @@ def test_prompt_explains_how_to_treat_missing_evidence(settings: Settings) -> No
     reports the gap instead of diagnosing (observed on the work PC).
     """
     findings = _sample_findings()
-    findings.evidence_blocks.append(
-        EvidenceBlock(label=BLOCK_DOM, content=EVIDENCE_UNAVAILABLE)
-    )
+    findings.evidence_blocks.append(EvidenceBlock(label=BLOCK_DOM, content=EVIDENCE_UNAVAILABLE))
     builder = PromptBuilder(settings.prompt_template_path, settings.confidence_buckets)
     prompt = builder.build(findings)
 

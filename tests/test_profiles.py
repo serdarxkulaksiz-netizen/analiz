@@ -137,9 +137,7 @@ def test_job_c_only_build_log_sliced_per_scenario(tmp_path: Path) -> None:
     }
     extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
 
-    findings = extractor.extract(
-        _scenario(), job_id="1204", build_log=_JOB_LOG
-    )
+    findings = extractor.extract(_scenario(), job_id="1204", build_log=_JOB_LOG)
 
     labels = [b.label for b in findings.evidence_blocks]
     assert "BUILD LOG" in labels  # build log in

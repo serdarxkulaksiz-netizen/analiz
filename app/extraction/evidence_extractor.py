@@ -91,9 +91,7 @@ class EvidenceExtractor(Extractor):
             cls = evidence_class_by_name(name)
             label = getattr(cls, "block_label", "")  # screenshots have none
             if label and label not in present_labels:
-                evidence_blocks.append(
-                    EvidenceBlock(label=label, content=EVIDENCE_UNAVAILABLE)
-                )
+                evidence_blocks.append(EvidenceBlock(label=label, content=EVIDENCE_UNAVAILABLE))
                 present_labels.add(label)
 
         # Findings fields taken straight from the scenario (no parsing).
@@ -105,9 +103,7 @@ class EvidenceExtractor(Extractor):
 
         # HATA block = the scenario's error_text (approved decision).
         if error_message:
-            evidence_blocks.append(
-                EvidenceBlock(label=BLOCK_ERROR, content=error_message)
-            )
+            evidence_blocks.append(EvidenceBlock(label=BLOCK_ERROR, content=error_message))
 
         return Findings(
             parameter1=parameter1,

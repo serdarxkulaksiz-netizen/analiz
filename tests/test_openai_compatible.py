@@ -21,7 +21,7 @@ _OK_RESPONSE = {
         {
             "finish_reason": "stop",
             "index": 0,
-            "message": {"content": "{\"verdict\": \"unknown\"}", "role": "assistant"},
+            "message": {"content": '{"verdict": "unknown"}', "role": "assistant"},
         }
     ],
     "created": 1785148332,

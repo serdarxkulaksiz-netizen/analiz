@@ -1149,3 +1149,10 @@ silinmeleri gerekiyor: `BANKS_CONFIG_PATH`, `EXTRACTOR_PROVIDER`, `TOKEN_CHARS_R
 `TRUNCATION_THRESHOLD_TOKENS`. İş-pc'deki `.env` de aynı gözden geçirmeden geçmeli — özellikle
 `VISIUMGO_JENKINS_LOG_PATH` → `VISIUMGO_BUILD_LOG_PATH`. Hata mesajı hangi anahtarın sorunlu
 olduğunu zaten söylüyor.
+
+## [Biçimlendirme] `ruff format` tek seferlik uygulandı
+
+Salt biçim commit'i, mantık değişikliklerinden **ayrı tutuldu** ki git geçmişi ve `blame`
+okunur kalsın. 22 dosya, net −93 satır (100 karakter sınırıyla gereksiz sarmalar açıldı).
+Doğrulama: `ruff check` temiz, `mypy` temiz, `pytest` 115/115 — davranış değişmedi.
+Bundan sonra `ruff format --check .` temiz kalır, yani ileriki diff'lerde biçim gürültüsü olmaz.

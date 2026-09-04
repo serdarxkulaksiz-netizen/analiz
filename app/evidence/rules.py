@@ -28,8 +28,20 @@ from pydantic import BaseModel, ConfigDict
 
 # Tags that never have a closing tag; dropping them must not open a subtree.
 _VOID_TAGS = {
-    "area", "base", "br", "col", "embed", "hr", "img", "input",
-    "link", "meta", "param", "source", "track", "wbr",
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
 }
 
 
@@ -126,9 +138,7 @@ class DropMatching(Rule):
 
     def apply(self, text: str, ctx: RuleContext) -> str:
         kept = [
-            line
-            for line in text.splitlines()
-            if not any(p.search(line) for p in self._patterns)
+            line for line in text.splitlines() if not any(p.search(line) for p in self._patterns)
         ]
         return "\n".join(kept)
 
@@ -142,11 +152,7 @@ class KeepMatching(Rule):
         self._patterns = [re.compile(p) for p in patterns]
 
     def apply(self, text: str, ctx: RuleContext) -> str:
-        kept = [
-            line
-            for line in text.splitlines()
-            if any(p.search(line) for p in self._patterns)
-        ]
+        kept = [line for line in text.splitlines() if any(p.search(line) for p in self._patterns)]
         return "\n".join(kept) if kept else text
 
 

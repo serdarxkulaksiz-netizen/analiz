@@ -12,9 +12,7 @@ def test_save_get_roundtrip_with_unicode(tmp_path: Path) -> None:
     repo.save("analysis_results", "r1", row)
 
     assert repo.get("analysis_results", "r1") == row
-    stored = (tmp_path / "db" / "analysis_results" / "r1.json").read_text(
-        encoding="utf-8"
-    )
+    stored = (tmp_path / "db" / "analysis_results" / "r1.json").read_text(encoding="utf-8")
     assert "eskimiş" in stored  # human-readable, not \u-escaped
 
 
