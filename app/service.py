@@ -13,7 +13,7 @@ run status -> `runs`.
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -35,7 +35,7 @@ from app.source.models import RawScenario
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class AnalyzerService:
@@ -164,7 +164,10 @@ class AnalyzerService:
                     completed_count=cached.get("completed_count", 0),
                     total_scenario_count=cached.get("total_scenario_count", 0),
                     cached_from=cached["analyzer_run_id"],
-                    note="cache: aynı run_id + parametreler daha önce analiz edildi, sonuçlar diskten",
+                    note=(
+                        "cache: aynı run_id + parametreler daha önce analiz "
+                        "edildi, sonuçlar diskten"
+                    ),
                 )
                 return
 
@@ -263,7 +266,9 @@ class AnalyzerService:
         dump = scenario.model_dump(mode="json")
         if not excluded:
             return dump
-        for attachment, row in zip(scenario.attachments, dump.get("attachments", [])):
+        for attachment, row in zip(
+            scenario.attachments, dump.get("attachments", []), strict=True
+        ):
             if evidence_name_for(attachment) in excluded:
                 row["content"] = ""
                 row["content_stored"] = False

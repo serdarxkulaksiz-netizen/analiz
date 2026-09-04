@@ -10,7 +10,8 @@ REGISTRY (name -> factory) and injected here — no `if provider ==` branching
 mock -> real VisiumGo is a `.env` change, not code.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import TypeVar
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, model_validator
@@ -98,8 +99,19 @@ PRECHECK_REGISTRY: dict[str, Callable[[Settings], PreCheck]] = {
 }
 
 
-def _select(registry: dict[str, Callable[[Settings], object]], key: str, kind: str):
-    """Look a factory up in a registry, or fail with a clear error."""
+#: Provider type a registry produces (Source, LLMProvider, PreCheck, ...).
+T = TypeVar("T")
+
+
+def _select(
+    registry: Mapping[str, Callable[[Settings], T]], key: str, kind: str
+) -> Callable[[Settings], T]:
+    """Look a factory up in a registry, or fail with a clear error.
+
+    Generic over the provider type and takes a Mapping (covariant in its value)
+    so each registry keeps its own precise type instead of collapsing to
+    `object` at the call site.
+    """
     try:
         return registry[key]
     except KeyError:

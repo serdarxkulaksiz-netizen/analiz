@@ -24,7 +24,7 @@ from abc import ABC, abstractmethod
 from html.parser import HTMLParser
 from typing import Any, ClassVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 # Tags that never have a closing tag; dropping them must not open a subtree.
 _VOID_TAGS = {
@@ -34,7 +34,14 @@ _VOID_TAGS = {
 
 
 class RuleContext(BaseModel):
-    """Per-scenario context a rule may need (e.g. to find its own section)."""
+    """Per-scenario context a rule may need (e.g. to find its own section).
+
+    `extra="forbid"` on purpose: passing a field that does not exist here used
+    to be swallowed silently, so the value never reached any rule and nothing
+    complained. Now it fails loudly at the call site.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     scenario_name: str = ""
 

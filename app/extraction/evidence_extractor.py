@@ -65,9 +65,7 @@ class EvidenceExtractor(Extractor):
                 }
             )
 
-        ctx = RuleContext(
-            scenario_name=scenario.scenario_name, error_text=scenario.error_text
-        )
+        ctx = RuleContext(scenario_name=scenario.scenario_name)
         evidences = self._registry.build_for(scenario_for_evidence, profile, ctx)
 
         evidence_blocks: list[EvidenceBlock] = []

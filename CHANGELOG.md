@@ -1021,3 +1021,72 @@ geldiği verisini toplayacak) · ham veriyi gösteren ayrı debug ucu (veri zate
 **Sıradaki adım:** kullanıcı iş-pc'de gerçek koşum ile doğrulayacak: (a) GET çıktısı sade mi,
 (b) LLM artık "eksik kanıt" yerine gerçek teşhis üretiyor mu. Sonra job bazlı kanıt verisi
 toplanacak.
+
+---
+
+# [Kalite] ruff + mypy devreye alındı — bir gerçek hata bulundu (2026-09-04)
+
+Projede bugüne kadar hiç statik kontrol çalışmamıştı; tek güvencemiz `pytest`'ti. Kaç bulgu
+çıkacağı bilinmiyordu — bu, listedeki tek gerçek bilinmezdi. Sonuç: **ruff 10, mypy 18 bulgu**
+(beklenenden çok temiz).
+
+## İş-pc kısıtı (kullanıcı isteği)
+
+Kilitli iş bilgisayarına yeni araç indirtmemek için ruff/mypy **`[dev]` grubuna KONMADI**;
+ayrı bir **`[lint]`** opsiyonel grubu açıldı. İş-pc'nin `pip install -e ".[dev]"` komutu
+değişmedi (yalnız pytest). `.env.example` de değişmedi. Lint sonucu yapılan **kod düzeltmeleri**
+git ile gider; giden şey araçlar değildir.
+
+## Bulunan GERÇEK hata (mypy)
+
+`app/extraction/evidence_extractor.py` `RuleContext(scenario_name=..., error_text=...)` çağırıyordu
+ama **`RuleContext`'te `error_text` alanı yok**. Pydantic varsayılan olarak fazla alanı sessizce
+yuttuğu için: hata yok, uyarı yok, değer hiçbir kurala ulaşmıyordu. Hiçbir kural onu kullanmadığı
+için bugün zararsızdı — ama ileride `ctx.error_text` bekleyen bir kural yazılsaydı boş gelecek ve
+saatlerce aranacaktı.
+
+- Spekülatif alan **kaldırıldı** (gerekirse tek satırla geri gelir).
+- **Tekrarı engellendi:** `RuleContext`'e `model_config = ConfigDict(extra="forbid")` — bilinmeyen
+  alan artık çağrı yerinde gürültülü patlıyor. *(API görünüm modelleri bilinçli olarak
+  `extra=ignore` kalmalı; oradaki amaç yeni disk alanlarının API'ye sızmamasıydı.)*
+- Regresyon testi: `test_rule_context_rejects_unknown_fields`.
+
+> Not: bu tam olarak mypy'ı savunurken verdiğim örnek sınıfın hatası — sessizce yutulan, testin
+> göremediği hata. Test yazmadan önce mypy bulduğu için de iyi bir kanıt oldu.
+
+## Diğer düzeltmeler
+
+- **E402 ×3** — ZIP çalışmasında `_zip_bytes` yardımcısını import bloğunun **ortasına** sokmuşum;
+  aşağı taşındı (bu düzeltme sırasında oluşan kopya da temizlendi, testle doğrulandı).
+- **B905 ×1** — `_storable_scenario`'daki `zip()`'e `strict=True`; iki liste aynı kaynaktan
+  türüyor, uzunluk farkı sessiz veri kaybı demekti, artık gürültülü.
+- **`_select` varyansı ×3** — `dict` invariant olduğu için her registry `object`'e çöküyordu;
+  `Mapping` + `TypeVar` ile jenerik yapıldı, artık her registry kendi tipini koruyor.
+- **I001/UP017/C408 ×6** — import sırası, `datetime.UTC`, `dict()` yerine literal.
+- **9 uzun satır** sarıldı (uzun Türkçe mock metinleri ve JSON fixture'ları).
+
+## Bilinçli olarak DÜZELTİLMEYENLER (yapılandırmada gerekçeli)
+
+- **BLE001** (`except Exception`) — bu kör yakalamalar dayanıklılık tasarımının kendisi
+  (plan.md A9: bir senaryo job'ı öldürmemeli). Kural seçilmedi.
+- **TRY004** — config doğrulamasında `ValueError` doğru (dosya *değer* tutar) ve `load_rules`
+  testleri `ValueError` bekliyor. Kural seçilmedi.
+- **UP042** (`StrEnum`) — `(str, Enum)` yaygın deyim; değiştirmek `str()` ve JSON
+  serileştirmesini değiştirir: gerçek risk, sıfır kazanç. `ignore` listesinde.
+
+## Yapılandırma
+
+`pyproject.toml`: `[tool.ruff]` `line-length = 100` (uzun Türkçe metinler 88'de zorla sarılınca
+okunaksızlaşıyor — bilinçli proje kararı), `select = ["E","F","I","UP","B","C4"]`;
+`[tool.mypy]` yalnız `app/`'i denetler (test yardımcıları `**overrides` aldığı için gevşek).
+
+## Durum
+
+`ruff check .` **temiz** · `mypy` **temiz** (40 dosya) · `pytest` **110/110**.
+
+**Not (çalıştırılmadı):** `ruff format` 12 dosyayı yeniden biçimlendirirdi (~149 satır). Salt
+biçim değişikliği olduğu ve geçmişi bulanıklaştıracağı için yapılmadı — istenirse ayrı bir
+"yalnız biçimlendirme" commit'i olarak yapılabilir.
+
+**Sıradaki adım:** iş-pc'de gerçek koşumla GET sadeleşmesi + prompt düzeltmesi doğrulanacak;
+ardından kullanıcının yeni isterleri.

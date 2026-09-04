@@ -211,11 +211,23 @@ dosya **boş listeyle** gelir.
 | Paralellik | `MAX_CONCURRENCY=<n>` |
 | Önbellek | `CACHE_ENABLED=true` → aynı **run_id + parametreler** daha önce analiz edildiyse LLM çağrılmaz, sonuç diskten döner (job bazlı değil: bir job'ın her koşumu ayrı analiz edilir) |
 
-## Testler
+## Testler ve statik kontroller
 
 ```bash
 pytest
 ```
+
+Statik kontroller **isteğe bağlıdır** ve `[dev]` grubuna dahil DEĞİLDİR — kilitli iş
+bilgisayarının `pip install -e ".[dev]"` komutu bunları indirmeye çalışmaz:
+
+```bash
+pip install -e ".[lint]"
+ruff check .
+mypy
+```
+
+`ruff` ayarları `pyproject.toml`'da; `mypy` yalnız `app/`'i denetler (test yardımcıları
+`**overrides` sözlükleri aldığı için bilinçli olarak gevşek bırakıldı).
 
 Sözleşme-bazlı testler (Findings, çıktı şeması, Repository, parsing, Evidence
 mimarisi/registry, profil çözümü, kırpma kuralları, önbellek, PreCheck, hata

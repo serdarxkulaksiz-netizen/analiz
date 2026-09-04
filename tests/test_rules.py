@@ -1,6 +1,7 @@
 """Content rule tests — each rule type, including the A/B/C/D job needs."""
 
 import pytest
+from pydantic import ValidationError
 
 from app.evidence.rules import RuleContext, build_rule
 
@@ -148,3 +149,14 @@ def test_rules_apply_in_order() -> None:
         {"type": "select_nth", "match": {"tag": "LinearLayout"}, "index": 0}, text
     )
     assert "Tamam" in out and "İptal" not in out
+
+
+def test_rule_context_rejects_unknown_fields() -> None:
+    """An unknown field must fail loudly, not be swallowed.
+
+    Regression: the extractor used to pass `error_text=` to RuleContext, which
+    has no such field. Pydantic ignored it silently, so the value never reached
+    any rule and nothing complained (found by mypy, not by tests).
+    """
+    with pytest.raises(ValidationError):
+        RuleContext(scenario_name="S", error_text="bu alan yok")

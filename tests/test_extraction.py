@@ -26,21 +26,21 @@ def _att(mime: str, device: str, content: str = "x", path: str = "") -> Attachme
 
 
 def _scenario(**overrides: object) -> RawScenario:
-    base = dict(
-        scenario_name="Senaryo",
-        error_text="NoSuchElementException: #btn",
-        steps=[
+    base: dict[str, object] = {
+        "scenario_name": "Senaryo",
+        "error_text": "NoSuchElementException: #btn",
+        "steps": [
             Step(name="Adım bir", status=StepStatus.PASSED),
             Step(name="Adım iki", status=StepStatus.FAILED),
         ],
-        attachments=[
+        "attachments": [
             _att("text/plain", "test", "test log"),
             _att("text/plain", "browser.default", "browser log"),
             _att("text/html", "browser.default", "<html/>"),
             _att("image/png", "browser.default", "", "web.png"),
         ],
-        raw_detail={"properties": {"x": "1"}},
-    )
+        "raw_detail": {"properties": {"x": "1"}},
+    }
     base.update(overrides)
     return RawScenario(**base)  # type: ignore[arg-type]
 

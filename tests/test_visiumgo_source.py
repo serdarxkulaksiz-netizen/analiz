@@ -12,6 +12,10 @@ from pathlib import Path
 import httpx
 import pytest
 
+from app.domain.enums import StepStatus
+from app.source.visiumgo import VisiumGoSource
+from app.source.visiumgo_client import VisiumGoClient
+
 
 def _zip_bytes(entries: dict[str, str]) -> bytes:
     """Build an in-memory ZIP, like the real /logs endpoint returns."""
@@ -21,13 +25,19 @@ def _zip_bytes(entries: dict[str, str]) -> bytes:
             bundle.writestr(name, content)
     return buffer.getvalue()
 
-from app.domain.enums import StepStatus
-from app.source.visiumgo import VisiumGoSource
-from app.source.visiumgo_client import VisiumGoClient
-
 _RUNS = [
-    {"id": "RUN_OLD", "jobName": "nightly", "startTime": "2026-07-27T09:00:00", "runResult": {"totalScenarios": 100}},
-    {"id": "RUN_NEW", "jobName": "nightly", "startTime": "2026-07-27T10:20:08", "runResult": {"totalScenarios": 100}},
+    {
+        "id": "RUN_OLD",
+        "jobName": "nightly",
+        "startTime": "2026-07-27T09:00:00",
+        "runResult": {"totalScenarios": 100},
+    },
+    {
+        "id": "RUN_NEW",
+        "jobName": "nightly",
+        "startTime": "2026-07-27T10:20:08",
+        "runResult": {"totalScenarios": 100},
+    },
 ]
 
 _RESULTS = [
@@ -49,9 +59,21 @@ _DETAIL = {
     ],
     "attachments": [
         {"fileName": "-125/test_1.log", "mimeType": "text/plain", "deviceId": "test"},
-        {"fileName": "-125/browser.default_1.log", "mimeType": "text/plain", "deviceId": "browser.default"},
-        {"fileName": "-125/browser.default_1.html", "mimeType": "text/html", "deviceId": "browser.default"},
-        {"fileName": "-125/browser.default_1.png", "mimeType": "image/png", "deviceId": "browser.default"},
+        {
+            "fileName": "-125/browser.default_1.log",
+            "mimeType": "text/plain",
+            "deviceId": "browser.default",
+        },
+        {
+            "fileName": "-125/browser.default_1.html",
+            "mimeType": "text/html",
+            "deviceId": "browser.default",
+        },
+        {
+            "fileName": "-125/browser.default_1.png",
+            "mimeType": "image/png",
+            "deviceId": "browser.default",
+        },
     ],
     "properties": {"retryNumber": "0", "mobile.ios.iPhone 14 Pro Max": "Name:X-UDID:Y"},
 }

@@ -16,6 +16,13 @@ dev = [
     "pytest>=8,<9",
     "pytest-asyncio>=0.23,<2",
 ]
+# Static checks — DELIBERATELY NOT in `dev`. The work PC is a locked-down
+# machine that installs `.[dev]` only; it must never be asked to fetch these.
+# Install here with:  pip install -e ".[lint]"
+lint = [
+    "ruff>=0.14,<1",
+    "mypy>=1.11",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -36,3 +43,33 @@ filterwarnings = [
     # revisit on the next dependency bump (CHANGELOG note).
     "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
 ]
+
+[tool.ruff]
+target-version = "py311"
+# 100 is a deliberate project choice: this codebase carries long Turkish
+# strings and explanatory comments that read worse when force-wrapped at 88.
+line-length = 100
+
+[tool.ruff.lint]
+# Explicit, modest set so results are stable across ruff versions:
+# E/F = real errors + pyflakes, I = import order, UP = modern syntax,
+# B = bugbear (real bug patterns), C4 = comprehension/collection misuse.
+#
+# NOT selected on purpose:
+#   BLE (blind except) — `except Exception` at the scenario/job boundaries is
+#     the resilience design itself (plan.md A9): one bad scenario must never
+#     kill the job. Every such site already carries a comment saying why.
+#   TRY  — wants TypeError for bad config shapes; ValueError is right here
+#     (a config file holds *values*), and `load_rules` tests assert ValueError.
+select = ["E", "F", "I", "UP", "B", "C4"]
+# UP042 wants `StrEnum` instead of `(str, Enum)`. Skipped on purpose: the
+# current form is the widely-used idiom and switching changes how `str()` and
+# JSON serialization behave — real risk, no benefit.
+ignore = ["UP042"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+# `app/` is checked; `tests/` is intentionally looser — helper factories take
+# **overrides dicts that cannot be typed precisely without hurting readability.
+files = ["app"]

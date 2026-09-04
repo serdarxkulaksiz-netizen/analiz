@@ -33,16 +33,16 @@ _OK_RESPONSE = {
 
 def _provider(handler, **overrides) -> OpenAICompatibleLLMProvider:
     _CAPTURED.clear()
-    kwargs = dict(
-        base_url="https://llm.test.local",
-        endpoint_path="/api/v1/extension/send",
-        api_key="",
-        model="qwen3-coder-next",
-        temperature=0.0,
-        timeout_seconds=5.0,
-        max_tokens=8000,
-        transport=httpx.MockTransport(handler),
-    )
+    kwargs: dict[str, object] = {
+        "base_url": "https://llm.test.local",
+        "endpoint_path": "/api/v1/extension/send",
+        "api_key": "",
+        "model": "qwen3-coder-next",
+        "temperature": 0.0,
+        "timeout_seconds": 5.0,
+        "max_tokens": 8000,
+        "transport": httpx.MockTransport(handler),
+    }
     kwargs.update(overrides)
     return OpenAICompatibleLLMProvider(**kwargs)
 

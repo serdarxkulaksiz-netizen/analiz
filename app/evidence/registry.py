@@ -14,8 +14,8 @@ from app.evidence.profiles import Profile
 from app.evidence.rules import RuleContext
 from app.evidence.types import (
     BrowserLogEvidence,
-    HtmlEvidence,
     BuildLogEvidence,
+    HtmlEvidence,
     MobileScreenshotEvidence,
     TestLogEvidence,
     WebScreenshotEvidence,
