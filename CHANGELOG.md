@@ -948,3 +948,76 @@ yok**; o joblar için tek yapılacak `profiles.json`'a bir satır.
 - **Açık risk:** `/results`'taki senaryo adı ile build.log'daki `[...]` içeriği **birebir**
   eşleşmezse kural hiçbir şey kesmez (log tam kalır — sessiz kayıp yok, ama dilimleme de olmaz).
   İş-pc'de gerçek veriyle doğrulanmalı.
+
+---
+
+# [Düzeltme] GET cevabı sadeleştirildi + prompt'a "eksik kanıt" yorumu (2026-09-04)
+
+İş-pc'de gerçek koşumlar sonrası bildirilen iki sorun. İkisi de çökme değil, **davranış** sorunu.
+
+## 1. GET cevabı şişmişti
+
+**Sorun:** `GET /analyze/visiumgo/{id}` disk satırını **olduğu gibi** döndürüyordu; içinde
+`raw_run_response`, `raw_results_response`, `run_result` ve son eklediğimiz **`build_log`**,
+her sonuç satırında da `raw_llm_response` (tam LLM zarfı) vardı. Regresyonu asıl tetikleyen
+`build_log`'un `runs` satırına eklenmesiydi — tüm koşumun build log'u API cevabına düşüyordu.
+
+**Kullanıcı isteği:** her şey DB'ye kaydedilmeye devam etsin, GET'te yalnız LLM'in cevabı görünsün.
+
+**Çözüm — projeksiyon API sınırında:**
+- Yeni `app/domain/api.py`: `DiagnosisView` + `RunView` + `build_run_view()`.
+- `app/main.py` GET ucu `response_model=RunView` ile bağlandı.
+- **`AnalyzerService.get_run()` bilinçli olarak DEĞİŞMEDİ** — diskteki tam kaydı döndürmeye devam
+  ediyor. Gerekçe: "API ne gösterir" bir sunum kararıdır; ayrıca `tests/test_resilience.py`
+  servis üzerinden `raw_llm_response` okuyor ve **hiç değişmedi**.
+- Pydantic fazla anahtarları düşürdüğü için ileride `runs` satırına eklenecek yeni alanlar da
+  API'ye **kazara sızmaz**.
+
+**GET'te kalan:** koşum durumu/kimliği + `results[]` → LLM alanları + `status` + `meta` +
+`result_id` (ham ize ulaşmak için join anahtarı) + koşum seviyesinde `cached_from`.
+**GET'ten düşen (diskte tam duruyor):** `raw_run_response`, `raw_results_response`, `run_result`,
+`build_log`, `raw_llm_response`, `profile_name`, `truncated(_note)`, `screenshot_paths`,
+satır seviyesi `parameter1/2`.
+
+**Testler:** GET'e dayanan ~10 iddia **silinmedi, taşındı** — artık `database/runs/<id>.json` ve
+`analysis_results/*.json` okunarak doğrulanıyor ("her şey DB'de" garantisi korundu). Yeni
+`test_get_exposes_only_the_diagnosis_not_the_raw_trace` asıl gereksinimi kilitliyor: hacimli
+anahtarlar API'de **yok**, aynı anda diskte **dolu**.
+
+## 2. LLM sürekli "eksik kanıt var" diyordu
+
+**Teşhis:** `llm_responses` içeriği **saf JSON** — parse/validation sorunu **yoktu**. Sorun
+prompt'taydı: yeni eklediğimiz yer tutucu blokları (`(bu kanıt alınamadı / bulunmuyor)`)
+prompt'a giriyor ama şablon bu işaretin **ne anlama geldiğini** modele hiç söylemiyordu; üstelik
+eski 2. ve 3. kurallar modeli zaten "emin değilsen düşük confidence / inconclusive" yönüne
+itiyordu. Model de eksik bloğu bir arıza sanıp teşhis üretmek yerine eksiği raporluyordu.
+
+**Çözüm — yalnız `config/prompt_template.txt` (kod değişmedi):**
+- Kanıt bloklarından sonra **"KANIT HAKKINDA"** bölümü: hangi kanıtın geleceği koşuma göre değişir,
+  yer tutucu **normaldir**, görev eksikleri raporlamak değil eldeki kanıtla teşhis üretmektir.
+- Kurallar yeniden yazıldı (1-9, temiz numaralandırma): uydurma yasağı **korundu**; eksik bloğun
+  tek başına `unknown`/`inconclusive` gerekçesi **olmadığı**, yalnızca confidence'ı bir kademe
+  düşürebileceği; HATA MESAJI + ADIM SONUÇLARI'nın her koşumda bulunduğu ve çoğu teşhis için
+  yeterli olduğu; `explanation`/`summary`'nin ana konusunun "kanıt eksik" **olmaması** gerektiği
+  (eksiklik yalnız `confidence_reason`'da anılır); `unknown`/`inconclusive`'in **son çare** olduğu.
+- `unknown` ve `inconclusive` yolları **kapatılmadı** — son çare hâline getirildi.
+
+**Kullanıcı yönü (uygulandı):** "ne geliyorsa ona göre yorumlamalı; her koşumda her şey
+gelmeyecek." Bu yüzden profil daraltılmadı; çözüm prompt tarafında yapıldı.
+
+**Test:** `test_prompt_explains_how_to_treat_missing_evidence` — yer tutucu prompt'a giriyor,
+şablon işareti birebir alıntılayarak açıklıyor ve "son çare" kısıtını koyuyor.
+
+## Doğrulama
+
+`pytest` **109/109**. Canlı smoke: GET anahtarları sade (ham alanlar yok), aynı koşumun
+`runs/<id>.json` ve `analysis_results/*.json` dosyaları **dolu**; DOM'suz senaryoda prompt'ta hem
+`=== DOM === (bu kanıt alınamadı / bulunmuyor)` hem "KANIT HAKKINDA" bölümü görünüyor.
+
+**Kapsam dışı bırakılanlar (bilinçli):** profil daraltma (kullanıcı önce hangi job'da neyin
+geldiği verisini toplayacak) · ham veriyi gösteren ayrı debug ucu (veri zaten `database/`'de) ·
+`_try_json` güçlendirme / verdict normalizasyonu (bu koşumlarda tetiklenmiyor).
+
+**Sıradaki adım:** kullanıcı iş-pc'de gerçek koşum ile doğrulayacak: (a) GET çıktısı sade mi,
+(b) LLM artık "eksik kanıt" yerine gerçek teşhis üretiyor mu. Sonra job bazlı kanıt verisi
+toplanacak.

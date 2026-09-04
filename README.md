@@ -82,10 +82,16 @@ curl -X POST http://127.0.0.1:8000/analyze/visiumgo \
 curl http://127.0.0.1:8000/analyze/visiumgo/<analyzer_run_id>
 ```
 
-Tam iz `database/` altına düşer: `runs/` (koşum durumu + ham API cevapları),
+**GET cevabı sadedir:** yalnızca LLM'in verdiği teşhis + koşum durumu döner
+(`verdict`, `explanation`, `suggestion`, `confidence`, … + `status`, `meta`, `result_id`).
+Ham veriler (`raw_run_response`, `raw_results_response`, `build_log`, `raw_llm_response`,
+`screenshot_paths`, `profile_name` …) API cevabında **yoktur** — hepsi `database/` altında
+tam hâliyle durur. `result_id` ile bir teşhisin ham izine ulaşılır.
+
+Tam iz `database/` altına düşer: `runs/` (koşum durumu + ham API cevapları + build log),
 `evidence/` (ham kanıt), `prompts/` (**giden**: prompt + istek),
 `llm_responses/` (**gelen**: LLM'in tam ham cevabı), `analysis_results/`
-(teşhisler). Hepsi insan-okunur JSON.
+(teşhisler + sistem meta'sı). Hepsi insan-okunur JSON.
 
 Mock kolaylığı: `job_id` sonu `-clean` biterse job hatasız kabul edilir
 ("analiz edilecek hata yok" yolu).
@@ -132,6 +138,11 @@ eşleşmesi → yoksa `default`. Var olmayan profil adı verilirse koşum `faile
 **Eksik kanıt:** profil bir kanıt istediği hâlde o kanıt gelmediyse (ör. tarayıcı açılmadığı için
 DOM yok) blok prompt'tan düşmez — `=== DOM ===` başlığı altında
 `(bu kanıt alınamadı / bulunmuyor)` yazar. Böylece LLM eksiği bilir.
+
+Prompt şablonu bu işaretin **ne demek olduğunu** modele ayrıca anlatır ("KANIT HAKKINDA"
+bölümü): eksik blok normaldir, tek başına `unknown`/`inconclusive` gerekçesi değildir —
+yalnızca confidence'ı düşürebilir. Aksi hâlde model teşhis üretmek yerine "kanıt eksik"
+raporlamaya başlıyor.
 
 ## Build log — senaryo özelinde dilimleme
 

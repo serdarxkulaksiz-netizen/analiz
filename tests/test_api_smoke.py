@@ -34,11 +34,6 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     assert result["scenario_count"] == 2
     assert result["completed_count"] == 2
     assert result["total_scenario_count"] == 100
-    # Job-level raw traces are persisted (save-everything rule).
-    assert result["raw_run_response"]["jobName"] == "MOCK_nightly-test"
-    assert len(result["raw_results_response"]) == 2
-    # The build log is job-level -> stored on the run row.
-    assert "Scenario:" in result["build_log"]
 
     names = {row["scenario_name"] for row in result["results"]}
     assert names == {
@@ -50,15 +45,30 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
         assert row["verdict"] == "test_maintenance"  # single mock diagnosis
         assert row["confidence"] in {0.1, 0.25, 0.5, 0.75, 0.99}
         assert row["explanation"].startswith("MOCK_")  # mock-labeled content
-        assert row["parameter1"] == "default"
-        assert row["parameter2"] == "default"
-        assert row["profile_name"] == "default"  # which profile actually ran
-        assert row["screenshot_paths"] and all(
-            p.startswith("MOCK_") for p in row["screenshot_paths"]
+        assert row["meta"]["llm_model"] == f"MOCK_{settings.llm_model}"
+        assert row["result_id"]  # join key to the stored trace
+
+    # The API view is slim, but the RUN ROW on disk keeps every raw trace.
+    run_row = json.loads(
+        (settings.database_dir / settings.table_runs / f"{analyzer_run_id}.json").read_text(
+            "utf-8"
+        )
+    )
+    assert run_row["raw_run_response"]["jobName"] == "MOCK_nightly-test"
+    assert len(run_row["raw_results_response"]) == 2
+    assert "Scenario:" in run_row["build_log"]  # job-level build log
+
+    # Same for the diagnosis rows: system meta lives on disk, not in the API.
+    for stored in (settings.database_dir / settings.table_analysis_results).glob("*.json"):
+        diagnosis = json.loads(stored.read_text("utf-8"))
+        assert diagnosis["parameter1"] == "default"
+        assert diagnosis["parameter2"] == "default"
+        assert diagnosis["profile_name"] == "default"  # which profile ran
+        assert diagnosis["screenshot_paths"] and all(
+            p.startswith("MOCK_") for p in diagnosis["screenshot_paths"]
         )
         # raw_llm_response is the FULL envelope (not just content).
-        assert '"choices"' in row["raw_llm_response"]
-        assert row["meta"]["llm_model"] == f"MOCK_{settings.llm_model}"
+        assert '"choices"' in diagnosis["raw_llm_response"]
 
     # Full trace on disk (plan.md A12): one row per table per scenario + run row.
     db = settings.database_dir
@@ -197,6 +207,46 @@ def test_precheck_miss_falls_through_to_llm(settings: Settings, tmp_path) -> Non
     assert row["meta"]["llm_model"] == f"MOCK_{settings.llm_model}"  # LLM ran
 
 
+def test_get_exposes_only_the_diagnosis_not_the_raw_trace(
+    settings: Settings,
+) -> None:
+    """GET returns the LLM's answer; every raw trace stays in `database/`."""
+    client = _client(settings)
+    rid = client.post("/analyze/visiumgo", json={"job_id": "job-42"}).json()[
+        "analyzer_run_id"
+    ]
+    body = client.get(f"/analyze/visiumgo/{rid}").json()
+
+    # Bulky raw fields must NOT be in the API response...
+    for key in ("raw_run_response", "raw_results_response", "run_result", "build_log"):
+        assert key not in body, f"{key} API cevabından düşmeliydi"
+    row = body["results"][0]
+    for key in (
+        "raw_llm_response",
+        "profile_name",
+        "truncated",
+        "truncated_note",
+        "screenshot_paths",
+    ):
+        assert key not in row, f"{key} API cevabından düşmeliydi"
+
+    # ...but the diagnosis itself is there.
+    assert row["verdict"] and row["explanation"] and row["scenario_name"]
+    assert row["meta"]["llm_model"]
+
+    # ...and the stored rows still hold everything (nothing was lost).
+    run_row = json.loads(
+        (settings.database_dir / settings.table_runs / f"{rid}.json").read_text("utf-8")
+    )
+    assert run_row["raw_run_response"] and run_row["build_log"]
+    stored = json.loads(
+        next(
+            (settings.database_dir / settings.table_analysis_results).glob("*.json")
+        ).read_text("utf-8")
+    )
+    assert stored["raw_llm_response"] and stored["screenshot_paths"]
+
+
 def test_explicit_parameters_are_recorded(settings: Settings) -> None:
     client = _client(settings)
 
@@ -208,9 +258,13 @@ def test_explicit_parameters_are_recorded(settings: Settings) -> None:
     result = client.get(f"/analyze/visiumgo/{rid}").json()
     assert result["parameter1"] == "projeX"
     assert result["parameter2"] == "tipY"
-    for row in result["results"]:
-        assert row["parameter1"] == "projeX"
-        assert row["parameter2"] == "tipY"
+    assert result["results"]  # parameters are run-level in the API view
+
+    # Per-diagnosis parameters are still stamped on the stored rows.
+    for stored in (settings.database_dir / settings.table_analysis_results).glob("*.json"):
+        diagnosis = json.loads(stored.read_text("utf-8"))
+        assert diagnosis["parameter1"] == "projeX"
+        assert diagnosis["parameter2"] == "tipY"
 
 
 def test_clean_job_returns_nothing_to_analyze(settings: Settings) -> None:

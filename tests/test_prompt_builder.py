@@ -2,7 +2,14 @@
 
 from app.config import Settings
 from app.domain.enums import StepStatus
-from app.domain.findings import BLOCK_ERROR, EvidenceBlock, Findings, Step
+from app.domain.findings import (
+    BLOCK_DOM,
+    BLOCK_ERROR,
+    EVIDENCE_UNAVAILABLE,
+    EvidenceBlock,
+    Findings,
+    Step,
+)
 from app.prompting.builder import PromptBuilder
 
 
@@ -71,3 +78,28 @@ def test_no_unfilled_placeholders(settings: Settings) -> None:
         "$confidence_buckets",
     ):
         assert placeholder not in prompt
+
+
+def test_prompt_explains_how_to_treat_missing_evidence(settings: Settings) -> None:
+    """A placeholder block must not push the model into "kanıt eksik" answers.
+
+    The template has to tell the model that a missing evidence block is normal
+    and is not, on its own, a reason for unknown/inconclusive — otherwise it
+    reports the gap instead of diagnosing (observed on the work PC).
+    """
+    findings = _sample_findings()
+    findings.evidence_blocks.append(
+        EvidenceBlock(label=BLOCK_DOM, content=EVIDENCE_UNAVAILABLE)
+    )
+    builder = PromptBuilder(settings.prompt_template_path, settings.confidence_buckets)
+    prompt = builder.build(findings)
+
+    # The placeholder reaches the prompt...
+    assert f"=== {BLOCK_DOM} ===\n{EVIDENCE_UNAVAILABLE}" in prompt
+    # ...and the template explains it, quoting the exact marker.
+    assert "KANIT HAKKINDA" in prompt
+    assert EVIDENCE_UNAVAILABLE in prompt.split("KANIT HAKKINDA")[1]
+    # ...and states it is not a reason to give up.
+    guidance = prompt.split("KURALLAR")[1]
+    assert "TEK\n   BAŞINA gerekçe DEĞİLDİR" in guidance
+    assert "SON ÇARE" in guidance

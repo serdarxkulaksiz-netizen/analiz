@@ -16,6 +16,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, model_validator
 
 from app.config import Settings, get_settings
+from app.domain.api import RunView, build_run_view
 from app.domain.enums import RunStatus
 from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
@@ -148,12 +149,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "status": RunStatus.PENDING.value,
         }
 
-    @app.get("/analyze/visiumgo/{analyzer_run_id}")
-    async def get_analysis(analyzer_run_id: str) -> dict:
+    @app.get("/analyze/visiumgo/{analyzer_run_id}", response_model=RunView)
+    async def get_analysis(analyzer_run_id: str) -> RunView:
         run = service.get_run(analyzer_run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="analyzer_run_id not found")
-        return run
+        # Only the diagnosis is exposed; the full trace stays in `database/`.
+        return build_run_view(run)
 
     return app
 
