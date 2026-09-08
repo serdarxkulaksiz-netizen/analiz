@@ -5,7 +5,7 @@
 > **v4 (2026-09-08):** Yeni faz. v3'ten farklar: **job grubuna göre prompt şablonu** (A8) ·
 > **kanıt eşleşme raporu** (A5.5) · **kanıtsız senaryoya LLM çağrısı yok** → `no_evidence` (A10) ·
 > **prompt sürümü meta'da** (A8.4) · **build log alınamazsa sebebi kaydediliyor** (A4.1) ·
-> **ölçüm/eval iskeleti** (A19) · **job-level analiz tasarımı** (A18 — henüz kodlanmadı).
+> **ölçüm/eval iskeleti** (A19). Job-level analiz **kapsam dışı bırakıldı** (A18).
 > Adım adım geçmiş: [`CHANGELOG.md`](CHANGELOG.md) · faz notları:
 > [`docs/yeni-plan-notlari.md`](docs/yeni-plan-notlari.md).
 >
@@ -132,6 +132,9 @@ Tekrar koşumda geçen senaryolar **analiz edilmez** (analiz edilecek hata yok).
 anahtar `(mime_type, device_id)`. Yeni tip = 1 sınıf + 1 satır.
 
 ### A5.2 Profil kararları (`config/profiles.json`)
+
+> Kopyalanabilir örnek: **`config/profiles.example.json`** (dört job grubu, gerçek kural
+> yazımıyla). Bir testle geçerliliği kilitli — bayatlarsa CI değil, `pytest` yakalar.
 - **`evidence_to_llm`** — hangi kanıtlar prompt'a girer.
 - **`evidence_to_store`** — hangilerinin içeriği `database/` satırına gömülür.
 - **`prompt`** — bu job grubunun **prompt şablonu** (A8).
@@ -374,7 +377,6 @@ adını söyler. `app/main.py` import edilince app kurulmaz (PEP 562) — testle
   Değilse dilimleme olmaz; artık `evidence_report` bunu söylüyor.
 - Golden set'i gerçek vakalarla doldurmak (A19).
 - Lokal model context penceresi + gerçek prompt boyutu ölçümü → eşik gerekli mi (A11).
-- **Job-level analiz (A18)** — tasarımı hazır, kodlanmadı.
 - İleride: koşum sonu aksiyon listesi (verdict'e göre gruplu özet — ertelendi), png'nin
   multimodal modele verilmesi, Oracle'a geçiş, `error_signature` ile aynı-hata gruplaması.
 
@@ -413,31 +415,19 @@ adını söyler. `app/main.py` import edilince app kurulmaz (PEP 562) — testle
 
 ---
 
-## A18. Job-level analiz — TASARIM (henüz kodlanmadı)
+## A18. Job-level analiz — KAPSAM DIŞI (kullanıcı kararı, 2026-09-08)
 
-**İhtiyaç (kullanıcı):** Bugünkü akış "koşum başladı, bazı senaryolar patladı" dünyasını varsayar.
-Job'ın **kendisi** patladıysa (build alınamadı, ortam ayağa kalkmadı) senaryo yok, attachment yok,
-`/results` boş → sistemin söyleyecek sözü yok. Oysa sorulan soru: *"bu job neden patladı?"*
+Konuşuldu, tasarlandı, **yapılmayacak.** Fikir şuydu: job'ın **kendisi** patladığında (gradle
+build alınamadı, ortam ayağa kalkmadı) senaryo/attachment olmaz, `/results` boş gelir; o zaman
+build log'dan "bu job neden patladı" sorusu ayrı bir prompt'la sorulsun.
 
-**Bilinen:** başarılı joblarda `runResult.state == "PASSED"`. Hatalı hâllerin gerçek değerleri
-kullanıcıdan gelecek. **Uydurma alan adı/değeriyle kod yazılmayacak** (B3.3).
+**Neden yapılmadı:** (1) kullanıcı "gerek yok" dedi; (2) hatalı job'ın VisiumGo'da hangi durum
+değerini döndürdüğü bilinmiyor (başarılıda `runResult.state == "PASSED"`), uydurma bir değerle
+yazılan kod iş bilgisayarında **sessizce yanlış** çalışırdı.
 
-**Tasarım:**
-1. **Tespit** — `JobData`'ya `job_state` (`runResult.state`) alınır. "Job başarısız" kararı
-   config'ten gelen bir **durum listesiyle** verilir (`VISIUMGO_JOB_SUCCESS_STATES`), böylece
-   gerçek değerler öğrenilince kod değil config değişir.
-2. **Kanıt** — build log; kesme yine **mevcut kural motoruyla** (`keep_matching` ile hata
-   kalıpları, `keep_last_lines` ile kuyruk). Yeni parser YAZILMAZ.
-3. **Prompt** — ayrı şablon (`jobfailure.txt`), aynı `_contract.txt` mantığı.
-4. **Çıktı şeması** — **AÇIK KARAR:** aynı 6 verdict mi (job çökmeleri çoğunlukla
-   `environment_error`'a düşer), yoksa job'a özel bir küme mi (`build_failure`, `infra_error`,
-   `config_error`)? Gerçek bir patlamış job'ın build log'u görülmeden karara bağlanmayacak.
-5. **Dağıtım** — aynı endpoint kalır; servis modu run durumundan seçer. Seçim **tek registry
-   lookup'ı** olur, koda dağılmış `if` değil (A0.1).
-
-**Neden şimdi kodlanmadı:** kullanıcı bunu "çok ileri bir feature" olarak işaretledi ve önce
-başarılı koşan jobların hatalı senaryolarının kalitesi isteniyor. Spekülatif kod yazmak proje
-kuralına aykırı (B3.1).
+> Yeniden istenirse: tespit `runResult.state` + config'ten durum listesi · kanıt build log
+> (mevcut kural motoruyla, yeni parser yok) · ayrı şablon + aynı `_contract.txt` · seçim tek
+> registry lookup'ı (koda dağılmış `if` değil). Bu kadarı tasarım olarak yeterli.
 
 ---
 

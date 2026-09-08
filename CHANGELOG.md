@@ -1480,3 +1480,28 @@ kurulmuş `.env` ile: `POST` → `GET` çalışıyor, teşhis `test_maintenance`
 
 **Sıradaki adım:** gerçek profillerin doldurulması ve iş-pc'de gerçek koşum; ardından ölçüm
 setinin gerçek vakalarla doldurulması. Job-level analiz (A18) istendiğinde kodlanacak.
+
+---
+
+# [Son denetim] Job-level kapsam dışı + örnek profil dosyası (2026-09-08)
+
+- **Job-level analiz KAPSAM DIŞI** (kullanıcı: "gerek yok"). `plan.md` A18 artık bir tasarım
+  bölümü değil, **neden yapılmadığını** anlatan kısa bir kayıt: hatalı job'ın gerçek durum değeri
+  bilinmiyor, uydurma değerle yazılan kod iş-pc'de sessizce yanlış çalışırdı. Yeniden istenirse
+  gereken dört madde orada duruyor. A16'daki "kalan iş" satırından çıkarıldı.
+- **`config/profiles.example.json`** eklendi: dört job grubu (default · sadece-build-log ·
+  mobil-bankacilik · web-tam-kanit) gerçek kural yazımıyla. İş-pc'de kopyala-yapıştır ile
+  doldurulacak. **Bir testle kilitli** (`test_example_profiles_file_stays_valid`): bilinmeyen
+  kural tipi, olmayan şablon adı ya da çift job_id varsa `pytest` yakalar — bayat bir örneğin
+  iş bilgisayarına gitmesi, örnek olmamasından kötüdür.
+- **Bayat yorum düzeltildi** (`app/service.py`): kaldırılmış token eşiğini ve "bugün hiçbir şey
+  kesilmiyor"u anlatıyordu; artık profil kuralları gerçekten kesiyor ve boyut `prompt_chars` ile
+  ölçülüyor.
+- Denetim temiz: `.env.example` ↔ `Settings` **birebir senkron** · bayat terim taraması
+  (`prompt_template.txt`, `missing_evidence`, `TODO`, kaldırılmış token ayarları) temiz ·
+  koddaki "job-level" geçişleri build log'la ilgili, doğru.
+
+`pytest` **134/134** · ruff + format + mypy temiz.
+
+**Sıradaki adım:** `config/profiles.json`'u gerçek `job_ids` ile doldurmak (örnek dosyadan),
+iş-pc'de `.env`'i güncellemek (`PROMPTS_DIR`), ilk gerçek koşumda `evidence_report`'a bakmak.

@@ -37,6 +37,7 @@ Source → Extraction(+Evidence) → PreCheck → Prompt → LLM → Parse → P
 | `app/llm/` | Halka 4 — LLM'e çağrı (Mock + gerçek) |
 | `app/parsing/` | Halka 5 — LLM cevabından JSON çıkar |
 | `app/persistence/` | Halka 6 — diske yaz/oku (Repository) |
+| `config/profiles.example.json` | Kopyalanabilir profil örnekleri (job grubu → şablon + kanıt + kural) |
 | `config/prompts/*.txt` | Prompt şablonları: `default` · `web` · `mobile` · `hybrid` · `buildlog` (profil seçer) |
 | `config/prompts/_contract.txt` | Ortak çıktı sözleşmesi (JSON şeması + verdict + confidence) — her şablonun sonuna eklenir |
 | `database/` | Sahte veritabanı (klasör=tablo, JSON=satır) |

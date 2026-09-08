@@ -340,10 +340,11 @@ class AnalyzerService:
                     prompt = self._builder.build(findings)
                     prompt_template = findings.prompt_template
                     prompt_version = self._builder.version_of(prompt_template)
-                    # Size management (plan.md A11): tokens are measured on the
-                    # combined prompt; trimming (when threshold is exceeded) is
-                    # delegated to each Evidence's content selector — passthrough
-                    # today, so nothing is cut. Real limit tuned on the work PC.
+                    # Size management (plan.md A11) happened upstream: each
+                    # Evidence applied its profile's content rules, and any cut
+                    # is flagged on the Findings. There is no token threshold —
+                    # prompt size is recorded (`prompt_chars`) so a real limit
+                    # can be set from measurement instead of guesswork.
                     response = await self._llm.complete(prompt)
                     llm_request = response.request
                     llm_content = response.content

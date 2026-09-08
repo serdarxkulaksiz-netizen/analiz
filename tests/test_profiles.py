@@ -8,6 +8,7 @@ import pytest
 from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
 from app.extraction.evidence_extractor import EvidenceExtractor
+from app.prompting.builder import PromptBuilder
 from tests.test_extraction import _scenario  # reuse the sample scenario
 
 _CONFIG = {
@@ -261,3 +262,23 @@ def test_report_shows_a_successful_scenario_slice(tmp_path: Path) -> None:
     assert "baska satır" not in block.content and "ucuncu satır" not in block.content
     report = next(r for r in findings.evidence_report.blocks if r.label == "BUILD LOG")
     assert report.trimmed is True  # slicing actually happened
+
+
+def test_example_profiles_file_stays_valid() -> None:
+    """`config/profiles.example.json` is copy-paste documentation — it must load.
+
+    An example that has rotted (unknown rule type, unknown prompt template, a
+    job_id claimed twice) is worse than no example: it gets copied verbatim to
+    the work PC and fails there, on a machine where nobody debugs.
+    """
+    path = Path("config/profiles.example.json")
+    registry = ProfileRegistry(path)
+    builder = PromptBuilder(Path("config/prompts"), [0.1, 0.25, 0.5, 0.75, 0.99])
+
+    builder.ensure_templates_exist(registry.prompt_names())  # raises if a name is wrong
+    assert registry.get(job_id="889").prompt == "buildlog"
+    assert registry.get(job_id="1321").evidence_to_llm == [
+        "TestLogEvidence",
+        "HtmlEvidence",
+        "BrowserLogEvidence",
+    ]

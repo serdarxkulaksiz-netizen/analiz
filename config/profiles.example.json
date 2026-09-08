@@ -1,0 +1,70 @@
+{
+  "default": {
+    "job_ids": [],
+    "prompt": "default",
+    "evidence_to_llm": [
+      "TestLogEvidence",
+      "HtmlEvidence",
+      "BrowserLogEvidence"
+    ],
+    "evidence_to_store": [
+      "TestLogEvidence",
+      "HtmlEvidence",
+      "BrowserLogEvidence",
+      "BuildLogEvidence",
+      "WebScreenshotEvidence",
+      "MobileScreenshotEvidence"
+    ]
+  },
+
+  "sadece-build-log": {
+    "job_ids": ["889", "890"],
+    "prompt": "buildlog",
+    "extra_context": "Bu joblarda senaryo bazlı dosya üretilmez; tek kanıt build log'dur.",
+    "evidence_to_llm": ["BuildLogEvidence"],
+    "evidence_to_store": ["BuildLogEvidence", "TestLogEvidence"],
+    "rules": {
+      "BuildLogEvidence": [
+        {
+          "type": "keep_scenario_section",
+          "start": "> Scenario [{scenario_name}] started",
+          "end": "beforeScenario:"
+        }
+      ]
+    }
+  },
+
+  "mobil-bankacilik": {
+    "job_ids": ["223", "234"],
+    "prompt": "mobile",
+    "extra_context": "Bu joblar mobil bankacılık joblarıdır.",
+    "evidence_to_llm": ["TestLogEvidence"],
+    "evidence_to_store": ["TestLogEvidence", "MobileScreenshotEvidence"],
+    "rules": {
+      "TestLogEvidence": [
+        { "type": "keep_matching", "patterns": ["(?i)error", "(?i)exception", "(?i)failed"] },
+        { "type": "max_chars", "n": 20000 }
+      ]
+    }
+  },
+
+  "web-tam-kanit": {
+    "job_ids": ["1321", "1323"],
+    "prompt": "web",
+    "evidence_to_llm": ["TestLogEvidence", "HtmlEvidence", "BrowserLogEvidence"],
+    "evidence_to_store": [
+      "TestLogEvidence",
+      "HtmlEvidence",
+      "BrowserLogEvidence",
+      "WebScreenshotEvidence"
+    ],
+    "rules": {
+      "HtmlEvidence": [
+        { "type": "strip_tags", "tags": ["script", "style", "svg"] },
+        { "type": "collapse_whitespace" },
+        { "type": "max_chars", "n": 30000 }
+      ],
+      "BrowserLogEvidence": [{ "type": "keep_last_lines", "n": 200 }]
+    }
+  }
+}

@@ -235,7 +235,7 @@ dosya **boş listeyle** gelir.
 | Gerçek lokal LLM | `LLM_PROVIDER=openai_compatible`, `LLM_BASE_URL=<url>`, `LLM_ENDPOINT_PATH=/api/v1/extension/send` (auth yok; `model` body'de gönderilmez) |
 | Gerçek VisiumGo | `SOURCE_PROVIDER=visiumgo`, `VISIUMGO_BASE_URL=<url>`, `VISIUMGO_TOKEN=<JWT>` (extractor kaynaktan bağımsız, ayrı ayar yok) |
 | Build log | `VISIUMGO_BUILD_LOG_PATH=/api/runs/{run_id}/logs` — endpoint **ZIP** döndürür, içinden `build.log` çıkarılır (`VISIUMGO_BUILD_LOG_ENTRY`); boş = atla |
-| Kanıt akışı / kırpma | `config/profiles.json` → job bazlı profil + kurallar |
+| Kanıt akışı / kırpma | `config/profiles.json` → job bazlı profil + kurallar (**örnek:** `config/profiles.example.json`) |
 | Prompt şablonları | `PROMPTS_DIR=config/prompts` (eski `PROMPT_TEMPLATE_PATH` **kalktı**) |
 | Paralellik | `MAX_CONCURRENCY=<n>` |
 | Önbellek | `CACHE_ENABLED=true` → aynı **run_id + parametreler** daha önce analiz edildiyse LLM çağrılmaz, sonuç diskten döner (job bazlı değil: bir job'ın her koşumu ayrı analiz edilir) |
