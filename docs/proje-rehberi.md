@@ -221,7 +221,7 @@ sayılır ve boş kalır), `raw_run_response`, `raw_results_response` (ham /resu
 **Kural motoru** (`app/evidence/rules.py`) — `Rule.apply(text, ctx)`; `RULE_REGISTRY`'den seçilir.
 | Kural | Ne yapar |
 |---|---|
-| `keep_scenario_section` | Job-seviyesi logdan yalnız bu senaryonun bölümü (`{scenario_name}`) |
+| `keep_scenario_section` | Job-seviyesi logdan yalnız bu senaryonun bölümü. İşaretler kuralın **varsayılanıdır** (build.log formatı: `> Scenario [{scenario_name}] started` … bir sonraki `beforeScenario:`); config yalnız `{"type": "keep_scenario_section"}` yazar, gerekirse `start`/`end` ile üzerine yazar (`"end": ""` = dosya sonuna kadar) |
 | `keep_last_lines` / `keep_first_lines` | Son/ilk N satır |
 | `drop_matching` / `keep_matching` | Regex ile satır ele/tut |
 | `strip_tags` | Etiketi **alt ağacıyla** siler (script/style/comment) |

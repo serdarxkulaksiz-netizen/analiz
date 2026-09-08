@@ -158,12 +158,20 @@ anahtar `(mime_type, device_id)`. Yeni tip = 1 sınıf + 1 satır.
   olmaz — ama dilimleme de olmaz; bu durum A5.5 raporunda görünür.
 - Ayrı/global bir "trimmer" katmanı YOKTUR. Yeni kural tipi = 1 sınıf + 1 satır.
 
-**Build log senaryo dilimleme (gerçek formatla doğrulandı):**
+**Build log senaryo dilimleme:** config yalnız kuralı ister —
+
 ```json
-{ "type": "keep_scenario_section",
-  "start": "> Scenario [{scenario_name}] started",
-  "end": "beforeScenario:" }
+{ "type": "keep_scenario_section" }
 ```
+
+İşaretler (`> Scenario [{scenario_name}] started` … bir sonraki `beforeScenario:`) **kuralın
+kendi varsayılanıdır**, config'te tekrarlanmaz. Gerekçe: bunlar bir *job kararı* değil,
+**VisiumGo build.log formatının kendisidir** — her job'da aynıdır. Her profile kopyalanırsa
+birindeki bir harf hatası o job'ın logunu sessizce kesilmemiş bırakır. Formatı farklı bir job
+çıkarsa `start`/`end` config'ten **üzerine yazılabilir** (`"end": ""` = dosya sonuna kadar).
+
+> Aynı çizgi projede zaten var: blok etiketleri (`=== DOM ===`) ve "kanıt alınamadı" metni de
+> config'te değil koddadır — onlar da karar değil, formattır. **Config = karar, kod = bilgi.**
 
 ### A5.4 Eksik kanıt toleransı
 Beklenen kanıt yoksa sistem çökmez, ayrı bir `missing_evidence` alanı **YOKTUR**. Profilin
@@ -406,12 +414,15 @@ adını söyler. `app/main.py` import edilince app kurulmaz (PEP 562) — testle
 20. LLM hatası → `analysis_failed`, ham cevap kaydedilir, job devam eder.
 21. GET yalnız teşhis gösterir; ham iz diskte.
 22. Config katıdır: `.env`'de tanınmayan anahtar açılışta hata.
-23. **Sessiz kayıp yok:** alınamayan bir şey job'ı düşürmez ama **sebebiyle** kaydedilir;
+23. **Config = karar, kod = bilgi.** Config "ne yapılsın"ı söyler (bu job'da build log senaryo
+    bazında kesilsin); "nasıl bulunur"u (log formatı, blok etiketleri) kod bilir. Format bilgisi
+    profillere kopyalanmaz; gerekirse config üzerine yazar.
+24. **Sessiz kayıp yok:** alınamayan bir şey job'ı düşürmez ama **sebebiyle** kaydedilir;
     "yoktu" ile "alınamadı" ayırt edilebilir kalır.
-24. **Prompt job grubuna göre şablondan gelir; çıktı sözleşmesi tek dosyadan.** Şablon çoğalır,
+25. **Prompt job grubuna göre şablondan gelir; çıktı sözleşmesi tek dosyadan.** Şablon çoğalır,
     sözleşme çoğalmaz.
-25. **Boş prompt sorulmaz:** kanıt yoksa LLM çağrılmaz, sonuç `no_evidence`.
-26. **`default` profil build log göndermez;** build log yalnız tanımlı job gruplarında gider.
+26. **Boş prompt sorulmaz:** kanıt yoksa LLM çağrılmaz, sonuç `no_evidence`.
+27. **`default` profil build log göndermez;** build log yalnız tanımlı job gruplarında gider.
 
 ---
 

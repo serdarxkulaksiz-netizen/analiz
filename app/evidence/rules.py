@@ -74,15 +74,31 @@ class Rule(ABC):
 class KeepScenarioSection(Rule):
     """Keep only this scenario's part of a job-level log.
 
-    `start`/`end` are plain markers; `{scenario_name}` is substituted from the
-    context. If the start marker is not found the text is left untouched.
+    The markers are a property of the **log format**, not a per-job decision, so
+    they live here as defaults rather than being repeated in every profile:
+    VisiumGo's build.log opens each scenario with
+    `beforeScenario:63 - [2]  > Scenario [<ad>] started`, and the next
+    `beforeScenario:` line is where that scenario's part ends. Config only has
+    to ask for the rule:
+
+        {"type": "keep_scenario_section"}
+
+    A job whose log looks different can still override either marker (and
+    `"end": ""` means "keep to the end of the file"). `{scenario_name}` is
+    substituted from the context. If the start marker is not found the text is
+    left untouched — no silent emptying (the evidence report shows it was not
+    trimmed).
     """
 
     rule_type = "keep_scenario_section"
 
-    def __init__(self, start: str, end: str = "") -> None:
-        self._start = start
-        self._end = end
+    #: VisiumGo build.log scenario boundary (verified against a real log).
+    DEFAULT_START = "> Scenario [{scenario_name}] started"
+    DEFAULT_END = "beforeScenario:"
+
+    def __init__(self, start: str | None = None, end: str | None = None) -> None:
+        self._start = start if start else self.DEFAULT_START
+        self._end = self.DEFAULT_END if end is None else end
 
     def apply(self, text: str, ctx: RuleContext) -> str:
         start = self._start.format(scenario_name=ctx.scenario_name)

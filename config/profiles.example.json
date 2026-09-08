@@ -24,13 +24,7 @@
     "evidence_to_llm": ["BuildLogEvidence"],
     "evidence_to_store": ["BuildLogEvidence", "TestLogEvidence"],
     "rules": {
-      "BuildLogEvidence": [
-        {
-          "type": "keep_scenario_section",
-          "start": "> Scenario [{scenario_name}] started",
-          "end": "beforeScenario:"
-        }
-      ]
+      "BuildLogEvidence": [{ "type": "keep_scenario_section" }]
     }
   },
 

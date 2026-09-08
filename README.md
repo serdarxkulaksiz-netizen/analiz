@@ -177,6 +177,17 @@ adı **açılışta hata** verir. Hangi şablonun hangi cevabı ürettiği `meta
 bu kasıtlı atlamadır, alan boş kalır).
 Ama LLM'e **gitmesi** ve **kesilmesi** job bazlıdır (profil kararı). Varsayılan profilde LLM'e gitmez.
 
+Senaryo bazında kesmek için profile tek satır yeter:
+
+```json
+"rules": { "BuildLogEvidence": [ { "type": "keep_scenario_section" } ] }
+```
+
+Hangi işaretlerin senaryo bölümünü sınırladığı (`> Scenario [ad] started` … bir sonraki
+`beforeScenario:`) **kuralın içinde** yazılıdır: bu bir job kararı değil, build.log formatının
+kendisidir ve her job'da aynıdır. Formatı farklı bir job çıkarsa `start`/`end` config'ten
+üzerine yazılabilir.
+
 Bazı joblarda senaryo özelinde `test.log`/DOM üretilmez; o joblarda tek kanıt build log olur.
 Başarısız senaryoların listesi yine VisiumGo `/results`'tan gelir; build log yalnızca o senaryonun
 **detayını** sağlar. Profilde tek yapılacak, logu senaryo bazında dilimlemek:

@@ -150,3 +150,49 @@ def test_rule_context_rejects_unknown_fields() -> None:
     """
     with pytest.raises(ValidationError):
         RuleContext(scenario_name="S", error_text="bu alan yok")
+
+
+_REAL_BUILD_LOG = """beforeScenario:63 - [2]  > Scenario [Senaryo A] started
+  A adım 1
+beforeScenario:63 - [2]  > Scenario [Senaryo B] started
+  B adım 1
+  B adım 2 FAILED
+beforeScenario:63 - [2]  > Scenario [Senaryo C] started
+  C adım 1"""
+
+
+def test_keep_scenario_section_uses_the_build_log_format_by_default() -> None:
+    """Config asks for the rule; the markers live with the code that knows them.
+
+    They describe VisiumGo's build.log FORMAT, which is the same for every job —
+    repeating them in each profile only invites a typo that silently sends the
+    whole job log for that one job.
+    """
+    out = _apply({"type": "keep_scenario_section"}, _REAL_BUILD_LOG)
+
+    assert "B adım 2 FAILED" in out
+    assert "A adım 1" not in out and "C adım 1" not in out
+
+
+def test_keep_scenario_section_markers_can_still_be_overridden() -> None:
+    """A job whose log looks different stays a config change, not a code change."""
+    other_format = "### baslangic Senaryo B ###\nB satırı\n### baslangic Senaryo C ###\nC satırı"
+
+    out = _apply(
+        {
+            "type": "keep_scenario_section",
+            "start": "### baslangic {scenario_name} ###",
+            "end": "### baslangic",
+        },
+        other_format,
+    )
+
+    assert "B satırı" in out and "C satırı" not in out
+
+
+def test_empty_end_marker_keeps_everything_after_the_start() -> None:
+    out = _apply({"type": "keep_scenario_section", "end": ""}, _REAL_BUILD_LOG)
+
+    assert "B adım 2 FAILED" in out
+    assert "C adım 1" in out  # explicit "" = to the end of the file
+    assert "A adım 1" not in out

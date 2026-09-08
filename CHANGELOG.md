@@ -1505,3 +1505,34 @@ setinin gerçek vakalarla doldurulması. Job-level analiz (A18) istendiğinde ko
 
 **Sıradaki adım:** `config/profiles.json`'u gerçek `job_ids` ile doldurmak (örnek dosyadan),
 iş-pc'de `.env`'i güncellemek (`PROMPTS_DIR`), ilk gerçek koşumda `evidence_report`'a bakmak.
+
+---
+
+# [Düzeltme] Dilimleme işaretleri config'ten koda taşındı (2026-09-08)
+
+**Kullanıcı eleştirisi (haklı):** *"O metinlerin config'te olması doğru gelmedi; build.log'u
+düzenleyen methodun içinde olması daha doğru değil mi?"*
+
+`> Scenario [{scenario_name}] started` / `beforeScenario:` bir **job kararı değil**, VisiumGo
+build.log **formatının kendisidir** — her job'da aynıdır. Her profile kopyalanınca aynı üç satır
+çoğalıyor ve birindeki tek harf hatası o job'ın logunu **sessizce kesilmemiş** bırakıyordu.
+
+**Yeni çizgi — config = karar, kod = bilgi:**
+
+- `KeepScenarioSection` artık işaretleri `DEFAULT_START` / `DEFAULT_END` olarak kendi taşıyor.
+- Profil yalnız kuralı ister: `{"type": "keep_scenario_section"}`.
+- Formatı farklı bir job çıkarsa `start`/`end` config'ten **üzerine yazılabilir**;
+  `"end": ""` = dosya sonuna kadar. Yani esneklik kaybı yok, tekrar yok.
+- Projedeki mevcut çizgiyle tutarlı: blok etiketleri ve "kanıt alınamadı" metni de config'te
+  değil kodda — onlar da karar değil format.
+
+`plan.md`: A5.3 yeniden yazıldı, **kilitli karar 23** eklendi (config = karar, kod = bilgi).
+`README.md`, `docs/proje-rehberi.md`, `config/profiles.example.json` güncellendi.
+
+**Testler (+3 → 137):** varsayılan işaretlerle gerçek formatta dilimleme · config'ten üzerine
+yazma hâlâ çalışıyor · `"end": ""` dosya sonuna kadar tutuyor. Profil testi de artık config'te
+tek kelimeyle kesiyor.
+
+`pytest` **137/137** · ruff + format + mypy temiz.
+
+**Sıradaki adım:** testler — gerçek build.log ile senaryo dilimlemesinin doğrulanması.

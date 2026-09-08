@@ -242,15 +242,9 @@ def test_report_shows_a_successful_scenario_slice(tmp_path: Path) -> None:
             "job_ids": ["889"],
             "prompt": "buildlog",
             "evidence_to_llm": ["BuildLogEvidence"],
-            "rules": {
-                "BuildLogEvidence": [
-                    {
-                        "type": "keep_scenario_section",
-                        "start": "> Scenario [{scenario_name}] started",
-                        "end": "beforeScenario:",
-                    }
-                ]
-            },
+            # No markers here on purpose: they are a property of the log format,
+            # not a per-job decision, so the profile only asks for the rule.
+            "rules": {"BuildLogEvidence": [{"type": "keep_scenario_section"}]},
         },
     }
     extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
