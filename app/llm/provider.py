@@ -20,7 +20,7 @@ class LLMError(RuntimeError):
 class LLMResponse(BaseModel):
     """Raw completion plus call metadata for the `meta` block (plan.md A8/A10).
 
-    `content` is the message content (the diagnosis JSON, fed to `_try_json`).
+    `content` is the message content (the diagnosis JSON, fed to `try_json`).
     `raw_response` is the FULL response envelope as text (id/choices/usage/model
     — everything), kept for the trace even when parsing fails. `request` is the
     full request that was sent (url + body + model), for the `prompts` trace.

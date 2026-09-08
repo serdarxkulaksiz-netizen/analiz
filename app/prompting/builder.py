@@ -1,39 +1,162 @@
-"""Strict prompt builder (plan.md A7).
+"""Strict prompt builder (plan.md A8) — one template per job group.
 
-The prompt *text* lives in a template file (config, not code). The builder
-only renders Findings into the template's placeholders: role, task, parameter
-context, organized evidence, step-by-step reasoning, hard negative constraints
-and the mandatory JSON schema are all in the template.
+The prompt *text* lives in template files (config, not code). A profile picks
+its template by name (`"prompt": "web"` -> `config/prompts/web.txt`); the
+builder only renders Findings into that template's placeholders.
 
-`string.Template` is used on purpose: the template contains a literal JSON
+Every template is composed as **job-specific part + shared output contract**
+(`_contract.txt`): the JSON schema, the six verdict values and the confidence
+buckets are written ONCE and appended to each template. Duplicating them per
+template would mean maintaining the same contract in five files, where one
+silent drift breaks parsing.
+
+Each evidence block is its own placeholder (`$test_log`, `$dom`,
+`$browser_log`, `$build_log`), so a template shows only the evidence that job
+actually produces; `$evidence_blocks` still renders every block at once for
+templates that want the generic layout. A placeholder whose block did not
+arrive renders the "not available" marker instead of vanishing (plan.md A5.4).
+
+`string.Template` is used on purpose: the contract contains a literal JSON
 schema with `{}` braces, which `str.format` would mangle.
 """
 
+import hashlib
+from collections.abc import Iterable
 from pathlib import Path
 from string import Template
 
-from app.domain.findings import Findings
+from app.domain.findings import (
+    BLOCK_BROWSER,
+    BLOCK_BUILD,
+    BLOCK_DOM,
+    BLOCK_STEPS,
+    DEFAULT_PROMPT_TEMPLATE,
+    EVIDENCE_UNAVAILABLE,
+    Findings,
+)
+
+#: Shared output contract appended to every template (not a template itself).
+CONTRACT_FILE = "_contract.txt"
+TEMPLATE_SUFFIX = ".txt"
+
+#: Evidence block label -> its own template placeholder. A template can then
+#: place each evidence exactly where it wants it, or ignore it entirely.
+BLOCK_PLACEHOLDERS: dict[str, str] = {
+    BLOCK_STEPS: "test_log",
+    BLOCK_DOM: "dom",
+    BLOCK_BROWSER: "browser_log",
+    BLOCK_BUILD: "build_log",
+}
+
+#: Everything a template may reference. Anything else is a typo and fails at
+#: startup — an unknown `$placeholder` would otherwise be sent to the LLM raw.
+KNOWN_PLACEHOLDERS = frozenset(
+    {
+        "parameter1",
+        "parameter2",
+        "scenario_name",
+        "failed_step",
+        "error_message",
+        "steps",
+        "evidence_blocks",
+        "extra_context",
+        "confidence_buckets",
+        *BLOCK_PLACEHOLDERS.values(),
+    }
+)
 
 
 class PromptBuilder:
-    """Renders a Findings object into the single-shot analysis prompt."""
+    """Renders a Findings object into its profile's single-shot prompt."""
 
-    def __init__(self, template_path: Path, confidence_buckets: list[float]) -> None:
-        # Fail fast at startup if the template is missing/misconfigured.
-        self._template = Template(template_path.read_text(encoding="utf-8"))
+    def __init__(self, prompts_dir: Path, confidence_buckets: list[float]) -> None:
+        # Fail fast at startup: a missing contract, a missing default template
+        # or an unknown placeholder are all config errors.
+        contract_path = prompts_dir / CONTRACT_FILE
+        if not contract_path.is_file():
+            raise ValueError(
+                f"Prompt contract {contract_path} is missing — it holds the JSON schema, "
+                "verdict values and confidence buckets shared by every template."
+            )
+        contract = contract_path.read_text(encoding="utf-8")
+
+        self._templates: dict[str, Template] = {}
+        #: template name -> short hash of its exact composed text.
+        self._versions: dict[str, str] = {}
+        for path in sorted(prompts_dir.glob(f"*{TEMPLATE_SUFFIX}")):
+            if path.name == CONTRACT_FILE:
+                continue
+            template = Template(f"{path.read_text(encoding='utf-8').rstrip()}\n\n{contract}")
+            unknown = sorted(set(template.get_identifiers()) - KNOWN_PLACEHOLDERS)
+            if unknown:
+                known = ", ".join(sorted(KNOWN_PLACEHOLDERS))
+                raise ValueError(
+                    f"Prompt template {path} uses unknown placeholder(s): "
+                    f"{', '.join(unknown)}. Known placeholders: {known}."
+                )
+            self._templates[path.stem] = template
+            self._versions[path.stem] = hashlib.sha256(template.template.encode()).hexdigest()[:12]
+
+        if DEFAULT_PROMPT_TEMPLATE not in self._templates:
+            raise ValueError(
+                f"Prompt templates directory {prompts_dir} must contain "
+                f"{DEFAULT_PROMPT_TEMPLATE}{TEMPLATE_SUFFIX} (used by every profile that does "
+                "not name its own)."
+            )
         self._confidence_buckets = confidence_buckets
+
+    @property
+    def template_names(self) -> set[str]:
+        """Templates available to profiles."""
+        return set(self._templates)
+
+    def version_of(self, name: str) -> str:
+        """Short hash of a template's exact text (template + contract).
+
+        Stamped onto every diagnosis so a later "the answers got worse" can be
+        traced to the prompt version that produced them.
+        """
+        return self._versions.get(name, "")
+
+    def ensure_templates_exist(self, names: Iterable[str]) -> None:
+        """Fail at startup if a profile names a template that does not exist.
+
+        Called from the wiring root with every profile's `prompt` value, so a
+        typo in `profiles.json` surfaces on boot instead of mid-analysis.
+        """
+        missing = sorted({name for name in names if name not in self._templates})
+        if missing:
+            known = ", ".join(sorted(self._templates))
+            raise ValueError(
+                f"Profile(s) ask for unknown prompt template(s): {', '.join(missing)}. "
+                f"Available templates: {known}."
+            )
 
     def build(self, findings: Findings) -> str:
         """Build the full prompt for one failed scenario."""
+        template = self._templates.get(findings.prompt_template)
+        if template is None:
+            known = ", ".join(sorted(self._templates))
+            raise ValueError(
+                f"Unknown prompt template {findings.prompt_template!r}. Available: {known}."
+            )
+
         steps_text = "\n".join(f"- {step.name}: {step.status.value}" for step in findings.steps)
         evidence_text = "\n\n".join(
             f"=== {block.label} ===\n{block.content}"
             for block in findings.evidence_blocks
             if block.content
         )
+        by_label = {block.label: block.content for block in findings.evidence_blocks}
+        # A template may name an evidence this run did not produce: render the
+        # marker instead of an empty gap, so "absent" stays visible (A5.4).
+        blocks = {
+            placeholder: by_label.get(label) or EVIDENCE_UNAVAILABLE
+            for label, placeholder in BLOCK_PLACEHOLDERS.items()
+        }
         buckets_text = " / ".join(str(bucket) for bucket in self._confidence_buckets)
 
-        return self._template.safe_substitute(
+        return template.safe_substitute(
             parameter1=findings.parameter1,
             parameter2=findings.parameter2,
             scenario_name=findings.scenario_name,
@@ -43,4 +166,5 @@ class PromptBuilder:
             evidence_blocks=evidence_text,
             extra_context=findings.extra_context,
             confidence_buckets=buckets_text,
+            **blocks,
         )

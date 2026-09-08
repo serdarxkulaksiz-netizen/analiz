@@ -57,6 +57,10 @@ class RunView(BaseModel):
     completed_count: int = 0
     total_scenario_count: int = 0
     note: str = ""
+    #: Why the job-level build log is missing, when it should not be. Run-level
+    #: system state like `note` — NOT raw evidence: the build log itself stays
+    #: on disk and never enters the API (plan.md A13).
+    build_log_error: str = ""
     #: Set when this run reused an earlier run's results (cache hit).
     cached_from: str = ""
     created_at: str = ""

@@ -121,14 +121,18 @@ def _select(
 
 def build_service(settings: Settings) -> AnalyzerService:
     """Wire the whole chain from config (dependency injection root)."""
+    profiles = ProfileRegistry(settings.profiles_config_path)
+    prompt_builder = PromptBuilder(settings.prompts_dir, settings.confidence_buckets)
+    # Only this place knows both sides, so this is where a profile naming a
+    # template that does not exist has to fail — at startup, not mid-analysis.
+    prompt_builder.ensure_templates_exist(profiles.prompt_names())
+
     return AnalyzerService(
         settings=settings,
         repository=FileRepository(settings.database_dir),
         source=_select(SOURCE_REGISTRY, settings.source_provider, "source")(settings),
-        extractor=EvidenceExtractor(
-            EvidenceRegistry(), ProfileRegistry(settings.profiles_config_path)
-        ),
-        prompt_builder=PromptBuilder(settings.prompt_template_path, settings.confidence_buckets),
+        extractor=EvidenceExtractor(EvidenceRegistry(), profiles),
+        prompt_builder=prompt_builder,
         llm_provider=_select(LLM_REGISTRY, settings.llm_provider, "llm")(settings),
         precheck=_select(PRECHECK_REGISTRY, settings.precheck_provider, "precheck")(settings),
     )

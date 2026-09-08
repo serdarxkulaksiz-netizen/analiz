@@ -15,6 +15,8 @@ Source → Extraction → [PreCheck] → Prompt → LLM (tek atış) → Parse (
 ```
 
 `PreCheck` eşleşirse Prompt + LLM **atlanır**; varsayılan `NoOpPreCheck` hiç eşleşmez.
+Prompt'a girecek **hiçbir kanıt yoksa** da LLM çağrılmaz: senaryo `status="no_evidence"` ile
+kaydedilir (boş prompt'un cevabı zaten "kanıt yok" olurdu).
 
 - **Davranış dallanması YOK:** `if mock` / `if type ==` yerine
   ayrı sınıf + arayüz + registry + DI. Yeni varyant = registry'ye bir satır.
@@ -93,6 +95,8 @@ curl http://127.0.0.1:8000/analyze/visiumgo/<analyzer_run_id>
 Ham veriler (`raw_run_response`, `raw_results_response`, `build_log`, `raw_llm_response`,
 `screenshot_paths`, `profile_name` …) API cevabında **yoktur** — hepsi `database/` altında
 tam hâliyle durur. `result_id` ile bir teşhisin ham izine ulaşılır.
+İstisna: bir şeyin *alınamadığını* söyleyen kısa alanlar (`note`, `build_log_error`) cevapta
+kalır — kanıtın içeriği değil, koşumun durumudur.
 
 Tam iz `database/` altına düşer: `runs/` (koşum durumu + ham API cevapları + build log),
 `evidence/` (ham kanıt), `prompts/` (**giden**: prompt + istek),
@@ -145,14 +149,32 @@ eşleşmesi → yoksa `default`. Var olmayan profil adı verilirse koşum `faile
 DOM yok) blok prompt'tan düşmez — `=== DOM ===` başlığı altında
 `(bu kanıt alınamadı / bulunmuyor)` yazar. Böylece LLM eksiği bilir.
 
-Prompt şablonu bu işaretin **ne demek olduğunu** modele ayrıca anlatır ("KANIT HAKKINDA"
-bölümü): eksik blok normaldir, tek başına `unknown`/`inconclusive` gerekçesi değildir —
-yalnızca confidence'ı düşürebilir. Aksi hâlde model teşhis üretmek yerine "kanıt eksik"
-raporlamaya başlıyor.
+Prompt şablonu bu işaretin **ne demek olduğunu** modele ayrıca anlatır: eksik blok normaldir,
+tek başına `unknown`/`inconclusive` gerekçesi değildir — yalnızca confidence'ı düşürebilir.
+Aksi hâlde model teşhis üretmek yerine "kanıt eksik" raporlamaya başlıyor.
+
+**Kanıt ne oldu, nereden bilinir:** her senaryonun `evidence` satırında `evidence_report` var —
+gelen her dosya hangi Evidence sınıfına eşleşti (`""` = eşleşmedi), profil onu LLM'e gönderiyor
+mu, hangi blok dolu hangisi yer tutucu, kural gerçekten kesti mi. "DOM gelmedi mi, geldi de
+eşleşmedi mi" sorusu böylece tek koşumdan cevaplanır.
+
+## Prompt şablonları — job grubuna göre
+
+Prompt metni kodda değil, `config/prompts/` altındadır:
+`default` · `web` · `mobile` · `hybrid` · `buildlog`. Profil hangisini kullanacağını söyler
+(`"prompt": "buildlog"`). JSON şeması + verdict listesi + confidence kovaları **tek dosyadadır**
+(`_contract.txt`) ve her şablonun sonuna sistem tarafından eklenir — beş kopya bakım edilmez.
+
+Şablon içinde her kanıtın kendi alanı vardır: `$test_log`, `$dom`, `$browser_log`, `$build_log`
+(ya da hepsi birden için `$evidence_blocks`). Tanınmayan bir alan adı ya da olmayan bir şablon
+adı **açılışta hata** verir. Hangi şablonun hangi cevabı ürettiği `meta.prompt_template` +
+`meta.prompt_version` ile her teşhiste kayıtlıdır.
 
 ## Build log — senaryo özelinde dilimleme
 
 `build.log` **her koşumda bütün olarak** çekilir ve `runs` satırına kaydedilir — profilden bağımsız.
+Çekilemezse koşum devam eder ve sebep `build_log_error` alanında görünür (yol hiç ayarlanmamışsa
+bu kasıtlı atlamadır, alan boş kalır).
 Ama LLM'e **gitmesi** ve **kesilmesi** job bazlıdır (profil kararı). Varsayılan profilde LLM'e gitmez.
 
 Bazı joblarda senaryo özelinde `test.log`/DOM üretilmez; o joblarda tek kanıt build log olur.
@@ -214,6 +236,7 @@ dosya **boş listeyle** gelir.
 | Gerçek VisiumGo | `SOURCE_PROVIDER=visiumgo`, `VISIUMGO_BASE_URL=<url>`, `VISIUMGO_TOKEN=<JWT>` (extractor kaynaktan bağımsız, ayrı ayar yok) |
 | Build log | `VISIUMGO_BUILD_LOG_PATH=/api/runs/{run_id}/logs` — endpoint **ZIP** döndürür, içinden `build.log` çıkarılır (`VISIUMGO_BUILD_LOG_ENTRY`); boş = atla |
 | Kanıt akışı / kırpma | `config/profiles.json` → job bazlı profil + kurallar |
+| Prompt şablonları | `PROMPTS_DIR=config/prompts` (eski `PROMPT_TEMPLATE_PATH` **kalktı**) |
 | Paralellik | `MAX_CONCURRENCY=<n>` |
 | Önbellek | `CACHE_ENABLED=true` → aynı **run_id + parametreler** daha önce analiz edildiyse LLM çağrılmaz, sonuç diskten döner (job bazlı değil: bir job'ın her koşumu ayrı analiz edilir) |
 
@@ -232,8 +255,25 @@ ruff check .
 mypy
 ```
 
-`ruff` ayarları `pyproject.toml`'da; `mypy` yalnız `app/`'i denetler (test yardımcıları
+`ruff` ayarları `pyproject.toml`'da; `mypy` `app/` ve `evals/`'i denetler (test yardımcıları
 `**overrides` sözlükleri aldığı için bilinçli olarak gevşek bırakıldı).
+
+## Prompt kalitesi ölçümü (golden set)
+
+Prompt ya da profil değiştiğinde "cevaplar iyileşti mi kötüleşti mi" sorusu histen çıkıp sayıya
+dönsün diye küçük bir ölçüm koşturucusu var:
+
+```bash
+python -m evals.runner
+```
+
+`evals/cases/*.json` altındaki **elle etiketlenmiş** vakaları gerçek zincirden geçirir
+(extraction → profil → şablon → LLM → parse), modelin verdict'ini insanın yazdığıyla
+karşılaştırır ve skoru **hangi prompt sürümünün** ürettiğini de yazarak basar. `--strict` ile
+fark varsa çıkış kodu 1 olur.
+
+Set **boş başlar**: uydurma vaka hiçbir şey ölçmez. Vaka biçimi `evals/runner.py` başında ve
+`evals/cases/ornek-vaka.json.example` dosyasında.
 
 Sözleşme-bazlı testler (Findings, çıktı şeması, Repository, parsing, Evidence
 mimarisi/registry, profil çözümü, kırpma kuralları, önbellek, PreCheck, hata

@@ -1,4 +1,7 @@
-"""`_try_json` — the only parsing the system does on LLM output (plan.md B2.5).
+"""`try_json` — the only parsing the system does on LLM output (plan.md B2.5).
+
+Public (no leading underscore) because the offline eval harness scores real
+LLM answers through the SAME parser the service uses — two parsers would drift.
 
 No regex field extraction, no section parsing. We only try to locate a JSON
 object in the completion (models sometimes wrap it in markdown fences or a
@@ -10,7 +13,7 @@ import json
 from typing import Any
 
 
-def _try_json(text: str) -> dict[str, Any] | None:
+def try_json(text: str) -> dict[str, Any] | None:
     """Best-effort extraction of a single JSON object from LLM output."""
     candidates: list[str] = []
 

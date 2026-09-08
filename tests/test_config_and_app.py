@@ -10,6 +10,7 @@ Two traps these tests lock down, both found while hardening the project:
    `.env` happened to be on the machine.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -19,6 +20,7 @@ import pytest
 from fastapi import FastAPI
 
 from app.config import Settings, get_settings
+from app.main import build_service
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -99,3 +101,25 @@ def test_uvicorn_style_app_lookup_still_works(settings: Settings) -> None:
     assert isinstance(main.create_app(settings), FastAPI)
     with pytest.raises(AttributeError):
         _ = main.boyle_bir_sey_yok  # noqa: B018 — erişimin kendisi test ediliyor
+
+
+def test_profile_with_unknown_prompt_template_fails_at_startup(tmp_path: Path) -> None:
+    """A typo in a profile's `prompt` must stop the app, not one scenario.
+
+    The check can only live in the wiring root (the single place that knows
+    both the profiles and the available templates), so it is asserted there.
+    """
+    profiles = tmp_path / "profiles.json"
+    profiles.write_text(
+        json.dumps({"default": {"prompt": "yok-boyle-sablon", "evidence_to_llm": []}}),
+        encoding="utf-8",
+    )
+    settings = Settings(
+        _env_file=None,
+        database_dir=tmp_path / "database",
+        profiles_config_path=profiles,
+        prompts_dir=PROJECT_ROOT / "config" / "prompts",
+    )
+
+    with pytest.raises(ValueError, match="unknown prompt template"):
+        build_service(settings)

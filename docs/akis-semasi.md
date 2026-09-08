@@ -33,7 +33,7 @@ flowchart TD
     W --> EV[("evidence/<br/>ham kanıt")]
     W --> PR[("prompts/<br/>GİDEN: prompt + istek")]
     W --> LR[("llm_responses/<br/>GELEN: ham zarf")]
-    W --> AR[("analysis_results/<br/>status: ok | analysis_failed")]
+    W --> AR[("analysis_results/<br/>status: ok | analysis_failed | no_evidence")]
     AR --> D2["completed_count += 1<br/>hepsi bitince status=done"]
 ```
 
@@ -45,7 +45,7 @@ flowchart TD
     G --> GR["service.get_run()<br/>TAM kaydı döndürür"]
     GR --> RD[("runs/ + analysis_results/<br/>DİSKTEN okunur, bellekten değil")]
     RD --> BV["build_run_view()<br/>API görünümüne indirger"]
-    BV --> OUT([durum + kaç senaryo bitti<br/>+ YALNIZ LLM teşhisi])
+    BV --> OUT([durum + kaç senaryo bitti + note/build_log_error<br/>+ YALNIZ LLM teşhisi])
     BV -.->|"API'ye GİRMEZ · diskte tam durur"| XX["build_log · raw_run_response<br/>raw_llm_response · screenshot_paths"]
     G -->|id yoksa| E404([404])
 ```

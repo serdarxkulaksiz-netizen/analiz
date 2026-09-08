@@ -20,6 +20,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from app.domain.findings import DEFAULT_PROMPT_TEMPLATE
 from app.evidence.rules import Rule, RuleContext, build_rule
 
 DEFAULT_PROFILE_NAME = "default"
@@ -32,6 +33,10 @@ class ProfileConfig(BaseModel):
     evidence_to_llm: list[str] = []
     evidence_to_store: list[str] = []
     rules: dict[str, list[dict]] = {}
+    #: Prompt template name (a file in the prompts dir, without .txt). The
+    #: existence check happens at startup in the wiring root, which is the only
+    #: place that knows both the profiles and the available templates.
+    prompt: str = DEFAULT_PROMPT_TEMPLATE
     extra_context: str = ""
 
 
@@ -43,6 +48,7 @@ class Profile:
         self.job_ids = config.job_ids
         self.evidence_to_llm = config.evidence_to_llm
         self.evidence_to_store = config.evidence_to_store
+        self.prompt = config.prompt
         self.extra_context = config.extra_context
         self._rules: dict[str, list[Rule]] = {
             evidence_name: [build_rule(row) for row in rows]
@@ -81,6 +87,10 @@ class ProfileRegistry:
             raise ValueError(
                 f'profiles config {config_path} must contain a "{DEFAULT_PROFILE_NAME}" profile.'
             )
+
+    def prompt_names(self) -> set[str]:
+        """Every prompt template name the profiles ask for (startup check)."""
+        return {profile.prompt for profile in self._profiles.values()}
 
     def get(self, job_id: str = "", parameter1: str = "") -> Profile:
         """Resolve the profile for this run (see module docstring for order)."""

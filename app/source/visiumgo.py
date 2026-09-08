@@ -29,6 +29,11 @@ from app.source.base import Source
 from app.source.models import Attachment, JobData, RawScenario
 from app.source.visiumgo_client import VisiumGoClient, encode_segment
 
+#: Upper bound for the recorded build-log failure reason (see
+#: `_fetch_build_log`): keeps a long exception text or ZIP listing from
+#: bloating the persisted run row.
+_BUILD_LOG_ERROR_MAX_CHARS = 500
+
 
 def _safe_path_part(value: str) -> str:
     """Make an id/file name safe to use as a filesystem path segment."""
@@ -64,6 +69,7 @@ class VisiumGoSource(Source):
 
     async def fetch_job(self, job_id: str, run_id: str = "") -> JobData:
         resolved_run_id, raw_run = await self._resolve_run(job_id, run_id)
+        build_log, build_log_error = await self._fetch_build_log(resolved_run_id)
 
         results = await self._client.get_json(
             f"/api/runs/{encode_segment(resolved_run_id)}/results"
@@ -83,39 +89,50 @@ class VisiumGoSource(Source):
             run_result=run_result,
             total_scenario_count=total,
             failed_scenarios=scenarios,
-            build_log=await self._fetch_build_log(resolved_run_id),
+            build_log=build_log,
+            build_log_error=build_log_error,
             raw_run_response=raw_run or {},
             raw_results_response=results,
         )
 
-    async def _fetch_build_log(self, run_id: str) -> str:
+    async def _fetch_build_log(self, run_id: str) -> tuple[str, str]:
         """Job-level build log, served by VisiumGo (plan.md A4.1).
 
         The endpoint (`/api/runs/{run_id}/logs`) returns a **ZIP archive**, not
         plain text; the wanted entry (`build.log` by default) is extracted from
         it. The archive itself is not kept — only the extracted text.
 
-        Optional: unset path = skip; any failure (network, not a zip, entry
-        missing) leaves the log empty and the job continues.
+        Returns `(log, error)`. Optional: unset path = deliberate skip, both
+        empty. Any failure (network, 404, not a zip, entry missing) leaves the
+        log empty and the job continues — but the REASON is returned instead of
+        being swallowed, so "no build log configured" and "build log could not
+        be fetched" stay distinguishable (no silent loss, plan.md A0.4).
         """
         if not self._build_log_path:
-            return ""
+            return "", ""
         path = self._build_log_path.format(run_id=encode_segment(run_id))
         try:
             archive = await self._client.get_bytes(path)
-            return self._extract_log(archive)
-        except Exception:
-            return ""
+            return self._extract_log(archive), ""
+        except Exception as exc:
+            reason = f"{path}: {type(exc).__name__}: {exc}"
+            # Bounded: an exception text (or a ZIP listing) must not blow up the
+            # run row. Architectural guard, not a tunable setting.
+            return "", reason[:_BUILD_LOG_ERROR_MAX_CHARS]
 
     def _extract_log(self, archive: bytes) -> str:
-        """Read the configured entry out of the ZIP (matched on its ending)."""
+        """Read the configured entry out of the ZIP (matched on its ending).
+
+        Raises when the archive holds no matching entry, so the caller can
+        report *why* the log is missing (the exception never reaches the job).
+        """
         with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
-            wanted = next(
-                (n for n in bundle.namelist() if n.endswith(self._build_log_entry)),
-                "",
-            )
+            names = bundle.namelist()
+            wanted = next((n for n in names if n.endswith(self._build_log_entry)), "")
             if not wanted:
-                return ""
+                raise ValueError(
+                    f"ZIP has no entry ending with {self._build_log_entry!r} (entries: {names})"
+                )
             return bundle.read(wanted).decode("utf-8", errors="replace")
 
     async def _resolve_run(self, job_id: str, run_id: str) -> tuple[str, dict[str, Any]]:

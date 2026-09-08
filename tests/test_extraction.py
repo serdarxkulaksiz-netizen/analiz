@@ -110,3 +110,36 @@ def test_build_log_is_profile_controlled(extractor: EvidenceExtractor) -> None:
     # scenarios and would bloat every prompt); a profile must opt in.
     findings = extractor.extract(_scenario(), build_log="build out")
     assert not [b for b in findings.evidence_blocks if b.label == BLOCK_BUILD]
+
+
+def test_evidence_report_shows_what_arrived_and_what_matched(
+    extractor: EvidenceExtractor,
+) -> None:
+    """One real run must answer "did it not arrive, or did it not match?".
+
+    An attachment whose mime_type/device_id no Evidence claims used to vanish
+    without trace: the prompt block simply showed "(bu kanıt alınamadı)" and the
+    cause was indistinguishable from the file never being produced.
+    """
+    scenario = _scenario()
+    scenario.attachments.append(
+        Attachment(
+            file_name="beklenmeyen.xml",
+            mime_type="application/xml",
+            device_id="unknown-device",
+            content="<x/>",
+        )
+    )
+
+    report = extractor.extract(scenario).evidence_report
+
+    assert "beklenmeyen.xml" in report.unmatched
+    by_name = {row.file_name: row for row in report.attachments}
+    assert by_name["beklenmeyen.xml"].evidence_name == ""  # nothing claimed it
+    assert by_name["test.file"].evidence_name == "TestLogEvidence"
+    assert by_name["test.file"].goes_to_llm is True
+    assert by_name["test.file"].chars > 0
+
+    blocks = {row.label: row for row in report.blocks}
+    assert blocks["ADIMLAR"].available is True
+    assert blocks["ADIMLAR"].chars > 0

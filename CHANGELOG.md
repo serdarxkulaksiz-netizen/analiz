@@ -1240,3 +1240,243 @@ hatasız job yolu, 422 ve 404 doğru) · dokümanlarda ölü terim taraması tem
 - ruff/mypy `[lint]` grubunda **kalıyor** (kullanıcı teyidi: uygulama sonunda iş-pc'de çalışacak).
 
 **Sıradaki adım:** kullanıcının yeni isterleri.
+
+---
+
+# [Görünürlük] Build log alınamadığında sebebi kaydediliyor (2026-09-04)
+
+Geçen turda "kapsam dışı" diye **bildirilip bırakılan** tek açık madde kapatıldı. Kullanıcı
+kararı bana bıraktı, tek şartı vardı: **iş-pc'de çalışan başarılı build log çekimi bozulmasın.**
+
+> Önemli ayrım (kullanıcı haklı olarak sordu): build log **bugün bozuk değil**, iş-pc'de sorunsuz
+> alınıyor. Sorun, *başarısızlık durumunun görünmezliğiydi*.
+
+## Sorun
+
+`VisiumGoSource._fetch_build_log` çıplak `except Exception: return ""` kullanıyordu ve
+`_extract_log` de aranan girdi yoksa sessizce `""` dönüyordu. Böylece **beş farklı durum aynı
+sonucu** üretiyordu: ayar boş (kasıtlı atlama) · 404/401 · ağ hatası · cevap ZIP değil · ZIP'te
+`build.log` yok. Dışarıdan bakan biri "bu job'da build log yokmuş" ile "build log çekilemedi"yi
+ayırt edemiyordu; sebep hiçbir yere yazılmıyordu.
+
+Projeyi daha önce iki kez ısıran sınıfın aynısı (sessiz kayıp: cache anahtarı, yutulan senaryo
+çökmesi).
+
+## Yapılan — davranış aynı, sebep artık taşınıyor
+
+- `JobData.build_log_error` (yeni alan, varsayılan `""`) — `Source` sözleşmesine sebep taşıyan
+  alan. Bu, geçen turda "sorulmadan yapılmadı" denen değişiklikti.
+- `_fetch_build_log` artık `(log, sebep)` döndürüyor: **ayar boşsa kasıtlı atlama** (ikisi de
+  boş, hata değil); hata varsa `yol: HataTipi: mesaj` (500 karakterle sınırlı — uzun ZIP listesi
+  ya da istisna metni koşum satırını şişirmesin).
+- `_extract_log` girdi bulunamazsa artık **istisna atıyor** ve mesajı ZIP'te *ne olduğunu*
+  listeliyor (düzeltilebilir hata mesajı). İstisna job'a ulaşmıyor, aynı `except` yakalıyor.
+- `service.py`: `runs` satırında `build_log_error` (create_run varsayılanı + fetch sonrası yazım).
+- `domain/api.py`: `RunView.build_log_error` — GET'te görünür. Gerekçe: alan diskte kalsaydı
+  görünürlük kazancı yalnız dosya açanlara olurdu. Bu alan **ham iz değil**, `note` ile aynı
+  kategoride *koşum durumu* ("alınamadı" bilgisi, kanıtın içeriği değil). `build_log`'un kendisi
+  API'ye hâlâ **girmiyor** (plan.md A13 korunuyor).
+
+**Başarılı yol bit birebir aynı:** log geldiğinde `build_log` eskisi gibi doluyor,
+`build_log_error` boş kalıyor, hiçbir çağrı/sıra değişmedi. Hata durumunda da davranış aynı
+(job devam eder, log boş) — tek fark sebebin yazılması.
+
+## Testler (+7 → 117)
+
+- Başarılı çekim → `build_log_error == ""` (**regresyon kilidi**: iş-pc yolunu koruyan test).
+- Ayar boş → atlama, hata değil.
+- 404 → sebep hem yolu hem `404`'ü içeriyor, senaryo analizi yine yapılıyor.
+- ZIP'te girdi yok → mesaj hem `build.log`'u hem ZIP'te *bulunanı* söylüyor.
+- Cevap ZIP değil → `BadZipFile` sebebi yazılı.
+- Servis/API seviyesi (`test_resilience.py`): build log'u düşen kaynakla koşum `done`, 2/2 senaryo
+  analiz ediliyor, sebep hem `runs` satırında hem `build_run_view()` çıktısında.
+- `test_api_smoke.py`: mock uçtan uca akışta alan boş kalıyor (hem diskte hem API'de).
+
+## Dokümanlar
+
+`plan.md` A4.1 / A12 (runs alanları) / A13 (GET görünümü) / A16 / A17 (yeni madde 23: "sessiz
+kayıp yok — 'yoktu' ile 'alınamadı' ayırt edilebilir kalır") · `docs/proje-rehberi.md`
+(JobData, `_fetch_build_log`, RunView, API'de görünmeyenler notu) · `docs/nasil-calisir.md` ·
+`docs/akis-semasi.md` (GET kutusu) · `README.md` (GET cevabı + build log bölümü).
+
+## Doğrulama
+
+`pytest` **117/117** · `ruff check .` temiz · `ruff format --check` temiz (63 dosya) ·
+`mypy` temiz (40 dosya) · gerçek `.env` ile uçtan uca: `POST` → `GET` çalışıyor, cevapta
+`build_log_error` alanı var ve mock akışta boş.
+
+**Sıradaki adım:** kullanıcının yeni isterleri. (Açık duran diğer maddeler — flaky liste raporu,
+`error_signature` ile aynı-hata gruplaması, job seviyesi analiz, `SqliteRepository`, png'nin
+multimodal modele verilmesi — hiçbiri istenmeden yapılmayacak.)
+
+---
+
+# [Yeni faz 1/5] Job grubuna göre prompt şablonu (2026-09-04)
+
+Yeni isterlerin ilk adımı. Karar notları: `docs/yeni-plan-notlari.md` (bitince `plan.md` v4).
+
+## Ne değişti
+
+Tek `config/prompt_template.txt` yerine **şablon klasörü**: `config/prompts/`
+
+| Dosya | Kime |
+|---|---|
+| `default.txt` | profil şablon seçmezse (bugünkü davranış korunur) |
+| `web.txt` | test log + DOM + browser log alanları |
+| `mobile.txt` | test log (mobil UI ağacı test.log içinde gelir notu) |
+| `hybrid.txt` | web + mobil ayaklı tek akış |
+| `buildlog.txt` | senaryo kanıtı üretmeyen joblar; **tek kanıt build log** |
+| `_contract.txt` | JSON şeması + 6 verdict + 5 confidence kovası — **paylaşılan** |
+
+- Profil şablonunu seçer: `"prompt": "mobile"`. Seçmezse `default`.
+- **Sözleşme tek yerden gelir.** Her şablonun sonuna sistem ekler. Gerekçe: 5 şablonda elle
+  bakım edilen bir JSON şeması er geç dolar; bir harf kayınca parse sessizce bozulur.
+- **Her kanıt kendi alanı:** `$test_log`, `$dom`, `$browser_log`, `$build_log`. Şablon yalnız o
+  job'ın ürettiği kanıtı gösterir. Toplu yerleşim isteyen şablon için `$evidence_blocks` duruyor.
+- Şablonun istediği kanıt gelmediyse alan boş kalmaz, `(bu kanıt alınamadı / bulunmuyor)` yazar.
+- **Kaybolan bağlam geri geldi:** hybrid şablonu, `bank`/`platform` kaldırılırken silinen
+  "tek akışta hem web hem mobil adım" paragrafını taşıyor; web/mobile şablonlarının da kendi
+  yorum bağlamı var. (Kalite regresyonunun 1. şüphelisi buydu.)
+
+## Fail-fast (açılışta, koşum ortasında değil)
+
+- Şablonda tanınmayan `$placeholder` → hata (yoksa LLM'e ham `$dom_excerpt` gider).
+- Profil olmayan bir şablon adı verirse → hata. Kontrol wiring kökünde: profilleri ve şablonları
+  birlikte bilen tek yer orası.
+- `_contract.txt` ya da `default.txt` eksikse → hata.
+
+## Dosyalar
+
+`config/prompts/*` (yeni, 6 dosya) · `config/prompt_template.txt` (silindi) ·
+`app/prompting/builder.py` (yeniden yazıldı) · `app/domain/findings.py`
+(`prompt_template` alanı + `DEFAULT_PROMPT_TEMPLATE`) · `app/evidence/profiles.py`
+(`prompt` alanı + `prompt_names()`) · `app/extraction/evidence_extractor.py` (şablon adını
+Findings'e damgalar) · `app/config.py` (`prompt_template_path` → `prompts_dir`) ·
+`app/main.py` (profil registry'si tek kez kurulur, şablon adları doğrulanır) · `.env.example`.
+
+## ⚠️ `.env` değişikliği
+
+`PROMPT_TEMPLATE_PATH` **kalktı**, yerine `PROMPTS_DIR=config/prompts`. Config katı olduğu için
+eski anahtar açılışta hata verir (kasıtlı). Mac'teki `.env` güncellendi; **iş-pc'deki `.env` de
+güncellenmeli.**
+
+## Doğrulama
+
+`pytest` **125/125** (+8) · `ruff check` temiz · `ruff format --check` temiz · `mypy` temiz ·
+gerçek `.env` ile uçtan uca: POST → GET çalışıyor, kaydedilen prompt'ta sözleşme var ve
+doldurulmamış `$` yok.
+
+**Sıradaki adım:** 2/5 — boş prompt'ta LLM çağrısı yapmama + kanıt eşleşme raporu (hangi
+attachment hangi Evidence'a eşleşti, blok dolu mu/yer tutucu mu, prompt boyutu).
+
+---
+
+# [Yeni faz 2/5] Boş prompt'a çağrı yok + kanıt eşleşme raporu (2026-09-04)
+
+## 1. Kanıtı olmayan senaryo LLM'e gitmiyor
+
+`Findings.has_evidence_for_llm`: tüm bloklar boşsa/yer tutucuysa **ve** hata metni de adım
+listesi de yoksa, model yalnızca "kanıt yok" diyebilir — bunu sistem zaten biliyor. Çağrı
+atlanır, sonuç `status="no_evidence"` ile kaydedilir.
+
+`AnalysisStatus`'a üçüncü değer eklendi: `no_evidence`. **`analysis_failed`'dan bilinçli olarak
+ayrı**: orada bir şey bozuldu, burada analiz edilecek bir şey yok. Uydurma teşhis metni yazılmaz
+(A10).
+
+## 2. Kanıt eşleşme raporu — koşum kendini teşhis ediyor
+
+Bir sorunun cevabı bugüne kadar sonradan alınamıyordu: *"DOM gelmedi mi, geldi de eşleşmedi mi?"*
+Artık `evidence` satırında `evidence_report` var:
+
+- **attachments:** her dosya için `file_name`, `mime_type`, `device_id`, eşleştiği Evidence
+  sınıfı (`""` = **eşleşmedi**), profil onu LLM'e gönderiyor mu, kaç karakter geldi.
+- **blocks:** prompt'a giden her blok — kaç karakter, dolu mu **yer tutucu mu**, kuralları
+  gerçekten kesti mi.
+- **unmatched:** hiçbir Evidence sınıfının sahiplenmediği dosya adları.
+
+`prompts` satırına `prompt_chars` eklendi (A11 "önce ölç" maddesi için).
+
+**Build log dilimlemesi bu raporda görünür hâle geldi:** `BUILD LOG` bloğu `trimmed=false` +
+ham log boyutunda `chars` ise `keep_scenario_section` işaretini bulamamış demektir (kural metni
+olduğu gibi bırakır — sessiz kayıp yok, ama dilimleme de olmaz). İş-pc'deki tek koşum bunu
+söyleyecek.
+
+## Testler (+4 → 129)
+
+Eşleşmeyen attachment raporda görünüyor · kanıtsız senaryoda LLM **hiç çağrılmıyor**
+(`calls == 0`) ve sonuç `no_evidence` · dilimleme tutmadığında rapor bunu söylüyor ·
+gerçek `build.log` formatıyla dilimleme çalışıyor (`> Scenario [ad] started` →
+`beforeScenario:`).
+
+## Doğrulama
+
+`pytest` **129/129** · ruff + `ruff format --check` temiz · `mypy` temiz · gerçek `.env` ile
+uçtan uca: 6 attachment'ın hepsi eşleşti, bloklar dolu, prompt 4015 karakter.
+
+**Sıradaki adım:** 3/5 — ölçüm iskeleti (golden set + koşturucu + prompt sürümü meta'da).
+
+---
+
+# [Yeni faz 3-5/5] Ölçüm iskeleti, job-level tasarımı, plan.md v4 (2026-09-08)
+
+## 3/5 — Ölçüm: prompt sürümü + golden set
+
+**Prompt sürümü.** Her şablonun (şablon + `_contract.txt`) tam metninin kısa hash'i artık her
+teşhiste: `meta.prompt_template` + `meta.prompt_version`. Bugüne kadar hangi prompt sürümünün
+hangi cevabı ürettiği **hiçbir yerde yazılı değildi** — "cevaplar kötüleşti" iddiası bu yüzden
+kanıtlanamıyordu.
+
+**Golden set — `evals/`** (geliştirme aracı; `app/` içinden import edilmez):
+
+- `evals/cases/*.json` — elle etiketlenmiş vaka: senaryo + **insanın verdiği doğru verdict**.
+- `python -m evals.runner` — vakaları **gerçek zincirden** geçirir (extraction → profil → şablon →
+  LLM → parse), skor tablosu basar, prompt sürümünü yazar. `--strict` → fark varsa çıkış kodu 1.
+- Üretimdeki kanıt kapısı burada da geçerli: kanıtsız vaka LLM'e gitmez.
+- Set **boş başlar** (uydurma vaka hiçbir şey ölçmez); biçim `evals/cases/ornek-vaka.json.example`.
+
+`_try_json` → **`try_json`** (public): eval koşturucusu servisle **aynı** parser'ı kullanmalı,
+iki parser birbirinden ayrılırsa ölçüm yalan söyler. `mypy` kapsamı `evals`'i de içeriyor.
+
+## 4/5 — Job-level analiz: TASARIM yazıldı, kod yazılmadı
+
+`plan.md` **A18**: tespit (`runResult.state` + config'ten durum listesi), kanıt (build log, mevcut
+kural motoruyla — yeni parser yok), ayrı şablon (`jobfailure.txt`), dağıtım noktası (tek registry
+lookup, koda dağılmış `if` değil) ve **açık karar** (çıktı şeması aynı 6 verdict mi, job'a özel mi).
+
+**Neden kod yok:** kullanıcı bunu "çok ileri feature" olarak işaretledi, önce başarılı koşan
+jobların hatalı senaryoları isteniyor; ayrıca hatalı job'ın gerçek `state` değerleri henüz
+bilinmiyor. **Uydurma alan değeriyle kod yazılmaz** (B3.3). Yeni kural olarak eklendi:
+**B3.13 — spekülatif özellik yazma; tasarımını plan.md'ye yaz, kodu istendiğinde yaz.**
+
+## 5/5 — `plan.md` v4 + dokümanlar
+
+`plan.md` baştan yazıldı (505 satır): A4.1 build log hata sebebi · A5.2 profil `prompt`/
+`extra_context` · A5.5 **kanıt eşleşme raporu** · A6 `prompt_template` + `evidence_report` ·
+**A8 tamamen yeni** (şablon seti, ortak sözleşme, placeholder listesi, fail-fast, prompt sürümü) ·
+A10 `no_evidence` · A11 `prompt_chars` ölçümü · A12 tablolar · A13 GET alanları · A16 durum ·
+A17 kilitli kararlar (23-26) · **A18 job-level tasarımı** · **A19 ölçüm** · B3.13.
+
+`README.md` (prompt şablonları bölümü, kanıt raporu, golden set, `.env` farkı), `docs/proje-rehberi.md`,
+`docs/nasil-calisir.md`, `docs/akis-semasi.md` gerçeğe hizalandı. `CHANGELOG.md` korunuyor.
+
+## Doğrulama
+
+`pytest` **133/133** · `ruff check .` temiz · `ruff format --check` temiz · `mypy` temiz
+(42 dosya, `app` + `evals`).
+
+**Temiz kopya testi (iş-pc provası):** yalnız git'in izlediği dosyalar + `.env.example`'dan
+kurulmuş `.env` ile: `POST` → `GET` çalışıyor, teşhis `test_maintenance`,
+`meta.prompt_template=default@c84d656bf5c3`, 5 tablo da yazıldı, kanıt raporu dolu,
+`python -m evals.runner` çalışıyor.
+
+## İş bilgisayarına inerken
+
+1. `.env`: `PROMPT_TEMPLATE_PATH` satırını **sil**, `PROMPTS_DIR=config/prompts` **ekle**.
+   (Config katı olduğu için eski anahtar açılışta hata verir — kasıtlı.)
+2. Gerçek joblar için `config/profiles.json`'a satır: `job_ids` + `prompt` + `evidence_to_llm` +
+   `rules`. **Asıl kalan iş bu** ve kod değil config işi.
+3. İlk gerçek koşumdan sonra `database/evidence/<id>.json` içindeki `evidence_report`'a bak:
+   eşleşmeyen dosya var mı, hangi blok yer tutucu, `BUILD LOG` bloğu kesilmiş mi.
+
+**Sıradaki adım:** gerçek profillerin doldurulması ve iş-pc'de gerçek koşum; ardından ölçüm
+setinin gerçek vakalarla doldurulması. Job-level analiz (A18) istendiğinde kodlanacak.

@@ -3,6 +3,7 @@
 import pytest
 
 from app.config import Settings
+from app.domain.api import build_run_view
 from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
 from app.extraction.evidence_extractor import EvidenceExtractor
@@ -14,6 +15,7 @@ from app.prompting.builder import PromptBuilder
 from app.service import AnalyzerService
 from app.source.base import Source
 from app.source.mock import MockSource
+from app.source.models import JobData, RawScenario
 
 
 class GarbageLLMProvider(LLMProvider):
@@ -38,7 +40,7 @@ def _service(settings: Settings, llm: LLMProvider) -> AnalyzerService:
         extractor=EvidenceExtractor(
             EvidenceRegistry(), ProfileRegistry(settings.profiles_config_path)
         ),
-        prompt_builder=PromptBuilder(settings.prompt_template_path, settings.confidence_buckets),
+        prompt_builder=PromptBuilder(settings.prompts_dir, settings.confidence_buckets),
         llm_provider=llm,
         precheck=NoOpPreCheck(),
     )
@@ -101,7 +103,7 @@ async def test_source_failure_finishes_run_with_note(settings: Settings) -> None
         extractor=EvidenceExtractor(
             EvidenceRegistry(), ProfileRegistry(settings.profiles_config_path)
         ),
-        prompt_builder=PromptBuilder(settings.prompt_template_path, settings.confidence_buckets),
+        prompt_builder=PromptBuilder(settings.prompts_dir, settings.confidence_buckets),
         llm_provider=GarbageLLMProvider(),
         precheck=NoOpPreCheck(),
     )
@@ -148,3 +150,94 @@ async def test_persistence_failure_is_reported_not_swallowed(settings: Settings)
     assert "kaydedilemedi" in run["note"]  # and it says so
     assert "disk dolu" in run["note"]  # naming the real cause
     assert run["results"] == []
+
+
+class BuildLogFailingSource(MockSource):
+    """Mock evidence, but the job-level build log could not be fetched.
+
+    Mirrors a misconfigured/failing `/logs` endpoint: the scenarios arrive
+    normally, only the build log is missing — and it says why.
+    """
+
+    async def fetch_job(self, job_id: str, run_id: str = "") -> JobData:
+        job = await super().fetch_job(job_id, run_id)
+        return job.model_copy(
+            update={
+                "build_log": "",
+                "build_log_error": (
+                    "/api/runs/RUN_1/logs: HTTPStatusError: "
+                    "Client error '404 Not Found' for url ..."
+                ),
+            }
+        )
+
+
+@pytest.mark.asyncio
+async def test_missing_build_log_reports_its_reason(settings: Settings) -> None:
+    """A build log that could not be fetched must not look like "there was none".
+
+    Both cases leave `build_log` empty, so without a recorded reason a broken
+    endpoint is indistinguishable from a deliberately unconfigured one.
+    """
+    service = _service(settings, MockLLMProvider(settings.llm_model))
+    service._source = BuildLogFailingSource()
+    run_id = service.create_run("default", "job-1", "default")
+
+    await service.run_analysis(run_id)
+
+    run = service.get_run(run_id)
+    assert run is not None
+    # The job is untouched by this: it still finishes and still analyzes.
+    assert run["status"] == "done"
+    assert run["completed_count"] == run["scenario_count"] == 2
+    # But the missing log now carries its cause, on disk and in the API view.
+    assert run["build_log"] == ""
+    assert "404" in run["build_log_error"]
+    assert "404" in build_run_view(run).build_log_error
+
+
+class CountingLLMProvider(LLMProvider):
+    """Records whether the LLM was called at all."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, prompt: str) -> LLMResponse:
+        self.calls += 1
+        return LLMResponse(content="{}", model="counting")
+
+
+class NoEvidenceSource(MockSource):
+    """A run whose failed scenario produced nothing: no error text, no files."""
+
+    async def fetch_job(self, job_id: str, run_id: str = "") -> JobData:
+        job = await super().fetch_job(job_id, run_id)
+        bare = RawScenario(scenario_name="MOCK_kanıtsız senaryo")
+        return job.model_copy(update={"failed_scenarios": [bare], "build_log": ""})
+
+
+@pytest.mark.asyncio
+async def test_scenario_without_any_evidence_never_reaches_the_llm(
+    settings: Settings,
+) -> None:
+    """An empty prompt buys an answer the system already knows ("kanıt yok").
+
+    So the call is skipped and the outcome says exactly that — distinct from
+    `analysis_failed`, where something actually broke.
+    """
+    llm = CountingLLMProvider()
+    service = _service(settings, llm)
+    service._source = NoEvidenceSource()
+    run_id = service.create_run("default", "job-1", "default")
+
+    await service.run_analysis(run_id)
+
+    run = service.get_run(run_id)
+    assert run is not None
+    assert run["status"] == "done"  # the job still finishes cleanly
+    assert llm.calls == 0  # no call was paid for
+    (result,) = run["results"]
+    assert result["status"] == "no_evidence"
+    assert result["verdict"] is None  # no fabricated diagnosis
+    assert result["explanation"] == ""
+    assert result["scenario_name"] == "MOCK_kanıtsız senaryo"

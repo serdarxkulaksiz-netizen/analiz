@@ -16,11 +16,18 @@ from app.domain.enums import StepStatus
 from app.domain.findings import (
     BLOCK_ERROR,
     EVIDENCE_UNAVAILABLE,
+    AttachmentReport,
+    BlockReport,
     EvidenceBlock,
+    EvidenceReport,
     Findings,
 )
-from app.evidence.profiles import ProfileRegistry
-from app.evidence.registry import EvidenceRegistry, evidence_class_by_name
+from app.evidence.profiles import Profile, ProfileRegistry
+from app.evidence.registry import (
+    EvidenceRegistry,
+    evidence_class_by_name,
+    evidence_name_for,
+)
 from app.evidence.rules import RuleContext
 from app.extraction.base import Extractor
 from app.source.models import Attachment, RawScenario
@@ -71,6 +78,7 @@ class EvidenceExtractor(Extractor):
         evidence_blocks: list[EvidenceBlock] = []
         screenshot_paths: list[str] = []
         trimmed: list[str] = []
+        trimmed_labels: set[str] = set()
         excluded_from_store: list[str] = []
         for evidence in evidences:
             block = evidence.to_block()
@@ -78,6 +86,7 @@ class EvidenceExtractor(Extractor):
                 evidence_blocks.append(block)
                 if evidence.was_trimmed:
                     trimmed.append(type(evidence).evidence_name)
+                    trimmed_labels.add(block.label)
             if evidence.screenshot_path:
                 screenshot_paths.append(evidence.screenshot_path)
             if not evidence.goes_to_store:
@@ -105,6 +114,8 @@ class EvidenceExtractor(Extractor):
         if error_message:
             evidence_blocks.append(EvidenceBlock(label=BLOCK_ERROR, content=error_message))
 
+        report = _build_report(scenario_for_evidence, profile, evidence_blocks, trimmed_labels)
+
         return Findings(
             parameter1=parameter1,
             parameter2=parameter2,
@@ -116,8 +127,10 @@ class EvidenceExtractor(Extractor):
             screenshot_paths=screenshot_paths,
             retry_info=scenario.retry_info,
             profile_name=profile.name,
+            prompt_template=profile.prompt,
             extra_context=profile.extra_context,
             excluded_from_store=excluded_from_store,
+            evidence_report=report,
             truncated=bool(trimmed),
             truncated_note=(
                 f"profil '{profile.name}' kuralları uygulandı: {', '.join(trimmed)} "
@@ -126,3 +139,41 @@ class EvidenceExtractor(Extractor):
                 else ""
             ),
         )
+
+
+def _build_report(
+    scenario: RawScenario,
+    profile: Profile,
+    blocks: list[EvidenceBlock],
+    trimmed_labels: set[str],
+) -> EvidenceReport:
+    """Record what arrived and what reached the prompt (plan.md A0.4).
+
+    Answers, from one real run and without reproducing it by hand: did the
+    evidence arrive at all, did it map to an Evidence class, did the profile
+    send it, and did its content rules actually cut anything.
+    """
+    attachments = [
+        AttachmentReport(
+            file_name=attachment.file_name,
+            mime_type=attachment.mime_type,
+            device_id=attachment.device_id,
+            evidence_name=evidence_name_for(attachment),
+            goes_to_llm=evidence_name_for(attachment) in profile.evidence_to_llm,
+            chars=len(attachment.content),
+        )
+        for attachment in scenario.attachments
+    ]
+    return EvidenceReport(
+        attachments=attachments,
+        blocks=[
+            BlockReport(
+                label=block.label,
+                chars=len(block.content),
+                available=bool(block.content) and block.content != EVIDENCE_UNAVAILABLE,
+                trimmed=block.label in trimmed_labels,
+            )
+            for block in blocks
+        ],
+        unmatched=[row.file_name for row in attachments if not row.evidence_name],
+    )

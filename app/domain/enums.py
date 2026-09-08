@@ -46,3 +46,7 @@ class AnalysisStatus(str, Enum):
 
     OK = "ok"
     ANALYSIS_FAILED = "analysis_failed"
+    #: No evidence at all reached the prompt, so the LLM was never called
+    #: (distinct from a failed analysis: nothing broke, there was nothing to
+    #: analyze). See `Findings.has_evidence_for_llm`.
+    NO_EVIDENCE = "no_evidence"

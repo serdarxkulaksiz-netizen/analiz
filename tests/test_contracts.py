@@ -17,10 +17,12 @@ def test_findings_contract_fields_are_frozen() -> None:
         "screenshot_paths",
         "retry_info",
         "profile_name",
+        "prompt_template",
         "extra_context",
         "truncated",
         "truncated_note",
         "excluded_from_store",
+        "evidence_report",
     }
 
 
@@ -76,4 +78,10 @@ def test_status_values_are_frozen() -> None:
         "failed",
     }
     assert {status.value for status in StepStatus} == {"PASSED", "FAILED", "SKIPPED"}
-    assert {status.value for status in AnalysisStatus} == {"ok", "analysis_failed"}
+    assert {status.value for status in AnalysisStatus} == {
+        "ok",
+        "analysis_failed",
+        # The LLM was never called because no evidence reached the prompt —
+        # deliberately distinct from a failed analysis.
+        "no_evidence",
+    }

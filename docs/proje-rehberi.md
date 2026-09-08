@@ -37,7 +37,8 @@ Source → Extraction(+Evidence) → PreCheck → Prompt → LLM → Parse → P
 | `app/llm/` | Halka 4 — LLM'e çağrı (Mock + gerçek) |
 | `app/parsing/` | Halka 5 — LLM cevabından JSON çıkar |
 | `app/persistence/` | Halka 6 — diske yaz/oku (Repository) |
-| `config/prompt_template.txt` | Prompt metni (kodda değil, dosyada) |
+| `config/prompts/*.txt` | Prompt şablonları: `default` · `web` · `mobile` · `hybrid` · `buildlog` (profil seçer) |
+| `config/prompts/_contract.txt` | Ortak çıktı sözleşmesi (JSON şeması + verdict + confidence) — her şablonun sonuna eklenir |
 | `database/` | Sahte veritabanı (klasör=tablo, JSON=satır) |
 | `tests/` | Sözleşme + uçtan uca testler |
 
@@ -60,7 +61,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `visiumgo_build_log_entry` | `build.log` | ZIP içinde okunacak dosya (sonuna göre eşleşir) |
 | `precheck_provider` | `noop` | `noop` = hep LLM'e git · `rules` = bilinen hatalara LLM'siz hazır cevap |
 | `precheck_rules_path` | `config/precheck_rules.json` | PreCheck kural listesi (boş listeyle gelir) |
-| `prompt_template_path` | `config/prompt_template.txt` | Prompt şablonunun yolu |
+| `prompts_dir` | `config/prompts` | Şablon klasörü (`PROMPTS_DIR`). Profil `"prompt": "web"` diyerek içinden seçer |
 | `confidence_buckets` | `[0.1,0.25,0.5,0.75,0.99]` | İzin verilen güven değerleri |
 | `llm_provider` | `mock` | LLM: `mock` \| `openai_compatible` |
 | `llm_base_url` + `llm_endpoint_path` | boş + `/api/v1/extension/send` | Tam URL = ikisinin toplamı |
@@ -89,7 +90,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `Verdict` | `test_maintenance`, `application_bug`, `environment_error`, `transient_error`, `unknown`, `inconclusive` |
 | `StepStatus` | `PASSED`, `FAILED`, `SKIPPED` |
 | `RunStatus` | `pending`, `running`, `done`, `failed` |
-| `AnalysisStatus` | `ok`, `analysis_failed` |
+| `AnalysisStatus` | `ok`, `analysis_failed`, `no_evidence` (prompt'a kanıt girmedi → LLM hiç çağrılmadı) |
 
 ---
 
@@ -103,7 +104,8 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 
 **`JobData`** (bir job koşusunun tamamı) — `job_id`, `run_id`, `job_name`,
 `run_result` (özet dict), `total_scenario_count`, `failed_scenarios: list[RawScenario]`,
-`build_log`, `raw_run_response`, `raw_results_response` (ham /results dizisi).
+`build_log`, `build_log_error` (build log alınamadıysa **sebebi**; ayar boşsa kasıtlı atlama
+sayılır ve boş kalır), `raw_run_response`, `raw_results_response` (ham /results dizisi).
 
 **`Findings`** (Halka 2 → 3 sözleşmesi) — ayrıca `profile_name`, `extra_context`, `truncated`,
 `truncated_note`, `excluded_from_store` (hangi profil çalıştı, ek bağlam, kırpma/saklama bayrakları) —
@@ -155,7 +157,7 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `_build_scenario(run_id, record)` | **Adım C**: senaryo detayını çeker (`errorText`, `stepResults`, `attachments`) → `RawScenario`; ham detay cevabı `raw_detail`'de saklanır. Adım adı `line`'dan alınır |
 | `_download_attachment(run_id, meta)` | **Adım D**: dosyayı indirir (URL-encode), diske kaydeder; inmezse boş `Attachment` (o kanıt "eksik" sayılır) |
 | `_save(run_id, file_name, data)` | İnen dosyayı `database/attachments/...` altına yazar (pathlib) |
-| `_fetch_build_log(run_id)` | VisiumGo `/logs`'tan **ZIP** indirir, `_extract_log` ile `build.log`'u çıkarır (yol boşsa atlar; ağ/ZIP/dosya hatasında boş döner, job devam eder) |
+| `_fetch_build_log(run_id)` | VisiumGo `/logs`'tan **ZIP** indirir, `_extract_log` ile `build.log`'u çıkarır. `(log, sebep)` döner: yol boşsa atlar (ikisi de boş); ağ/404/ZIP/dosya hatasında log boş kalır ama **sebep** döner ve job devam eder |
 | `_extract_log(archive)` | ZIP'ten yapılandırılmış dosyayı okur (ham ZIP saklanmaz) |
 
 > **Adım B** (`fetch_job` içinde): `/api/runs/{run_id}/results` → `resultType == "FAILED"` filtresi; PASSED/flaky atlanır.
@@ -255,7 +257,9 @@ Bozuk regex / bilinmeyen verdict / kova dışı confidence → **açılışta** 
 | Method | Ne yapar |
 |---|---|
 | `__init__(template_path, confidence_buckets)` | Şablonu dosyadan yükler (yoksa açılışta patlar = fail-fast) |
-| `build(findings)` | Şablondaki `$parameter1`, `$parameter2`, `$scenario_name`, `$failed_step`, `$error_message`, `$steps`, `$evidence_blocks`, `$confidence_buckets` yerlerini doldurur → prompt metni. **Prompt metni koddan değil, `config/prompt_template.txt`'ten gelir** |
+| `build(findings)` | `findings.prompt_template`'in seçtiği şablonu doldurur: ortak alanlar (`$parameter1`, `$scenario_name`, `$failed_step`, `$error_message`, `$steps`, `$extra_context`, `$confidence_buckets`), toplu `$evidence_blocks` ve **kanıt bazlı** `$test_log` / `$dom` / `$browser_log` / `$build_log`. Gelmeyen kanıt yer tutucu yazar |
+| `version_of(name)` | Şablonun (şablon + sözleşme) tam metninin kısa hash'i → `meta.prompt_version` |
+| `ensure_templates_exist(names)` | Profillerin istediği şablonlar var mı — **açılışta** doğrulanır |
 
 ---
 
@@ -322,10 +326,11 @@ Tüm halkaları enjekte alır; hiçbirini kendisi yaratmaz.
 1. `result_id` üret → `evidence/` yaz (ham senaryo).
 2. `extractor.extract()` → `Findings`.
 3. `precheck.check()` → None değilse LLM atlanır.
-4. `prompt_builder.build()` → prompt.
+3b. `findings.has_evidence_for_llm` False ise **LLM hiç çağrılmaz** → `status=no_evidence`.
+4. `prompt_builder.build()` → profilin şablonuyla prompt.
 5. `llm.complete()` → cevap (ham + içerik).
 6. `prompts/` yaz (prompt + request + ham) ve `llm_responses/` yaz (LLM'in ham cevabı).
-7. `_try_json(content)` → geçerliyse `AnalysisResult(status=ok)`, değilse `status=analysis_failed`.
+7. `try_json(content)` → geçerliyse `AnalysisResult(status=ok)`, değilse `status=analysis_failed`.
 8. `analysis_results/` yaz → `completed_count += 1`.
 
 ---
@@ -352,12 +357,15 @@ değil, **API sınırında** yapılır: `AnalyzerService.get_run()` tam kaydı d
 | Parça | Ne yapar |
 |---|---|
 | `DiagnosisView` | Bir teşhisin API görünümü: LLM alanları + `status` + `meta` + `result_id` (ham ize join anahtarı) |
-| `RunView` | Koşum durumu/kimliği + `results: list[DiagnosisView]` |
+| `RunView` | Koşum durumu/kimliği + `note` + `build_log_error` + `results: list[DiagnosisView]` |
 | `build_run_view(run)` | Disk satırını görünüme çevirir |
 
 **API'de görünmeyen (diskte tam duran):** `raw_run_response`, `raw_results_response`,
 `run_result`, `build_log`, `raw_llm_response`, `profile_name`, `truncated(_note)`,
 `screenshot_paths`, satır seviyesi `parameter1/2`.
+
+> `build_log` API'ye girmez ama `build_log_error` **girer**: biri kanıtın *içeriği*, diğeri
+> "alınamadı" bilgisidir — `note` gibi koşum seviyesi sistem durumu.
 
 > Pydantic tanımsız anahtarları düşürdüğü için, `runs` satırına ileride eklenecek yeni alanlar
 > API'ye **kazara sızmaz** — bu davranış bir testle kilitlidir.
@@ -407,7 +415,7 @@ GET /{analyzer_run_id}  → get_run → diskten oku → durum + teşhisler
 | Hangi kanıt LLM'e gitsin | `config/profiles.json`: job'a profil satırı ekle (`job_ids` + `evidence_to_llm`) |
 | Kanıtın içini kes/seç | Aynı profilde `rules` (ör. `strip_tags`, `select_nth`, `keep_scenario_section`) |
 | Prompt'a job'a özel not | Profilde `extra_context` |
-| Prompt metni | `config/prompt_template.txt` (kod değil) |
+| Prompt metni | `config/prompts/<ad>.txt` + `_contract.txt` (kod değil) |
 | Paralellik | `.env`: `MAX_CONCURRENCY=n` |
 | Yeni kaynak/LLM/precheck | İlgili `*_REGISTRY`'ye 1 satır + yeni sınıf |
 

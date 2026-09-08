@@ -55,6 +55,9 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     assert run_row["raw_run_response"]["jobName"] == "MOCK_nightly-test"
     assert len(run_row["raw_results_response"]) == 2
     assert "Scenario:" in run_row["build_log"]  # job-level build log
+    # A build log that arrived reports no failure reason — anywhere.
+    assert run_row["build_log_error"] == ""
+    assert result["build_log_error"] == ""
 
     # Same for the diagnosis rows: system meta lives on disk, not in the API.
     for stored in (settings.database_dir / settings.table_analysis_results).glob("*.json"):

@@ -26,7 +26,7 @@ from app.domain.result import AnalysisMeta, AnalysisResult, LLMAnalysis
 from app.evidence.registry import evidence_name_for
 from app.extraction.base import Extractor
 from app.llm.provider import LLMProvider
-from app.parsing.json_parser import _try_json
+from app.parsing.json_parser import try_json
 from app.persistence.repository import Repository
 from app.precheck.base import PreCheck
 from app.prompting.builder import PromptBuilder
@@ -91,6 +91,7 @@ class AnalyzerService:
                 "raw_run_response": {},
                 "raw_results_response": [],
                 "build_log": "",
+                "build_log_error": "",
                 "note": "",
                 "cached_from": "",
                 "created_at": now,
@@ -187,6 +188,10 @@ class AnalyzerService:
             raw_run_response=job.raw_run_response,
             raw_results_response=job.raw_results_response,
             build_log=job.build_log,
+            # Empty unless the build log SHOULD have arrived and did not: the
+            # reason is recorded so a misconfigured/failing endpoint cannot hide
+            # as "this job simply had no build log". Does not fail the run.
+            build_log_error=job.build_log_error,
             scenario_count=len(job.failed_scenarios),
             total_scenario_count=job.total_scenario_count,
         )
@@ -306,6 +311,8 @@ class AnalyzerService:
             meta = AnalysisMeta()
             analysis: LLMAnalysis | None = None
             findings: Findings | None = None
+            #: Set when the prompt would have carried no evidence at all.
+            skipped_no_evidence = False
 
             try:
                 findings = self._extractor.extract(
@@ -322,8 +329,17 @@ class AnalyzerService:
                     analysis = precheck_result
                     raw_response = ""
                     meta = AnalysisMeta(llm_model="precheck", analyzed_at=_utcnow_iso())
+                elif not findings.has_evidence_for_llm:
+                    # Every block is empty or a "not available" marker and there
+                    # is no error text: the model can only answer "kanıt yok",
+                    # which the system already knows. Skip the call and say so
+                    # (no fabricated diagnosis text — plan.md A10).
+                    skipped_no_evidence = True
+                    meta = AnalysisMeta(analyzed_at=_utcnow_iso())
                 else:
                     prompt = self._builder.build(findings)
+                    prompt_template = findings.prompt_template
+                    prompt_version = self._builder.version_of(prompt_template)
                     # Size management (plan.md A11): tokens are measured on the
                     # combined prompt; trimming (when threshold is exceeded) is
                     # delegated to each Evidence's content selector — passthrough
@@ -337,12 +353,14 @@ class AnalyzerService:
                     raw_response = response.raw_response or response.content
                     meta = AnalysisMeta(
                         llm_model=response.model,
+                        prompt_template=prompt_template,
+                        prompt_version=prompt_version,
                         input_tokens=response.input_tokens,
                         output_tokens=response.output_tokens,
                         duration_ms=response.duration_ms,
                         analyzed_at=_utcnow_iso(),
                     )
-                    parsed = _try_json(response.content)
+                    parsed = try_json(response.content)
                     if parsed is not None:
                         try:
                             analysis = LLMAnalysis.model_validate(parsed)
@@ -373,6 +391,9 @@ class AnalyzerService:
                     "scenario_name": scenario.scenario_name,
                     "screenshot_paths": self._screenshot_paths(scenario),
                     "excluded_from_store": excluded,
+                    # What extraction saw: which attachments mapped to which
+                    # evidence, what reached the prompt, what got cut.
+                    "evidence_report": (findings.evidence_report.model_dump() if findings else {}),
                     "raw_scenario": self._storable_scenario(scenario, excluded),
                 },
             )
@@ -386,6 +407,9 @@ class AnalyzerService:
                     "analyzer_run_id": analyzer_run_id,
                     "scenario_name": scenario.scenario_name,
                     "prompt": prompt,
+                    # Prompt size, so an oversized prompt is measurable instead
+                    # of guessed (plan.md A11: measure before setting limits).
+                    "prompt_chars": len(prompt),
                     "request": llm_request,
                 },
             )
@@ -438,7 +462,11 @@ class AnalyzerService:
                     truncated=truncated,
                     truncated_note=truncated_note,
                     raw_llm_response=raw_response,
-                    status=AnalysisStatus.ANALYSIS_FAILED,
+                    status=(
+                        AnalysisStatus.NO_EVIDENCE
+                        if skipped_no_evidence
+                        else AnalysisStatus.ANALYSIS_FAILED
+                    ),
                     meta=meta,
                 )
 

@@ -1,0 +1,29 @@
+Sen deneyimli bir QA otomasyon analisti / SDET'sin.
+
+GÖREV: Aşağıda bir MOBİL (cihaz) otomasyon senaryosunun başarısız koşumuna ait ham kanıtlar var.
+Bunları incele ve KESİN HÜKÜM DEĞİL, gerekçeli bir ÖN TEŞHİS üret:
+hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa geçici mi?
+
+Parametre1: $parameter1
+Parametre2: $parameter2
+Senaryo: $scenario_name
+
+=== PATLAYAN ADIM ===
+$failed_step
+
+=== HATA MESAJI ===
+$error_message
+
+=== ADIM SONUÇLARI ===
+$steps
+
+=== TEST LOG (zaman sıralı adım akışı) ===
+$test_log
+
+MOBİL BAĞLAMI: Mobilde ayrı bir DOM/XML dosyası YOKTUR; hata anındaki arayüz ağacı, varsa
+yukarıdaki test log'un içinde basılıdır. Cihaza bağlanılamaması, uygulamanın açılmaması ya da
+izin/ortam sorunları mobilde sık görülür — bunlar test bakımı değil ORTAM hatasıdır.
+Bir blokta "(bu kanıt alınamadı / bulunmuyor)" yazıyorsa o kanıt bu koşumda üretilmemiştir;
+bu normaldir, teşhisi elindeki diğer kanıtlarla üret.
+
+$extra_context

@@ -150,3 +150,114 @@ def test_job_c_only_build_log_sliced_per_scenario(tmp_path: Path) -> None:
     # Trimming is visible, never silent.
     assert findings.truncated is True
     assert "BuildLogEvidence" in findings.truncated_note
+
+
+def test_profile_picks_its_prompt_template(tmp_path: Path) -> None:
+    """A job group chooses its own prompt; unnamed profiles get `default`."""
+    config = {
+        "default": {"evidence_to_llm": ["TestLogEvidence"]},
+        "mobil_bankacilik": {
+            "job_ids": ["223", "234"],
+            "prompt": "mobile",
+            "evidence_to_llm": ["TestLogEvidence"],
+            "extra_context": "Bu joblar mobil bankacılık joblarıdır.",
+        },
+    }
+    registry = _registry(tmp_path, config)
+
+    assert registry.get(job_id="223").prompt == "mobile"
+    assert registry.get(job_id="bilinmeyen").prompt == "default"
+    # The wiring root asks for this set to validate it against the templates.
+    assert registry.prompt_names() == {"default", "mobile"}
+
+
+def test_findings_carry_the_profiles_prompt_template(tmp_path: Path) -> None:
+    """Extraction stamps the template on Findings — that is how ring 3 knows."""
+    config = {
+        "default": {"evidence_to_llm": ["TestLogEvidence"]},
+        "sadece_buildlog": {
+            "job_ids": ["889", "890"],
+            "prompt": "buildlog",
+            "evidence_to_llm": ["BuildLogEvidence"],
+        },
+    }
+    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+
+    findings = extractor.extract(_scenario(), job_id="889", build_log="BUILD FAILED")
+
+    assert findings.prompt_template == "buildlog"
+    assert findings.profile_name == "sadece_buildlog"
+
+
+def test_report_shows_when_scenario_slicing_did_not_match(tmp_path: Path) -> None:
+    """The build-log risk, made visible instead of silent.
+
+    `keep_scenario_section` leaves the text untouched when its marker is not
+    found (deliberate: no silent loss). The cost is that the WHOLE job log then
+    goes into every scenario's prompt. The report says so: the block was not
+    trimmed and is as large as the raw log.
+    """
+    job_log = "\n".join(f"satır {i}" for i in range(200))
+    config = {
+        "default": {"evidence_to_llm": ["TestLogEvidence"]},
+        "buildlog_jobs": {
+            "job_ids": ["889"],
+            "prompt": "buildlog",
+            "evidence_to_llm": ["BuildLogEvidence"],
+            "rules": {
+                "BuildLogEvidence": [
+                    {
+                        "type": "keep_scenario_section",
+                        "start": "> Scenario [{scenario_name}] started",
+                        "end": "beforeScenario:",
+                    }
+                ]
+            },
+        },
+    }
+    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+
+    findings = extractor.extract(_scenario(), job_id="889", build_log=job_log)
+
+    block = next(row for row in findings.evidence_report.blocks if row.label == "BUILD LOG")
+    assert block.trimmed is False  # the marker was never found
+    assert block.chars == len(job_log)  # so the entire job log went to the prompt
+    assert findings.truncated is False
+
+
+def test_report_shows_a_successful_scenario_slice(tmp_path: Path) -> None:
+    """The same rule against the real build.log format (verified 2026-09-01)."""
+    job_log = (
+        "beforeScenario:63 - [2]  > Scenario [Baska] started\n"
+        "baska satır\n"
+        "beforeScenario:63 - [2]  > Scenario [Senaryo] started\n"
+        "bizim satır FAILED\n"
+        "beforeScenario:63 - [2]  > Scenario [Ucuncu] started\n"
+        "ucuncu satır\n"
+    )
+    config = {
+        "default": {"evidence_to_llm": ["TestLogEvidence"]},
+        "buildlog_jobs": {
+            "job_ids": ["889"],
+            "prompt": "buildlog",
+            "evidence_to_llm": ["BuildLogEvidence"],
+            "rules": {
+                "BuildLogEvidence": [
+                    {
+                        "type": "keep_scenario_section",
+                        "start": "> Scenario [{scenario_name}] started",
+                        "end": "beforeScenario:",
+                    }
+                ]
+            },
+        },
+    }
+    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+
+    findings = extractor.extract(_scenario(), job_id="889", build_log=job_log)
+
+    block = next(b for b in findings.evidence_blocks if b.label == "BUILD LOG")
+    assert "bizim satır FAILED" in block.content
+    assert "baska satır" not in block.content and "ucuncu satır" not in block.content
+    report = next(r for r in findings.evidence_report.blocks if r.label == "BUILD LOG")
+    assert report.trimmed is True  # slicing actually happened

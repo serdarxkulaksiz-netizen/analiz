@@ -1,0 +1,28 @@
+Sen deneyimli bir QA otomasyon analisti / SDET'sin.
+
+GÖREV: Aşağıda başarısız olmuş bir otomasyon test senaryosu var. Bu koşumda senaryo bazlı kanıt
+(test log / DOM / browser log) ÜRETİLMEMİŞTİR; elindeki kanıt job'ın build log'udur.
+Teşhisini BUNUN ÜZERİNDEN kur: KESİN HÜKÜM DEĞİL, gerekçeli bir ÖN TEŞHİS üret.
+
+Parametre1: $parameter1
+Parametre2: $parameter2
+Senaryo: $scenario_name
+
+=== PATLAYAN ADIM ===
+$failed_step
+
+=== HATA MESAJI ===
+$error_message
+
+=== ADIM SONUÇLARI ===
+$steps
+
+=== BUILD LOG ===
+$build_log
+
+BUILD LOG HAKKINDA: Bu log tüm koşumu kapsayan job log'udur; yukarıdaki bölüm bu senaryoya ait
+kısımdır. Senaryo bazlı dosya bulunmaması bu job'da NORMALDİR — bir arıza ya da bulgu değildir,
+"kanıt yok" deme gerekçesi hiç değildir. Build log'daki hata satırlarını, exception'ları ve
+bunların hangi adımdan sonra geldiğini kullanarak teşhis üret.
+
+$extra_context

@@ -18,6 +18,11 @@ class AnalysisMeta(BaseModel):
     """System-side call metadata (plan.md A10 `meta`)."""
 
     llm_model: str = ""
+    #: Which prompt template was used, and a hash of its exact text. Without
+    #: these, "the answers got worse" cannot be traced back to a prompt change
+    #: after the fact — the whole reason quality regressions were unprovable.
+    prompt_template: str = ""
+    prompt_version: str = ""
     input_tokens: int | None = None
     output_tokens: int | None = None
     duration_ms: int | None = None

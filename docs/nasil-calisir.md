@@ -63,7 +63,8 @@ yalnızca burası değişir; kod bu yüzden böyle kurgulandı.)
      (`MockSource` veya `VisiumGoSource`):
      - `VisiumGoSource`: run_id'yi çözer → `/results`'tan **FAILED** senaryoları alır → her senaryonun
        detayını (`errorText`, `stepResults`, `attachments`) çeker → attachment'ları indirir →
-       **build log**'u `/logs` ucundan **ZIP** olarak indirip içinden `build.log`'u çıkarır.
+       **build log**'u `/logs` ucundan **ZIP** olarak indirip içinden `build.log`'u çıkarır
+       (alınamazsa job durmaz; sebep `build_log_error` alanına yazılır).
        Sonuç: `JobData` (içinde başarısız senaryoların listesi = `RawScenario`'lar).
    - `runs` dosyasını günceller (run_id, job adı, senaryo sayıları, ham cevap).
    - **Hata yoksa** → `status="done"`, not: "analiz edilecek hata yok". Biter.
@@ -86,13 +87,16 @@ yalnızca burası değişir; kod bu yüzden böyle kurgulandı.)
    - `RuleBasedPreCheck` → bir kural eşleşirse **hazır teşhis** döner ve **4-5. adımlar atlanır**
      (prompt kurulmaz, LLM çağrılmaz).
 4. **`prompt = self._builder.build(findings)`** — **Prompt** halkası (`PromptBuilder`):
-   şablonu (`config/prompt_template.txt`) doldurur.
+   şablonu doldurur. Şablon **profilden** gelir (`config/prompts/<ad>.txt`) ve sonuna ortak
+   `_contract.txt` eklenir. Prompt'a girecek hiçbir kanıt yoksa **LLM hiç çağrılmaz**;
+   senaryo `status="no_evidence"` ile kaydedilir.
 5. **`response = await self._llm.complete(prompt)`** — **LLM** halkası
    (`MockLLMProvider` veya `OpenAICompatibleLLMProvider`):
    - Gerçek olan: LLM servisine POST atar, **ham cevabı olduğu gibi yakalar**, içinden `content`'i çıkarır.
 6. **`_try_json(response.content)`** — **Parse** halkası: LLM cevabındaki JSON'u yapıya çevirir.
    - Geçerliyse → teşhis alanları dolu (`verdict`, `root_cause`, ...), `status="ok"`.
    - Geçersiz/boşsa → `status="analysis_failed"` (alanlar boş, **ham cevap yine saklı**).
+   - Kanıt hiç yoksa sorulmaz → `status="no_evidence"` (bozulan bir şey yok, analiz edilecek şey yok).
 7. **Şimdi diske yazar** (4 tablo, hepsi aynı `result_id` ile):
    - `evidence/` → ham senaryo. **Extraction'dan sonra** yazılır, çünkü profilin
      `evidence_to_store` kararının uygulanması gerekir.

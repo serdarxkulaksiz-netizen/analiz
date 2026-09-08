@@ -1,0 +1,29 @@
+Sen deneyimli bir QA otomasyon analisti / SDET'sin.
+
+GÖREV: Aşağıda başarısız olmuş bir otomasyon test senaryosunun ham kanıtları var.
+Bunları incele ve KESİN HÜKÜM DEĞİL, gerekçeli bir ÖN TEŞHİS üret:
+hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa geçici mi?
+
+Parametre1: $parameter1
+Parametre2: $parameter2
+Senaryo: $scenario_name
+
+=== PATLAYAN ADIM ===
+$failed_step
+
+=== HATA MESAJI ===
+$error_message
+
+=== ADIM SONUÇLARI ===
+$steps
+
+--- HAM KANIT BLOKLARI ---
+$evidence_blocks
+--- HAM KANIT SONU ---
+
+KANIT HAKKINDA (ÖNEMLİ): Hangi kanıtların üretildiği koşuma ve senaryoya göre DEĞİŞİR; her
+koşumda her kanıt bulunmaz. Bir blokta "(bu kanıt alınamadı / bulunmuyor)" yazıyorsa o kanıt bu
+koşumda üretilmemiştir. Bu NORMALDİR — başlı başına bir arıza, bir bulgu ya da bir teşhis
+DEĞİLDİR. Görevin eksikleri raporlamak değil, ELİNDEKİ kanıtla en iyi teşhisi üretmektir.
+
+$extra_context

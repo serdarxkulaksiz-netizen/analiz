@@ -58,6 +58,11 @@ class JobData(BaseModel):
     # Job-level build log (VisiumGo `/logs` -> `build.log`); empty when the
     # endpoint is not configured.
     build_log: str = ""
+    # Why `build_log` is empty when it should NOT be. An unset endpoint is a
+    # deliberate skip and leaves this empty as well; a failed fetch (404,
+    # timeout, not a ZIP, entry missing) records its reason here. The job
+    # continues either way — the reason is carried, never raised.
+    build_log_error: str = ""
     # Raw job-level responses for observability (plan.md A12).
     raw_run_response: dict = {}
     raw_results_response: list = []

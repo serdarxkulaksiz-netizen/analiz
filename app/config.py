@@ -66,7 +66,9 @@ class Settings(BaseSettings):
     precheck_rules_path: Path = Path("config") / "precheck_rules.json"
 
     # --- prompt / Halka 3 (plan.md A8) ---
-    prompt_template_path: Path = Path("config") / "prompt_template.txt"
+    # One template per job group (profile picks it by name) + the shared
+    # `_contract.txt` that every template ends with.
+    prompts_dir: Path = Path("config") / "prompts"
     confidence_buckets: list[float] = [0.1, 0.25, 0.5, 0.75, 0.99]
 
     # --- LLM / Halka 4 (plan.md A9) — value = registry key ---

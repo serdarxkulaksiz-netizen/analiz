@@ -21,7 +21,7 @@ def settings(tmp_path: Path) -> Settings:
         source_provider="mock",
         llm_provider="mock",
         precheck_provider="noop",
-        prompt_template_path=PROJECT_ROOT / "config" / "prompt_template.txt",
+        prompts_dir=PROJECT_ROOT / "config" / "prompts",
         profiles_config_path=PROJECT_ROOT / "config" / "profiles.json",
         max_concurrency=2,
         cache_enabled=True,
