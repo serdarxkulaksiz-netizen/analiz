@@ -1,11 +1,11 @@
-"""Output JSON contract (plan.md A10) — flat, fixed schema.
+"""Output JSON contract — flat, fixed schema.
 
 `LLMAnalysis` = fields the LLM must return (field names English, text content
 Turkish). `AnalysisResult` = the stored row: the same flat fields plus
 system-side metadata the code attaches (the LLM never produces these — notably
 `profile_name`, which the code attaches, not the model).
 
-No fabricated defaults for text fields (plan.md A10): if the LLM leaves a
+No fabricated defaults for text fields: if the LLM leaves a
 field out, it stays empty.
 """
 
@@ -15,7 +15,7 @@ from app.domain.enums import AnalysisStatus, Verdict
 
 
 class AnalysisMeta(BaseModel):
-    """System-side call metadata (plan.md A10 `meta`)."""
+    """System-side call metadata (`meta`)."""
 
     llm_model: str = ""
     #: Which prompt template was used, and a hash of its exact text. Without
@@ -30,12 +30,12 @@ class AnalysisMeta(BaseModel):
 
 
 class LLMAnalysis(BaseModel):
-    """Exactly what the LLM is required to return (plan.md A10).
+    """Exactly what the LLM is required to return.
 
-    `verdict` and `confidence` are mandatory: if missing or invalid the
-    response is rejected and the scenario is marked `analysis_failed`
-    (plan.md A9). `confidence` is stored as returned — no mapping. The
-    parameters are NOT here — the system attaches them (A10 system-side meta).
+        `verdict` and `confidence` are mandatory: if missing or invalid the
+        response is rejected and the scenario is marked `analysis_failed`
+    . `confidence` is stored as returned — no mapping. The
+        parameters are NOT here — the system attaches them (A10 system-side meta).
     """
 
     scenario_name: str = ""
@@ -64,7 +64,7 @@ class AnalysisResult(BaseModel):
     result_id: str
     analyzer_run_id: str
 
-    # --- LLM fields (plan.md A10) ---
+    # --- LLM fields ---
     scenario_name: str = ""
     root_cause: str = ""
     error_type: str = ""
@@ -77,7 +77,7 @@ class AnalysisResult(BaseModel):
     most_relevant_log_lines: list[str] = []
     error_signature: str = ""
 
-    # --- system-side meta (plan.md A10; code attaches, LLM never produces) ---
+    # --- system-side meta ; code attaches, LLM never produces) ---
     profile_name: str = ""  # which analysis profile actually ran
     truncated: bool = False
     truncated_note: str = ""

@@ -1,4 +1,4 @@
-"""NoOpPreCheck — the only implementation today (plan.md A7).
+"""NoOpPreCheck — the only implementation today.
 
 Always returns None: every scenario goes to the LLM. NO rules, no match lists,
 no known-issues table, no pattern database — this emptiness is a deliberate

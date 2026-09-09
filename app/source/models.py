@@ -1,4 +1,4 @@
-"""Raw job data models — the Source layer's output (plan.md A4).
+"""Raw job data models — the Source layer's output.
 
 Attachment-based, source-agnostic shape: both MockSource and VisiumGoSource
 produce the SAME `RawScenario`, so the extraction ring is identical regardless
@@ -17,7 +17,7 @@ from app.domain.findings import Step
 
 
 class Attachment(BaseModel):
-    """One raw file attached to a scenario (plan.md A4.3).
+    """One raw file attached to a scenario.
 
     `device_id` + file extension identify what it is — that pair is exactly the
     label VisiumGo's own UI shows (`browser.default.html`, `test.properties`),
@@ -59,7 +59,7 @@ class Attachment(BaseModel):
 
 
 class RawScenario(BaseModel):
-    """One failed scenario's raw evidence bundle (plan.md A4).
+    """One failed scenario's raw evidence bundle.
 
     Any attachment may be absent; the analysis tolerates whatever arrived.
     `raw_detail` is the FULL scenario-detail API response (properties and all),
@@ -114,6 +114,6 @@ class JobData(BaseModel):
     # timeout, not a ZIP, entry missing) records its reason here. The job
     # continues either way — the reason is carried, never raised.
     build_log_error: str = ""
-    # Raw job-level responses for observability (plan.md A12).
+    # Raw job-level responses for observability.
     raw_run_response: dict = {}
     raw_results_response: list = []

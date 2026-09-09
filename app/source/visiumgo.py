@@ -1,4 +1,4 @@
-"""VisiumGoSource — real VisiumGo API client (plan.md Halka 1, real-spec §2-5).
+"""VisiumGoSource — real VisiumGo API client.
 
 Chain (real-spec Bölüm 2):
   A. resolve the run: `run_id` -> `GET /api/runs/{run_id}`;
@@ -137,7 +137,7 @@ class VisiumGoSource(Source):
         )
 
     async def fetch_build_log(self, run_id: str) -> tuple[str, str]:
-        """Job-level build log, served by VisiumGo (plan.md A4.1).
+        """Job-level build log, served by VisiumGo.
 
         The endpoint (`/api/runs/{run_id}/logs`) returns a **ZIP archive**, not
         plain text; the wanted entry (`build.log` by default) is extracted from
@@ -147,7 +147,7 @@ class VisiumGoSource(Source):
         empty. Any failure (network, 404, not a zip, entry missing) leaves the
         log empty and the job continues — but the REASON is returned instead of
         being swallowed, so "no build log configured" and "build log could not
-        be fetched" stay distinguishable (no silent loss, plan.md A0.4).
+        be fetched" stay distinguishable (no silent loss).
         """
         if not self._build_log_path:
             return "", ""

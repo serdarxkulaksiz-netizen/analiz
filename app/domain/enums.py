@@ -1,14 +1,14 @@
-"""Contract-fixed enums (plan.md A6, A10, A13).
+"""Contract-fixed enums.
 
 These are architectural constants: the *values* are part of the frozen
-contracts and must not change (plan.md B3.2).
+contracts and must not change.
 """
 
 from enum import Enum
 
 
 class Verdict(str, Enum):
-    """Action decision produced by the LLM (plan.md A10) — 6 values."""
+    """Action decision produced by the LLM — 6 values."""
 
     TEST_MAINTENANCE = "test_maintenance"
     APPLICATION_BUG = "application_bug"
@@ -19,7 +19,7 @@ class Verdict(str, Enum):
 
 
 class StepStatus(str, Enum):
-    """Result of a single test step (plan.md A6 `steps`)."""
+    """Result of a single test step (`steps`)."""
 
     PASSED = "PASSED"
     FAILED = "FAILED"
@@ -27,9 +27,9 @@ class StepStatus(str, Enum):
 
 
 class RunStatus(str, Enum):
-    """Lifecycle of an analyzer run (plan.md A13 + user-approved 4th value).
+    """Lifecycle of an analyzer run (+ user-approved 4th value).
 
-    plan.md A13 lists pending/running/done; `failed` is a user-approved
+     lists pending/running/done; `failed` is a user-approved
     addition for job-level failure (e.g. source unreachable): the run finished
     abnormally, details in the run row's `note`. Scenario-level LLM failures do
     NOT fail the run; they are marked per-row via `AnalysisStatus.ANALYSIS_FAILED`.
@@ -63,7 +63,7 @@ ANALYZABLE_RUN_STATES = frozenset({RunState.PASSED.value, RunState.FAILED.value}
 
 
 class AnalysisStatus(str, Enum):
-    """Per-scenario diagnosis outcome (plan.md A10 system-side `status`)."""
+    """Per-scenario diagnosis outcome (system-side `status`)."""
 
     OK = "ok"
     ANALYSIS_FAILED = "analysis_failed"

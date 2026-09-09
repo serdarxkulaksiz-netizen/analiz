@@ -1,4 +1,4 @@
-"""OpenAI-compatible LLM provider (plan.md A9) — real service, single-shot.
+"""OpenAI-compatible LLM provider — real service, single-shot.
 
 Sends the prompt as one `user` message to `base_url + endpoint_path` and reads
 `choices[0].message.content` from the OpenAI-style `chat.completion` response.
@@ -81,7 +81,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             raise LLMError(f"{type(exc).__name__}: {exc}") from exc
 
         # We HAVE a response: capture the full raw envelope BEFORE any parsing,
-        # so it is never lost even if the body is malformed (plan.md A9/A10).
+        # so it is never lost even if the body is malformed.
         raw_response = response.text
         duration_ms = int((time.perf_counter() - started) * 1000)
 

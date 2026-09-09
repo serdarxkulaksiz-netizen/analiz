@@ -1,7 +1,7 @@
 [project]
 name = "visiumgo-test-analyzer"
 version = "0.1.0"
-description = "Failed test run diagnosis backend: raw evidence -> local LLM -> structured verdict (see plan.md)"
+description = "Failed test run diagnosis backend: raw evidence -> local LLM -> structured verdict"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<1",
@@ -57,7 +57,7 @@ line-length = 100
 #
 # NOT selected on purpose:
 #   BLE (blind except) — `except Exception` at the scenario/job boundaries is
-#     the resilience design itself (plan.md A9): one bad scenario must never
+#     the resilience design itself: one bad scenario must never
 #     kill the job. Every such site already carries a comment saying why.
 #   TRY  — wants TypeError for bad config shapes; ValueError is right here
 #     (a config file holds *values*), and `load_rules` tests assert ValueError.

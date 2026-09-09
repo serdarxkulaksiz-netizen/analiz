@@ -1,7 +1,7 @@
 """Findings contract — the fixed boundary between Extraction and Prompt Building.
 
 Source-shape independent structure; field names are frozen. Evidence block
-labels (plan.md A5) are architectural constants: raw evidence travels as
+labels are architectural constants: raw evidence travels as
 labeled blocks, interpretation is left to the LLM (parse-minimal).
 """
 
@@ -9,16 +9,16 @@ from pydantic import BaseModel
 
 from app.domain.enums import StepStatus
 
-# Labeled evidence block names (plan.md A6) — contract constants, not config.
+# Labeled evidence block names — contract constants, not config.
 # BROWSER LOG = browser.default.log; BUILD LOG = VisiumGo /logs -> build.log (job-level).
 #
 # An evidence that did not arrive produces NO block at all: it leaves the prompt
-# together with its header (plan.md A5.4). There used to be a
+# together with its header. There used to be a
 # "(bu kanıt alınamadı)" placeholder so the gap stayed visible; it was dropped
 # because a header with a marker under it is still noise the model has to reason
 # about, and the prompt then had to spend a paragraph explaining the marker.
 
-#: Prompt template used when a profile does not name its own (plan.md A8).
+#: Prompt template used when a profile does not name its own.
 #: Lives here, in the contract layer, because both the profile config and the
 #: prompt builder need it without depending on each other.
 DEFAULT_PROMPT_TEMPLATE = "default"
@@ -33,7 +33,7 @@ BLOCK_TEST_PROPERTIES = "TEST PROPERTIES"
 
 
 class Step(BaseModel):
-    """One test step and its outcome (plan.md A6 `steps`)."""
+    """One test step and its outcome (`steps`)."""
 
     name: str
     status: StepStatus
@@ -85,7 +85,7 @@ class BlockReport(BaseModel):
 
 
 class EvidenceReport(BaseModel):
-    """Extraction's self-diagnosis for one scenario (plan.md A0.4).
+    """Extraction's self-diagnosis for one scenario.
 
     Stored with the raw evidence so one real run answers "why was the prompt
     empty / oversized?" without anyone reproducing it by hand.
@@ -108,7 +108,7 @@ class Findings(BaseModel):
 
     The request's `parameter1`/`parameter2` are deliberately ABSENT: they are
     reserved keys, recorded on the run and shown by the API, and they take no
-    part in any decision the code makes (plan.md A4.2). Nothing that cannot
+    part in any decision the code makes. Nothing that cannot
     influence the analysis belongs in the analysis contract.
     """
 

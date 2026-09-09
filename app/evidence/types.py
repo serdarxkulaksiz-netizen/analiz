@@ -1,4 +1,4 @@
-"""The evidence classes (plan.md A5.1).
+"""The evidence classes.
 
 Each declares the `device_id` + file extension it matches — the same pair
 VisiumGo's UI shows as the attachment's name (`browser.default.html`,

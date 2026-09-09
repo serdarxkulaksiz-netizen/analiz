@@ -1,12 +1,12 @@
-"""Analysis orchestration (plan.md A13) — the whole chain wired together.
+"""Analysis orchestration — the whole chain wired together.
 
-Redis-ready boundaries (plan.md A13):
+Redis-ready boundaries:
   1. `run_analysis(analyzer_run_id)` is THE single trigger call — when a real
      queue replaces BackgroundTasks, only the call site changes.
   2. Status/results are always read from disk (Repository), never from
      in-memory state.
 
-Full trace (plan.md A12), one row per table per scenario, linked by the same
+Full trace, one row per table per scenario, linked by the same
 `result_id`: raw evidence -> `evidence`, outgoing prompt+request -> `prompts`,
 incoming LLM answer -> `llm_responses`, parsed diagnosis -> `analysis_results`;
 run status -> `runs`.
@@ -37,7 +37,7 @@ from app.source.models import RawScenario
 
 #: Job-level run state -> the profile every scenario of that run is analyzed
 #: with, bypassing the job_ids mapping (a state absent here resolves normally).
-#: A registry, not an `if`: a new state is one row (plan.md A0.1 / B3.1).
+#: A registry, not an `if`: a new state is one row.
 STATE_PROFILE_OVERRIDE: dict[str, str] = {RunState.FAILED.value: JOB_FAILED_PROFILE_NAME}
 
 
@@ -94,10 +94,10 @@ class AnalyzerService:
     ) -> str:
         """Persist a pending run row and return its analyzer_run_id.
 
-        `parameter1`/`parameter2` are written down and never read again: they
-        are reserved request keys, visible through the API, and they take no
-        part in profile selection, caching, extraction or the prompt
-        (plan.md A4.2). This is the ONLY place they are touched.
+                `parameter1`/`parameter2` are written down and never read again: they
+                are reserved request keys, visible through the API, and they take no
+                part in profile selection, caching, extraction or the prompt
+        . This is the ONLY place they are touched.
         """
         analyzer_run_id = str(uuid4())
         now = _utcnow_iso()
@@ -154,7 +154,7 @@ class AnalyzerService:
     # -------------------------------------------------------------- analysis
 
     async def run_analysis(self, analyzer_run_id: str, profile_override: str = "") -> None:
-        """THE single trigger entry point (queue-swap boundary, plan.md A13).
+        """THE single trigger entry point (queue-swap boundary).
 
         `profile_override` names a profile to analyze this run with, whatever
         job it belongs to and whatever its state is. The API never passes it;
@@ -216,7 +216,7 @@ class AnalyzerService:
             run_id=job.run_id,  # resolved run id (real source may derive it)
             job_name=job.job_name,
             run_result=job.run_result,
-            # Full raw traces (save-everything rule, plan.md A12). The build log
+            # Full raw traces (save-everything rule). The build log
             # is job-level (it covers the whole run), so it belongs to the run
             # row — note this can make the row large.
             raw_run_response=job.raw_run_response,
@@ -313,7 +313,7 @@ class AnalyzerService:
         build_log: str,
         semaphore: asyncio.Semaphore,
     ) -> None:
-        """Analyze one failed scenario; never raises (plan.md A9)."""
+        """Analyze one failed scenario; never raises."""
         async with semaphore:
             settings = self._settings
             result_id = str(uuid4())
@@ -336,24 +336,24 @@ class AnalyzerService:
                     build_log=build_log,
                 )
 
-                # PreCheck (plan.md A7): may short-circuit before the LLM.
+                # PreCheck: may short-circuit before the LLM.
                 precheck_result = self._precheck.check(findings)
                 if precheck_result is not None:
                     analysis = precheck_result
                     raw_response = ""
                     meta = AnalysisMeta(llm_model="precheck", analyzed_at=_utcnow_iso())
                 elif not findings.has_evidence_for_llm:
-                    # Every block is empty or a "not available" marker and there
-                    # is no error text: the model can only answer "kanıt yok",
-                    # which the system already knows. Skip the call and say so
-                    # (no fabricated diagnosis text — plan.md A10).
+                    # Every block is empty and there is no error text: the
+                    # model could only answer "kanıt yok",
+                    # which the system already knows. Skip the call and say so,
+                    # without fabricating a diagnosis.
                     skipped_no_evidence = True
                     meta = AnalysisMeta(analyzed_at=_utcnow_iso())
                 else:
                     prompt = self._builder.build(findings)
                     prompt_template = findings.prompt_template
                     prompt_version = self._builder.version_of(prompt_template)
-                    # Size management (plan.md A11) happened upstream: each
+                    # Size management happened upstream: each
                     # Evidence applied its profile's content rules, and any cut
                     # is flagged on the Findings. There is no token threshold —
                     # prompt size is recorded (`prompt_chars`) so a real limit
@@ -422,7 +422,7 @@ class AnalyzerService:
                     "scenario_name": scenario.scenario_name,
                     "prompt": prompt,
                     # Prompt size, so an oversized prompt is measurable instead
-                    # of guessed (plan.md A11: measure before setting limits).
+                    # of guessed (measure before setting limits).
                     "prompt_chars": len(prompt),
                     "request": llm_request,
                 },
@@ -461,7 +461,7 @@ class AnalyzerService:
                     meta=meta,
                 )
             else:
-                # No fabricated analysis text (plan.md A10): only factual
+                # No fabricated analysis text: only factual
                 # identity fields are filled by the system.
                 result = AnalysisResult(
                     result_id=result_id,

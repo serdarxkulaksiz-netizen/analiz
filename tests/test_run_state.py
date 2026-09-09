@@ -1,4 +1,4 @@
-"""Job-level run state drives the analysis (plan.md A4.0).
+"""Job-level run state drives the analysis.
 
 `runResult.state` answers "did the JOB run?", not "did the scenarios pass".
 Three states, three behaviours, all decided in one place:

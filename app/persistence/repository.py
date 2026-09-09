@@ -1,4 +1,4 @@
-"""Repository interface (plan.md A10).
+"""Repository interface.
 
 Upper layers only ever speak at the level of "save to this table / read from
 this table". Table names come from config; no code hardcodes file paths.

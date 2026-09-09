@@ -1,4 +1,4 @@
-"""RuleBasedPreCheck — answers known failures without calling the LLM (plan.md A7).
+"""RuleBasedPreCheck — answers known failures without calling the LLM.
 
 Rules come from config (see `rules.py`). The FIRST matching rule wins, in file
 order, so precedence is explicit and predictable. No match -> `None` -> the

@@ -1,12 +1,12 @@
-"""FastAPI app — async start/poll API (plan.md A13).
+"""FastAPI app — async start/poll API.
 
-Endpoints (names frozen, plan.md B3.2):
+Endpoints (names frozen):
   POST /analyze/visiumgo {parameter1?, parameter2?, job_id?/run_id?} -> analyzer_run_id
   GET  /analyze/visiumgo/{analyzer_run_id} -> status + finished diagnoses (from disk)
 
 Every pluggable backend (source, LLM, precheck) is chosen from config via a
 REGISTRY (name -> factory) and injected here — no `if provider ==` branching
-(plan.md A0.1). Extraction is a single source-agnostic implementation. Switching
+. Extraction is a single source-agnostic implementation. Switching
 mock -> real VisiumGo is a `.env` change, not code.
 """
 
@@ -44,7 +44,7 @@ class AnalyzeRequest(BaseModel):
 
     `parameter1`/`parameter2` are reserved keys: they are recorded on the run
     and returned by GET, and they influence NOTHING — not the profile, not the
-    prompt (plan.md A4.2). Either `job_id` or `run_id` must be given (run_id
+    prompt. Either `job_id` or `run_id` must be given (run_id
     wins if both are present).
     """
 
@@ -64,7 +64,7 @@ def _attachments_dir(settings: Settings):
     return settings.database_dir / "attachments"
 
 
-# --- Registries (plan.md A0.1): name -> factory. A new variant = one row. -----
+# --- Registries: name -> factory. A new variant = one row. -----
 
 SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
     "mock": lambda s: MockSource(_attachments_dir(s)),
@@ -164,7 +164,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request.parameter1, request.job_id, request.parameter2, request.run_id
         )
         # Single trigger call — swapping BackgroundTasks for a real queue
-        # (Redis) only changes this line (plan.md A13).
+        # (Redis) only changes this line.
         background_tasks.add_task(service.run_analysis, analyzer_run_id)
         return {
             "analyzer_run_id": analyzer_run_id,

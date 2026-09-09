@@ -1,4 +1,4 @@
-"""End-to-end smoke test with mocks (plan.md B4 definition of done).
+"""End-to-end smoke test with mocks (definition of done).
 
 POST /analyze/visiumgo -> background analysis -> full trace under database/
 -> GET /analyze/visiumgo/{id} returns the diagnoses. TestClient executes
@@ -73,7 +73,7 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
         # raw_llm_response is the FULL envelope (not just content).
         assert '"choices"' in diagnosis["raw_llm_response"]
 
-    # Full trace on disk (plan.md A12): one row per table per scenario + run row.
+    # Full trace on disk: one row per table per scenario + run row.
     db = settings.database_dir
     assert len(list((db / settings.table_runs).glob("*.json"))) == 1
     assert len(list((db / settings.table_evidence).glob("*.json"))) == 2

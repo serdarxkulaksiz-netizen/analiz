@@ -1,4 +1,4 @@
-"""Single configuration layer (plan.md A0.2 — no hardcoded values).
+"""Single configuration layer — no hardcoded values).
 
 Every tunable — table names, URLs, model name, concurrency, confidence
 buckets, profile/prompt file locations — lives here and is overridable via
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
         extra="forbid",
     )
 
-    # --- persistence / DB simulation (plan.md A12) ---
+    # --- persistence / DB simulation ---
     database_dir: Path = Path("database")
     table_runs: str = "runs"
     table_analysis_results: str = "analysis_results"
@@ -37,10 +37,10 @@ class Settings(BaseSettings):
     table_prompts: str = "prompts"
     table_llm_responses: str = "llm_responses"  # raw LLM answer per scenario
 
-    # --- source / Halka 1 (plan.md A4) — value = registry key ---
+    # --- source / Halka 1 — value = registry key ---
     source_provider: str = "mock"  # mock | visiumgo
 
-    # --- VisiumGo connection (plan.md A4; real source) — from .env, never code ---
+    # --- VisiumGo connection ; real source) — from.env, never code ---
     visiumgo_base_url: str = ""  # e.g. https://visiumgo.fintek.local
     visiumgo_token: str = ""  # JWT (eyJ...); code only puts it in the Bearer header
     visiumgo_timeout_seconds: float = 60.0
@@ -53,25 +53,25 @@ class Settings(BaseSettings):
     # so `logs/build.log` matches too).
     visiumgo_build_log_entry: str = "build.log"
 
-    # --- extraction / Halka 2 (plan.md A5) ---
+    # --- extraction / Halka 2 ---
     # Analysis profiles: job_id -> which evidence goes to the
     # LLM / to the store, plus the content rules that trim each one.
     # New job behaviour = a row in this file, not code.
     profiles_config_path: Path = Path("config") / "profiles.json"
 
-    # --- precheck / Halka before-prompt (plan.md A7) — value = registry key ---
+    # --- precheck / Halka before-prompt — value = registry key ---
     # noop = always go to the LLM (default). rules = answer known failures from
     # `precheck_rules_path` without calling the LLM.
     precheck_provider: str = "noop"  # noop | rules
     precheck_rules_path: Path = Path("config") / "precheck_rules.json"
 
-    # --- prompt / Halka 3 (plan.md A8) ---
+    # --- prompt / Halka 3 ---
     # One template per job group (profile picks it by name) + the shared
     # `_contract.txt` that every template ends with.
     prompts_dir: Path = Path("config") / "prompts"
     confidence_buckets: list[float] = [0.1, 0.25, 0.5, 0.75, 0.99]
 
-    # --- LLM / Halka 4 (plan.md A9) — value = registry key ---
+    # --- LLM / Halka 4 — value = registry key ---
     llm_provider: str = "mock"  # mock | openai_compatible
     # Base URL + path are separate so switching to a direct LLM server later is
     # a single config change (no code). Full URL = base_url + endpoint_path.
@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     # SSL verification off (internal self-signed certs); true to enable via .env.
     llm_verify_ssl: bool = False
 
-    # --- API & background processing (plan.md A11) ---
+    # --- API & background processing ---
     max_concurrency: int = 2  # asyncio.Semaphore size
 
 

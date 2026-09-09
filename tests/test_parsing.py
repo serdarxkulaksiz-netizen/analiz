@@ -1,4 +1,4 @@
-"""Parsing contract tests: `try_json` only (plan.md Halka 5)."""
+"""Parsing contract tests: `try_json` only."""
 
 from app.parsing.json_parser import try_json
 

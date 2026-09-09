@@ -1,4 +1,4 @@
-"""The profile decides what is downloaded at all (plan.md A5.2).
+"""The profile decides what is downloaded at all.
 
 Three separate guarantees:
   * a file no profile wants is never fetched — but it is still reported,

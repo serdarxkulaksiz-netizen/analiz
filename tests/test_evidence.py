@@ -1,4 +1,4 @@
-"""Evidence architecture tests (plan.md A5): attachment mapping + profile flags."""
+"""Evidence architecture tests: attachment mapping + profile flags."""
 
 from app.domain.findings import (
     BLOCK_BROWSER,

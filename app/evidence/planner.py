@@ -1,4 +1,4 @@
-"""Download planning — which attachments this run needs at all (plan.md A5.2).
+"""Download planning — which attachments this run needs at all.
 
 The Source knows how to fetch files; it must not know what an Evidence is. So
 the decision "is this file wanted?" is built here, from the active profile, and

@@ -25,7 +25,7 @@ class DiagnosisView(BaseModel):
     #: so the full trace behind this diagnosis can still be found.
     result_id: str = ""
 
-    # --- what the LLM answered (plan.md A10) ---
+    # --- what the LLM answered ---
     scenario_name: str = ""
     root_cause: str = ""
     error_type: str = ""
@@ -59,7 +59,7 @@ class RunView(BaseModel):
     note: str = ""
     #: Why the job-level build log is missing, when it should not be. Run-level
     #: system state like `note` — NOT raw evidence: the build log itself stays
-    #: on disk and never enters the API (plan.md A13).
+    #: on disk and never enters the API.
     build_log_error: str = ""
     created_at: str = ""
     updated_at: str = ""

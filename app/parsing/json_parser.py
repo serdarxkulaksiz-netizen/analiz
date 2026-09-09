@@ -1,4 +1,4 @@
-"""`try_json` — the only parsing the system does on LLM output (plan.md B2.5).
+"""`try_json` — the only parsing the system does on LLM output.
 
 Public (no leading underscore) because the offline eval harness scores real
 LLM answers through the SAME parser the service uses — two parsers would drift.

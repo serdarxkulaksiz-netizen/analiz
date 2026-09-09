@@ -1,4 +1,4 @@
-"""PreCheck interface (plan.md A7).
+"""PreCheck interface.
 
 Runs before the prompt is built. Input = the scenario's Findings; output =
 `None` (continue to the normal LLM flow) OR a ready `LLMAnalysis` (skip the

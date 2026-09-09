@@ -1,4 +1,4 @@
-"""Source interface (plan.md Halka 1) — pluggable data origin."""
+"""Source interface — pluggable data origin."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable

@@ -1,13 +1,13 @@
-"""Extractor interface (plan.md Halka 2).
+"""Extractor interface.
 
 Raw evidence goes out as labeled blocks; interpretation belongs to the LLM
-(parse-minimal, plan.md A5/B3.6).
+(parse-minimal).
 
 `job_id` selects the analysis profile — which evidence reaches the prompt and
 how its content is shaped; `forced_profile` overrules it (the caller knows the
 job itself failed, or is a tool that must run with one profile). The request's
 `parameter1`/`parameter2` never reach here: they decide nothing. `build_log` is job-level
-context (plan.md A4.1 — VisiumGo `/logs` -> `build.log`) that becomes the
+context — VisiumGo `/logs` -> `build.log`) that becomes the
 `=== BUILD LOG ===` block when the profile includes it.
 """
 

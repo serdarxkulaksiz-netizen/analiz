@@ -1,4 +1,4 @@
-"""Error-resilience tests (plan.md A9): a bad LLM never kills the job."""
+"""Error-resilience tests: a bad LLM never kills the job."""
 
 import pytest
 

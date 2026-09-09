@@ -1,4 +1,4 @@
-"""EvidenceExtractor tests: RawScenario -> Findings (plan.md A5, A6)."""
+"""EvidenceExtractor tests: RawScenario -> Findings."""
 
 import pytest
 

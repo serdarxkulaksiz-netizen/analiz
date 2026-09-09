@@ -1,4 +1,4 @@
-"""Prompt builder contract tests (plan.md A8) — per-profile templates."""
+"""Prompt builder contract tests — per-profile templates."""
 
 from pathlib import Path
 

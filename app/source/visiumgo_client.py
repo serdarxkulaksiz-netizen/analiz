@@ -1,4 +1,4 @@
-"""Thin VisiumGo HTTP client (plan.md Halka 1, real-spec Bölüm 1 & 6).
+"""Thin VisiumGo HTTP client.
 
 A small wrapper around httpx — NOT an orchestrator. All requests carry
 `Authorization: Bearer <token>`; base URL, token and timeout come from config

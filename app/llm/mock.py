@@ -1,9 +1,9 @@
 """Mock LLM provider — deterministic, schema-valid answer for local development.
 
-Lets the whole chain run end-to-end without a real LLM (plan.md A15). Returns
-ONE fixed, contract-valid diagnosis — no content-based branching (plan.md A0.1).
+Lets the whole chain run end-to-end without a real LLM. Returns
+ONE fixed, contract-valid diagnosis — no content-based branching.
 
-`MOCK_` labeling (plan.md A14.2): every free-text field the mock fabricates
+`MOCK_` labeling: every free-text field the mock fabricates
 starts with `MOCK_`, so mock data never blends with real data in `database/`.
 Two fields are intentionally NOT prefixed: `verdict` (enum) and `confidence`
 (float) must stay valid values; and `scenario_name` is echoed from the prompt
@@ -21,7 +21,7 @@ class MockLLMProvider(LLMProvider):
     """Returns a fixed, contract-valid JSON diagnosis (free text in Turkish)."""
 
     def __init__(self, model: str, confidence: float = 0.75) -> None:
-        # Mock meta must be MOCK_-labeled too (plan.md A14.2) so mock and real
+        # Mock meta must be MOCK_-labeled too so mock and real
         # never blend: e.g. "MOCK_qwen3-coder-next".
         self._model = model if model.startswith("MOCK_") else f"MOCK_{model}"
         self._confidence = confidence
@@ -59,7 +59,7 @@ class MockLLMProvider(LLMProvider):
         output_tokens = len(content) // 4
 
         # Mimic the real chat.completion envelope so the raw-saving flow is
-        # identical to the real provider (plan.md A14: mock mirrors real).
+        # identical to the real provider (mock mirrors real).
         envelope = {
             "id": "MOCK_chatcmpl-0000",
             "object": "chat.completion",

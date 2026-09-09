@@ -2,7 +2,7 @@
 
 Keeps the whole chain runnable without real services. Produces the same
 attachment-based `RawScenario` as the real source, so extraction is identical.
-Every produced identifier/content is `MOCK_`-prefixed (plan.md A14.2).
+Every produced identifier/content is `MOCK_`-prefixed.
 
 Each mock scenario carries the FULL attachment set seen in real runs — web
 (`browser.default` html/log/png), mobile (`mobile.*` xml/png) and the two

@@ -1,4 +1,4 @@
-"""EvidenceExtractor — the single, source-agnostic extractor (plan.md A5).
+"""EvidenceExtractor — the single, source-agnostic extractor.
 
 Because MockSource and VisiumGoSource produce the SAME `RawScenario` shape,
 extraction is identical regardless of origin — so there is ONE extractor (the
@@ -87,7 +87,7 @@ class EvidenceExtractor(Extractor):
                 excluded_from_store.append(type(evidence).evidence_name)
 
         # An evidence the profile asked for but that never arrived produces NO
-        # block: it leaves the prompt with its header (plan.md A5.4). What was
+        # block: it leaves the prompt with its header. What was
         # asked for and what actually arrived is recorded in `evidence_report`,
         # which is where that question belongs — not in the prompt.
 
@@ -133,7 +133,7 @@ def _build_report(
     blocks: list[EvidenceBlock],
     trimmed_labels: set[str],
 ) -> EvidenceReport:
-    """Record what arrived and what reached the prompt (plan.md A0.4).
+    """Record what arrived and what reached the prompt.
 
     Answers, from one real run and without reproducing it by hand: did the
     evidence arrive at all, did it map to an Evidence class, did the profile

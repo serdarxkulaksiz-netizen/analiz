@@ -1,4 +1,4 @@
-"""Repository contract tests against FileRepository (plan.md A10)."""
+"""Repository contract tests against FileRepository."""
 
 from pathlib import Path
 

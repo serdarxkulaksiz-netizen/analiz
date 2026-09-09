@@ -1,4 +1,4 @@
-"""PreCheck rules — config-defined shortcuts that skip the LLM (plan.md A7).
+"""PreCheck rules — config-defined shortcuts that skip the LLM.
 
 Some failures need no analysis: "the DB credentials changed" looks the same in
 many projects and runs. A rule matches such a failure and returns a ready-made
@@ -8,7 +8,7 @@ Rules live in config (`config/precheck_rules.json`), never in code: a new case
 is a new row. Everything is validated when the file is loaded — a bad regex,
 an unknown verdict or an off-bucket confidence fails at startup, not mid-run.
 
-CAUTION (plan.md A7): a rule bypasses the LLM entirely, so a pattern that is
+CAUTION: a rule bypasses the LLM entirely, so a pattern that is
 too broad will mislabel everything and nobody will notice. Keep the list short
 and the patterns narrow (exact signatures like `ORA-01017`; never bare words
 like `error`/`failed`).
@@ -24,7 +24,7 @@ from pydantic import BaseModel, field_validator
 #: Where a rule looks for its pattern.
 SearchIn = Literal["error_message", "evidence"]
 
-#: Allowed confidence values (plan.md A10) — same buckets as the LLM's.
+#: Allowed confidence values — same buckets as the LLM's.
 _CONFIDENCE_BUCKETS = {0.1, 0.25, 0.5, 0.75, 0.99}
 
 
@@ -44,7 +44,7 @@ class PreCheckRule(BaseModel):
     suggestion: str = ""
     confidence_reason: str = ""
     summary: str = ""
-    #: Which rule answered — surfaces in the stored result (plan.md A10).
+    #: Which rule answered — surfaces in the stored result.
     error_signature: str = ""
 
     @field_validator("name", "match")

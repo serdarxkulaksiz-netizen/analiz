@@ -1,4 +1,4 @@
-"""Strict prompt builder (plan.md A8) — one template per job group.
+"""Strict prompt builder — one template per job group.
 
 The prompt *text* lives in template files (config, not code). A profile picks
 its template by name (`"prompt": "web"` -> `config/prompts/web.txt`); the
@@ -23,7 +23,7 @@ under it. Same for the fixed fields (`$failed_step`, `$error_message`,
 prompt reads the same whether three blocks arrived or one.
 
 `$parameter1` / `$parameter2` do not exist: those request keys decide nothing
-and reach nothing (plan.md A4.2). In most runs they literally said "default" —
+and reach nothing. In most runs they literally said "default" —
 noise, not context — and a placeholder nobody may use is a trap, not an option.
 
 `string.Template` is used on purpose: the contract contains a literal JSON

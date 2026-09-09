@@ -1,4 +1,4 @@
-"""Contract tests: frozen field names and enum values (plan.md A6, A10, B3.2)."""
+"""Contract tests: frozen field names and enum values."""
 
 from app.domain.enums import AnalysisStatus, RunStatus, StepStatus, Verdict
 from app.domain.findings import Findings
@@ -7,7 +7,7 @@ from app.domain.result import AnalysisResult, LLMAnalysis
 
 def test_findings_contract_fields_are_frozen() -> None:
     # No `parameter1`/`parameter2`: request keys that decide nothing have no
-    # place in the analysis contract (plan.md A4.2).
+    # place in the analysis contract.
     assert set(Findings.model_fields) == {
         "scenario_name",
         "failed_step",
@@ -86,7 +86,7 @@ def test_status_values_are_frozen() -> None:
 
 
 def test_request_parameters_reach_no_decision() -> None:
-    """`parameter1`/`parameter2` must stay out of every decision (plan.md A4.2).
+    """`parameter1`/`parameter2` must stay out of every decision.
 
     They are reserved request keys: recorded on the run, returned by GET, and
     that is all. This is a guard, not a style check — they have crept back into

@@ -30,7 +30,7 @@ async def test_mock_free_text_fields_are_prefixed() -> None:
 
     parsed = try_json(response.content)
     assert parsed is not None
-    # Every fabricated free-text field starts with MOCK_ (plan.md A14.2).
+    # Every fabricated free-text field starts with MOCK_.
     for field in (
         "root_cause",
         "error_type",
@@ -46,7 +46,7 @@ async def test_mock_free_text_fields_are_prefixed() -> None:
 
 @pytest.mark.asyncio
 async def test_mock_is_deterministic_regardless_of_content() -> None:
-    # No content-based branching (plan.md A0.1): auth evidence changes nothing.
+    # No content-based branching: auth evidence changes nothing.
     provider = MockLLMProvider(model="mock-model")
     a = try_json((await provider.complete("Senaryo: MOCK_A\n401 Unauthorized")).content)
     b = try_json((await provider.complete("Senaryo: MOCK_A\nNoSuchElement")).content)

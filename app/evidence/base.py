@@ -1,7 +1,7 @@
-"""Evidence interface + two families (plan.md A5).
+"""Evidence interface + two families.
 
 This is the project's flexibility backbone. Each evidence:
-  - declares what it matches: a `device_id` + file extension (plan.md A5.1),
+  - declares what it matches: a `device_id` + file extension,
   - knows whether it goes to the LLM / to the store (flags from config, A5.2),
   - carries its own content selector — passthrough today (A5.3),
   - reports presence so missing evidence is tolerated, not fatal (A5.4),
@@ -24,11 +24,11 @@ __all__ = ["Evidence", "ScreenshotEvidence", "TextEvidence"]
 
 
 class Evidence(ABC):
-    """One piece of raw evidence for a scenario (plan.md A5.1)."""
+    """One piece of raw evidence for a scenario."""
 
     #: Registry key = class name (also used in profile config lists).
     evidence_name: ClassVar[str]
-    #: Attachment identity this evidence matches (plan.md A5.1): the device
+    #: Attachment identity this evidence matches: the device
     #: that produced it plus the file extension — the same pair VisiumGo's own
     #: UI shows as the attachment's name.
     device_id: ClassVar[str]
@@ -93,7 +93,7 @@ class Evidence(ABC):
 class TextEvidence(Evidence):
     """Text evidence that renders as one labeled `=== <block_label> ===` block."""
 
-    #: Findings evidence-block label this evidence fills (plan.md A6).
+    #: Findings evidence-block label this evidence fills.
     block_label: ClassVar[str]
 
     def __init__(

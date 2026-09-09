@@ -1,4 +1,4 @@
-"""PreCheck tests (plan.md A7): NoOp never short-circuits; rules do — carefully."""
+"""PreCheck tests: NoOp never short-circuits; rules do — carefully."""
 
 import json
 from pathlib import Path
