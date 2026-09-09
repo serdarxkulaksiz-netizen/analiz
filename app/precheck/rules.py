@@ -17,12 +17,11 @@ like `error`/`failed`).
 import json
 import re
 from pathlib import Path
-from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
 #: Where a rule looks for its pattern.
-SearchIn = Literal["error_message", "evidence"]
+
 
 #: Allowed confidence values — same buckets as the LLM's.
 _CONFIDENCE_BUCKETS = {0.1, 0.25, 0.5, 0.75, 0.99}
@@ -33,7 +32,6 @@ class PreCheckRule(BaseModel):
 
     name: str
     match: str  # regex
-    search_in: SearchIn = "error_message"
 
     # --- the canned diagnosis (text written by a human, not fabricated) ---
     verdict: str
@@ -84,10 +82,17 @@ class PreCheckRule(BaseModel):
             raise ValueError(f"unknown verdict {value!r}. Known: {known}") from None
         return value
 
-    def matches(self, error_message: str, evidence_text: str) -> bool:
-        """True if this rule's pattern is found in the configured field."""
-        haystack = evidence_text if self.search_in == "evidence" else error_message
-        return re.search(self.match, haystack) is not None
+    def matches(self, evidence_text: str) -> bool:
+        """True if this rule's pattern is found in the evidence sent to the LLM.
+
+        The evidence text is the haystack because that is what the analysis
+        actually has: the scenario's `errorText` is no longer carried into
+        `Findings` (VisiumGo derives it from `test.log`, which the profile
+        sends whole, so the same text is already in here). When PreCheck moves
+        to the front of the chain — deciding BEFORE any attachment is
+        downloaded — it will read `RawScenario.error_text` directly.
+        """
+        return re.search(self.match, evidence_text) is not None
 
 
 def load_rules(config_path: Path) -> list[PreCheckRule]:

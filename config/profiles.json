@@ -1,6 +1,5 @@
 {
   "_comment": "Profil üç şeyi söyler: evidence_to_store = inen + database'e yazılan kanıtlar (listede olmayan ek HİÇ indirilmez) · evidence_to_llm = prompt'a giren kanıtlar (evidence_to_store'un alt kümesi olmak zorunda) · rules = yalnız prompt'a giden kopyayı kırpar. Gerçek job grupları Faz 3'te eklenecek.",
-
   "test_all": {
     "job_ids": [],
     "prompt": "default",
@@ -25,35 +24,48 @@
     ],
     "rules": {}
   },
-
   "default_web": {
     "job_ids": [],
     "prompt": "web",
     "extra_context": "",
     "evidence_to_store": [
       "TestLogEvidence",
+      "TestPropertiesEvidence",
       "HtmlEvidence",
+      "MobileDomEvidence",
       "BrowserLogEvidence",
-      "WebScreenshotEvidence"
+      "BuildLogEvidence",
+      "WebScreenshotEvidence",
+      "MobileScreenshotEvidence"
     ],
     "evidence_to_llm": [
       "TestLogEvidence",
-      "HtmlEvidence",
-      "BrowserLogEvidence"
+      "HtmlEvidence"
     ],
     "rules": {
       "HtmlEvidence": [
-        { "type": "strip_tags", "tags": ["script", "style", "svg"] },
-        { "type": "collapse_whitespace" }
+        {
+          "type": "strip_tags",
+          "tags": [
+            "script",
+            "style",
+            "svg"
+          ]
+        },
+        {
+          "type": "collapse_whitespace"
+        }
       ]
     }
   },
-
   "job_failed": {
     "job_ids": [],
     "prompt": "buildlog",
     "extra_context": "",
-    "evidence_to_store": ["BuildLogEvidence", "TestLogEvidence"],
+    "evidence_to_store": [
+      "BuildLogEvidence",
+      "TestLogEvidence"
+    ],
     "evidence_to_llm": [],
     "rules": {}
   }

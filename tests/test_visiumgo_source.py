@@ -13,7 +13,6 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app.domain.enums import StepStatus
 from app.source.models import RunSummary
 from app.source.visiumgo import VisiumGoSource
 from app.source.visiumgo_client import VisiumGoClient
@@ -149,18 +148,10 @@ async def test_fetch_job_resolves_latest_run_and_filters_failed(tmp_path: Path) 
 
     scenario = job.failed_scenarios[0]
     assert scenario.scenario_name == "Döviz alış başarısız"
+    # errorText is kept on the scenario (PreCheck will read it one day); the
+    # step list is not read at all — VisiumGo derives it from test.log.
     assert scenario.error_text.startswith("AssertionError")
-    # Step names come from `line` (human text), not `stepLine` (line number).
-    assert [s.name for s in scenario.steps] == [
-        "Döviz sayfasını aç",
-        "Tutarı doğrula",
-        "Sonucu kaydet",
-    ]
-    assert [s.status for s in scenario.steps] == [
-        StepStatus.PASSED,
-        StepStatus.FAILED,
-        StepStatus.SKIPPED,
-    ]
+    assert not hasattr(scenario, "steps")
     assert len(scenario.attachments) == 5
 
 

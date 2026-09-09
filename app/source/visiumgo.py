@@ -30,8 +30,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from app.domain.enums import ANALYZABLE_RUN_STATES, RunState, StepStatus
-from app.domain.findings import Step
+from app.domain.enums import ANALYZABLE_RUN_STATES, RunState
 from app.source.base import AttachmentFilter, Source, accept_all
 from app.source.models import Attachment, JobData, RawScenario, RunSummary
 from app.source.storage import save_attachment
@@ -41,13 +40,6 @@ from app.source.visiumgo_client import VisiumGoClient, encode_segment
 #: `fetch_build_log`): keeps a long exception text or ZIP listing from
 #: bloating the persisted run row.
 _BUILD_LOG_ERROR_MAX_CHARS = 500
-
-
-def _to_step_status(result_type: str) -> StepStatus | None:
-    try:
-        return StepStatus(result_type)
-    except ValueError:
-        return None
 
 
 def _state_of(record: dict[str, Any]) -> str:
@@ -130,7 +122,8 @@ class VisiumGoSource(Source):
         Returns `{id, name, resultType, errorText, dateTime, stepResults[],
         attachments[], properties{}}`. Its `runId`/`retryNumber` are unreliable
         (observed as 0); the real values live in the results row and in
-        `properties`.
+        `properties`. `stepResults` is deliberately NOT read: VisiumGo derives
+        it from `test.log`, which we send whole.
         """
         return await self._client.get_json(
             f"/api/runs/{encode_segment(run_id)}/results/{encode_segment(scenario_id)}"
@@ -291,16 +284,6 @@ class VisiumGoSource(Source):
         scenario_id = str(record.get("id", ""))
         detail = await self.get_scenario_detail(run_id, scenario_id)
 
-        steps: list[Step] = []
-        for step in detail.get("stepResults", []):
-            status = _to_step_status(step.get("resultType", ""))
-            if status is None:
-                continue
-            # `line` is the human-readable step text ("butonDevam2 öğesini
-            # görürüm"); `stepLine` is only a line number — do not use it here.
-            name = step.get("line") or step.get("stepType") or ""
-            steps.append(Step(name=str(name), status=status))
-
         attachments: list[Attachment] = []
         for meta in detail.get("attachments", []):
             described = self.describe_attachment(meta)
@@ -315,7 +298,6 @@ class VisiumGoSource(Source):
             scenario_name=str(record.get("name", "")),
             scenario_id=scenario_id,
             error_text=str(detail.get("errorText", "")),
-            steps=steps,
             attachments=attachments,
             retry_info=str(record.get("retryNumber", "")),
             raw_detail=detail,  # full raw response, persisted (save everything)

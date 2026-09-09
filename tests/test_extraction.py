@@ -2,15 +2,6 @@
 
 import pytest
 
-from app.domain.enums import StepStatus
-from app.domain.findings import (
-    BLOCK_BROWSER,
-    BLOCK_BUILD,
-    BLOCK_DOM,
-    BLOCK_ERROR,
-    BLOCK_STEPS,
-    Step,
-)
 from app.extraction.evidence_extractor import EvidenceExtractor
 from app.source.models import Attachment, RawScenario
 
@@ -31,11 +22,9 @@ def _att(
 def _scenario(**overrides: object) -> RawScenario:
     base: dict[str, object] = {
         "scenario_name": "Senaryo",
+        # Kept on the scenario for PreCheck's future use; it must not reach the
+        # prompt, because VisiumGo derives it from test.log.
         "error_text": "NoSuchElementException: #btn",
-        "steps": [
-            Step(name="Adım bir", status=StepStatus.PASSED),
-            Step(name="Adım iki", status=StepStatus.FAILED),
-        ],
         "attachments": [
             _att("test", ".log", content="test log"),
             _att("browser.default", ".log", content="browser log"),
@@ -51,13 +40,15 @@ def _scenario(**overrides: object) -> RawScenario:
 def test_default_profile_full_findings(extractor: EvidenceExtractor) -> None:
     findings = extractor.extract(_scenario())
 
-    assert findings.failed_step == "Adım iki"  # first FAILED step
-    assert findings.error_message == "NoSuchElementException: #btn"
+    # Order follows the profile's evidence_to_llm list, and the header names
+    # the file the way VisiumGo does.
+    assert [b.evidence_name for b in findings.evidence_blocks] == [
+        "TestLogEvidence",
+        "HtmlEvidence",
+    ]
     labels = [b.label for b in findings.evidence_blocks]
-    assert BLOCK_STEPS in labels  # test.log
-    assert BLOCK_BROWSER in labels
-    assert BLOCK_DOM in labels
-    assert BLOCK_ERROR in labels  # HATA = error_text
+    assert labels[0].startswith("test.log · ")
+    assert labels[1].startswith("browser.default.html · ")
     assert findings.screenshot_paths == ["web.png"]
 
 
@@ -72,8 +63,8 @@ def test_request_parameters_never_reach_extraction(extractor: EvidenceExtractor)
     assert not hasattr(findings, "parameter1")
     assert not hasattr(findings, "parameter2")
     assert findings.profile_name == "default_web"  # job mapping alone decided
-    labels = [b.label for b in findings.evidence_blocks]
-    assert BLOCK_DOM in labels and BLOCK_BROWSER in labels
+    names = [b.evidence_name for b in findings.evidence_blocks]
+    assert "TestLogEvidence" in names and "HtmlEvidence" in names
 
 
 def test_unknown_forced_profile_raises(extractor: EvidenceExtractor) -> None:
@@ -91,10 +82,10 @@ def test_missing_evidence_produces_no_block_at_all(
     )
     findings = extractor.extract(scenario)
 
-    assert not [b for b in findings.evidence_blocks if b.label == BLOCK_DOM]
+    assert not [b for b in findings.evidence_blocks if b.evidence_name == "HtmlEvidence"]
     # Present evidence is untouched.
-    steps = next(b for b in findings.evidence_blocks if b.label == BLOCK_STEPS)
-    assert steps.content == "test log"
+    test_log = next(b for b in findings.evidence_blocks if b.evidence_name == "TestLogEvidence")
+    assert test_log.content == "test log"
 
 
 def test_empty_evidence_also_produces_no_block(extractor: EvidenceExtractor) -> None:
@@ -106,14 +97,14 @@ def test_empty_evidence_also_produces_no_block(extractor: EvidenceExtractor) -> 
         ]
     )
     findings = extractor.extract(scenario)
-    assert not [b for b in findings.evidence_blocks if b.label == BLOCK_DOM]
+    assert not [b for b in findings.evidence_blocks if b.evidence_name == "HtmlEvidence"]
 
 
 def test_build_log_is_profile_controlled(extractor: EvidenceExtractor) -> None:
     # The default profile does NOT send the job-level build log (it holds all
     # scenarios and would bloat every prompt); a profile must opt in.
     findings = extractor.extract(_scenario(), build_log="build out")
-    assert not [b for b in findings.evidence_blocks if b.label == BLOCK_BUILD]
+    assert not [b for b in findings.evidence_blocks if b.evidence_name == "BuildLogEvidence"]
 
 
 def test_evidence_report_shows_what_arrived_and_what_matched(
@@ -145,6 +136,6 @@ def test_evidence_report_shows_what_arrived_and_what_matched(
     assert by_name[test_log].goes_to_llm is True
     assert by_name[test_log].chars > 0
 
-    blocks = {row.label: row for row in report.blocks}
-    assert blocks["ADIMLAR"].available is True
-    assert blocks["ADIMLAR"].chars > 0
+    blocks = {row.label.split(" · ")[0]: row for row in report.blocks}
+    assert blocks["test.log"].available is True
+    assert blocks["test.log"].chars > 0

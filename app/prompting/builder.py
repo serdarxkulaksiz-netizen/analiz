@@ -18,9 +18,13 @@ renders every block at once for templates that want the generic layout.
 **A placeholder carries its own `=== ETİKET ===` header.** Templates must NOT
 type the header themselves: an evidence that did not arrive then leaves the
 prompt completely (header included) instead of leaving a heading with nothing
-under it. Same for the fixed fields (`$failed_step`, `$error_message`,
-`$steps`). Blank runs left behind by a missing section are collapsed, so the
+under it. Blank runs left behind by a missing section are collapsed, so the
 prompt reads the same whether three blocks arrived or one.
+
+The prompt carries evidence blocks and the scenario name — nothing else. The
+scenario's `errorText`/`stepResults` used to have their own sections; they were
+dropped because VisiumGo derives both from `test.log`, which the profile sends
+whole (the same text, twice, is not context — it is noise).
 
 `$parameter1` / `$parameter2` do not exist: those request keys decide nothing
 and reach nothing. In most runs they literally said "default" —
@@ -36,28 +40,11 @@ from collections.abc import Iterable
 from pathlib import Path
 from string import Template
 
-from app.domain.findings import (
-    BLOCK_BROWSER,
-    BLOCK_BUILD,
-    BLOCK_DOM,
-    BLOCK_MOBILE_DOM,
-    BLOCK_STEPS,
-    BLOCK_TEST_PROPERTIES,
-    DEFAULT_PROMPT_TEMPLATE,
-    Findings,
-)
+from app.domain.findings import DEFAULT_PROMPT_TEMPLATE, Findings
 
 #: Shared output contract appended to every template (not a template itself).
 CONTRACT_FILE = "_contract.txt"
 TEMPLATE_SUFFIX = ".txt"
-
-#: Headers of the fixed Findings fields. In code, not config: like the evidence
-#: block labels, these are format, not a per-job decision.
-FIELD_LABELS: dict[str, str] = {
-    "failed_step": "PATLAYAN ADIM",
-    "error_message": "HATA MESAJI",
-    "steps": "ADIM SONUÇLARI",
-}
 
 #: Three or more newlines -> one blank line (a dropped section leaves a hole).
 _BLANK_RUN = re.compile(r"\n{3,}")
@@ -73,15 +60,17 @@ def _section(label: str, content: str) -> str:
     return f"=== {label} ===\n{content}" if content.strip() else ""
 
 
-#: Evidence block label -> its own template placeholder. A template can then
-#: place each evidence exactly where it wants it, or ignore it entirely.
+#: Evidence class -> its own template placeholder. A template can then place
+#: each evidence exactly where it wants it, or ignore it entirely. Keyed on the
+#: class and not on the block label, because the label carries the file name
+#: and a mobile file's name changes with the device.
 BLOCK_PLACEHOLDERS: dict[str, str] = {
-    BLOCK_STEPS: "test_log",
-    BLOCK_DOM: "dom",
-    BLOCK_MOBILE_DOM: "mobile_dom",
-    BLOCK_BROWSER: "browser_log",
-    BLOCK_BUILD: "build_log",
-    BLOCK_TEST_PROPERTIES: "test_properties",
+    "TestLogEvidence": "test_log",
+    "HtmlEvidence": "dom",
+    "MobileDomEvidence": "mobile_dom",
+    "BrowserLogEvidence": "browser_log",
+    "BuildLogEvidence": "build_log",
+    "TestPropertiesEvidence": "test_properties",
 }
 
 #: Everything a template may reference. Anything else is a typo and fails at
@@ -89,9 +78,6 @@ BLOCK_PLACEHOLDERS: dict[str, str] = {
 KNOWN_PLACEHOLDERS = frozenset(
     {
         "scenario_name",
-        "failed_step",
-        "error_message",
-        "steps",
         "evidence_blocks",
         "extra_context",
         "confidence_buckets",
@@ -175,26 +161,22 @@ class PromptBuilder:
                 f"Unknown prompt template {findings.prompt_template!r}. Available: {known}."
             )
 
-        steps_text = "\n".join(f"- {step.name}: {step.status.value}" for step in findings.steps)
         evidence_text = "\n\n".join(
             _section(block.label, block.content)
             for block in findings.evidence_blocks
             if block.content.strip()
         )
-        by_label = {block.label: block.content for block in findings.evidence_blocks}
+        by_evidence = {block.evidence_name: block for block in findings.evidence_blocks}
         # A template may name an evidence this run did not produce: that
-        # placeholder renders as nothing at all — header included (A5.4).
-        blocks = {
-            placeholder: _section(label, by_label.get(label, ""))
-            for label, placeholder in BLOCK_PLACEHOLDERS.items()
-        }
+        # placeholder renders as nothing at all — header included.
+        blocks = {}
+        for evidence_name, placeholder in BLOCK_PLACEHOLDERS.items():
+            block = by_evidence.get(evidence_name)
+            blocks[placeholder] = _section(block.label, block.content) if block else ""
         buckets_text = " / ".join(str(bucket) for bucket in self._confidence_buckets)
 
         prompt = template.safe_substitute(
             scenario_name=findings.scenario_name,
-            failed_step=_section(FIELD_LABELS["failed_step"], findings.failed_step),
-            error_message=_section(FIELD_LABELS["error_message"], findings.error_message),
-            steps=_section(FIELD_LABELS["steps"], steps_text),
             evidence_blocks=evidence_text,
             extra_context=findings.extra_context,
             confidence_buckets=buckets_text,

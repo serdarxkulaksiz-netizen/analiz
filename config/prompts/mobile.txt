@@ -6,12 +6,6 @@ hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa 
 
 Senaryo: $scenario_name
 
-$failed_step
-
-$error_message
-
-$steps
-
 $test_log
 
 $mobile_dom

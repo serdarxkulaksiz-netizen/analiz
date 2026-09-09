@@ -100,10 +100,7 @@ def test_profile_limits_prompt_evidence_end_to_end(tmp_path: Path) -> None:
     findings = extractor.extract(_scenario(), job_id="901")
 
     assert findings.profile_name == "B_sadece_testlog"
-    labels = [b.label for b in findings.evidence_blocks]
-    assert "ADIMLAR" in labels  # test.log in
-    assert "DOM" not in labels and "BROWSER LOG" not in labels
-    assert "HATA" in labels  # error block is profile-independent
+    assert [b.evidence_name for b in findings.evidence_blocks] == ["TestLogEvidence"]
 
 
 def test_extra_context_flows_to_findings(tmp_path: Path) -> None:
@@ -144,11 +141,10 @@ def test_job_c_only_build_log_sliced_per_scenario(tmp_path: Path) -> None:
 
     findings = extractor.extract(_scenario(), job_id="1204", build_log=_JOB_LOG)
 
-    labels = [b.label for b in findings.evidence_blocks]
-    assert "BUILD LOG" in labels  # build log in
-    assert "ADIMLAR" not in labels and "DOM" not in labels  # others out
+    # Only the build log reaches the prompt; the scenario's own files do not.
+    assert [b.evidence_name for b in findings.evidence_blocks] == ["BuildLogEvidence"]
 
-    console = next(b for b in findings.evidence_blocks if b.label == "BUILD LOG")
+    console = findings.evidence_blocks[0]
     assert "bizim adım FAILED" in console.content  # only this scenario's part
     assert "baska adım" not in console.content
     assert "ucuncu adım" not in console.content
@@ -224,7 +220,9 @@ def test_report_shows_when_scenario_slicing_did_not_match(tmp_path: Path) -> Non
 
     findings = extractor.extract(_scenario(), job_id="889", build_log=job_log)
 
-    block = next(row for row in findings.evidence_report.blocks if row.label == "BUILD LOG")
+    block = next(
+        row for row in findings.evidence_report.blocks if row.label.startswith("build.log · ")
+    )
     assert block.trimmed is False  # the marker was never found
     assert block.chars == len(job_log)  # so the entire job log went to the prompt
     assert findings.truncated is False
@@ -255,10 +253,10 @@ def test_report_shows_a_successful_scenario_slice(tmp_path: Path) -> None:
 
     findings = extractor.extract(_scenario(), job_id="889", build_log=job_log)
 
-    block = next(b for b in findings.evidence_blocks if b.label == "BUILD LOG")
+    block = next(b for b in findings.evidence_blocks if b.evidence_name == "BuildLogEvidence")
     assert "bizim satır FAILED" in block.content
     assert "baska satır" not in block.content and "ucuncu satır" not in block.content
-    report = next(r for r in findings.evidence_report.blocks if r.label == "BUILD LOG")
+    report = next(r for r in findings.evidence_report.blocks if r.label.startswith("build.log · "))
     assert report.trimmed is True  # slicing actually happened
 
 

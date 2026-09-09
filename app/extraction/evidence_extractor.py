@@ -12,9 +12,7 @@ profile + rule machinery as every other evidence. No field-extracting parsing
 (parse-minimal).
 """
 
-from app.domain.enums import StepStatus
 from app.domain.findings import (
-    BLOCK_ERROR,
     AttachmentReport,
     BlockReport,
     EvidenceBlock,
@@ -91,24 +89,16 @@ class EvidenceExtractor(Extractor):
         # asked for and what actually arrived is recorded in `evidence_report`,
         # which is where that question belongs — not in the prompt.
 
-        # Findings fields taken straight from the scenario (no parsing).
-        error_message = scenario.error_text
-        failed_step = next(
-            (step.name for step in scenario.steps if step.status is StepStatus.FAILED),
-            "",
-        )
-
-        # HATA block = the scenario's error_text (approved decision).
-        if error_message:
-            evidence_blocks.append(EvidenceBlock(label=BLOCK_ERROR, content=error_message))
+        # Order follows the profile's `evidence_to_llm` list, not the order
+        # VisiumGo happened to return the files in: which evidence the model
+        # should read first is a job decision, so config owns it.
+        order = {name: index for index, name in enumerate(profile.evidence_to_llm)}
+        evidence_blocks.sort(key=lambda block: order.get(block.evidence_name, len(order)))
 
         report = _build_report(scenario_for_evidence, profile, evidence_blocks, trimmed_labels)
 
         return Findings(
             scenario_name=scenario.scenario_name,
-            failed_step=failed_step,
-            error_message=error_message,
-            steps=scenario.steps,
             evidence_blocks=evidence_blocks,
             screenshot_paths=screenshot_paths,
             retry_info=scenario.retry_info,

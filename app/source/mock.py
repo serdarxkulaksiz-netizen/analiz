@@ -24,8 +24,7 @@ Mock conveniences, all DATA conditions on `job_id` (not variant switches):
 
 from pathlib import Path
 
-from app.domain.enums import RunState, StepStatus
-from app.domain.findings import Step
+from app.domain.enums import RunState
 from app.source.base import AttachmentFilter, Source, accept_all
 from app.source.models import Attachment, JobData, RawScenario, RunSummary
 from app.source.storage import save_attachment
@@ -51,11 +50,8 @@ _MOBILE_DOM = (
     "resource-id='btn-login-submit' text='MOCK_Giriş'/></hierarchy>"
 )
 
-_STEPS = [
-    Step(name="MOCK_Login sayfasını aç", status=StepStatus.PASSED),
-    Step(name="MOCK_Giriş butonuna tıkla", status=StepStatus.FAILED),
-]
-
+#: Like the real source: kept on the scenario for PreCheck's future use, never
+#: sent to the prompt (the same text is inside `test.log`).
 _ERROR_TEXT = "MOCK_NoSuchElementException: Unable to locate element #login-submit"
 
 # Job-level log: contains EVERY scenario, like the real one. Profiles can slice
@@ -129,7 +125,6 @@ def _scenario(
         scenario_name=name,
         scenario_id=scenario_id,
         error_text=_ERROR_TEXT,
-        steps=_STEPS,
         attachments=attachments,
         retry_info=retry_info,
         raw_detail={"MOCK_note": "sahte senaryo-detay ham cevabı", "name": name},

@@ -27,24 +27,16 @@ rule machinery as everything else (e.g. "keep only this scenario's section").
 (an A6 field), assembled by the extractor.
 """
 
-from app.domain.findings import (
-    BLOCK_BROWSER,
-    BLOCK_BUILD,
-    BLOCK_DOM,
-    BLOCK_MOBILE_DOM,
-    BLOCK_STEPS,
-    BLOCK_TEST_PROPERTIES,
-)
 from app.evidence.base import ScreenshotEvidence, TextEvidence
 
 
 class TestLogEvidence(TextEvidence):
-    """`test.log` — the time-ordered step-flow backbone → `=== ADIMLAR ===`."""
+    """`test.log` — what the run printed as it went: build output, then steps."""
 
     evidence_name = "TestLogEvidence"
     device_id = "test"
     extension = ".log"
-    block_label = BLOCK_STEPS
+    description = "koşum logu: build çıktısı, adımlar ve sonuçları"
 
 
 class TestPropertiesEvidence(TextEvidence):
@@ -58,20 +50,20 @@ class TestPropertiesEvidence(TextEvidence):
     evidence_name = "TestPropertiesEvidence"
     device_id = "test"
     extension = ".properties"
-    block_label = BLOCK_TEST_PROPERTIES
+    description = "koşum özellikleri (cihaz, retry)"
 
 
 class BrowserLogEvidence(TextEvidence):
-    """`browser.default.log` — the browser log → `=== BROWSER LOG ===`."""
+    """`browser.default.log` — the browser's console output."""
 
     evidence_name = "BrowserLogEvidence"
     device_id = "browser.default"
     extension = ".log"
-    block_label = BLOCK_BROWSER
+    description = "tarayıcı konsol logu"
 
 
 class BuildLogEvidence(TextEvidence):
-    """Job-level build log — VisiumGo `/logs` -> `build.log` → `=== BUILD LOG ===`.
+    """Job-level build log — VisiumGo `/logs` -> `build.log`.
 
     Covers the whole run (every scenario), so a profile that sends it usually
     pairs it with a rule that keeps only the relevant part.
@@ -80,20 +72,20 @@ class BuildLogEvidence(TextEvidence):
     evidence_name = "BuildLogEvidence"
     device_id = "build"
     extension = ".log"
-    block_label = BLOCK_BUILD
+    description = "job seviyesi build logu (tüm koşum)"
 
 
 class HtmlEvidence(TextEvidence):
-    """`browser.default.html` — the web page DOM → `=== DOM ===`."""
+    """`browser.default.html` — the page as it stood when the step failed."""
 
     evidence_name = "HtmlEvidence"
     device_id = "browser.default"
     extension = ".html"
-    block_label = BLOCK_DOM
+    description = "hata anındaki sayfa DOM'u"
 
 
 class MobileDomEvidence(TextEvidence):
-    """`mobile.{os}.{device}.xml` — the mobile UI tree → `=== MOBIL DOM ===`.
+    """`mobile.{os}.{device}.xml` — the device's UI hierarchy.
 
     VisiumGo now ships the mobile UI hierarchy as its own attachment; it used
     to be readable only inside `test.log`. Its own block label (not `DOM`)
@@ -103,7 +95,7 @@ class MobileDomEvidence(TextEvidence):
     evidence_name = "MobileDomEvidence"
     device_id = "mobile"
     extension = ".xml"
-    block_label = BLOCK_MOBILE_DOM
+    description = "cihazdaki arayüz ağacı"
 
 
 class WebScreenshotEvidence(ScreenshotEvidence):

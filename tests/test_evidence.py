@@ -1,12 +1,5 @@
 """Evidence architecture tests: attachment mapping + profile flags."""
 
-from app.domain.findings import (
-    BLOCK_BROWSER,
-    BLOCK_DOM,
-    BLOCK_MOBILE_DOM,
-    BLOCK_STEPS,
-    BLOCK_TEST_PROPERTIES,
-)
 from app.evidence.profiles import Profile, ProfileConfig
 from app.evidence.registry import EvidenceRegistry
 from app.source.models import Attachment, RawScenario
@@ -81,8 +74,10 @@ def test_two_text_plain_split_by_device_id() -> None:
         _FULL_PROFILE,
     )
     by_name = {type(e).evidence_name: e for e in evidences}
-    assert by_name["TestLogEvidence"].to_block().label == BLOCK_STEPS
-    assert by_name["BrowserLogEvidence"].to_block().label == BLOCK_BROWSER
+    # Each header names its own file, so two text/plain files from the same
+    # device can never look like the same evidence.
+    assert by_name["TestLogEvidence"].to_block().label.startswith("test.log · ")
+    assert by_name["BrowserLogEvidence"].to_block().label.startswith("browser.default.log · ")
 
 
 def test_test_log_and_test_properties_are_different_evidence() -> None:
@@ -101,9 +96,9 @@ def test_test_log_and_test_properties_are_different_evidence() -> None:
         _profile(["TestLogEvidence", "TestPropertiesEvidence"]),
     )
     blocks = {type(e).evidence_name: e.to_block() for e in evidences}
-    assert blocks["TestLogEvidence"].label == BLOCK_STEPS
+    assert blocks["TestLogEvidence"].label.startswith("test.log · ")
     assert blocks["TestLogEvidence"].content == "steps"
-    assert blocks["TestPropertiesEvidence"].label == BLOCK_TEST_PROPERTIES
+    assert blocks["TestPropertiesEvidence"].label.startswith("test.properties · ")
 
 
 def test_test_properties_stays_out_of_the_prompt_by_default() -> None:
@@ -124,7 +119,8 @@ def test_mobile_dom_xml_is_its_own_evidence() -> None:
         _profile(["MobileDomEvidence"]),
     )
     assert [type(e).evidence_name for e in evidences] == ["MobileDomEvidence"]
-    assert evidences[0].to_block().label == BLOCK_MOBILE_DOM
+    # The device name travels in the header.
+    assert evidences[0].to_block().label.startswith("mobile.android.Samsung-M31.xml · ")
 
 
 def test_mobile_png_prefix_matches_mobile_screenshot() -> None:
@@ -140,7 +136,7 @@ def test_mobile_png_prefix_matches_mobile_screenshot() -> None:
 def test_html_block_and_png_no_block() -> None:
     evidences = EvidenceRegistry().build_for(_scenario(_web_attachments()), _FULL_PROFILE)
     by_name = {type(e).evidence_name: e for e in evidences}
-    assert by_name["HtmlEvidence"].to_block().label == BLOCK_DOM
+    assert by_name["HtmlEvidence"].to_block().label.startswith("browser.default.html · ")
     assert by_name["WebScreenshotEvidence"].to_block() is None
 
 
@@ -178,7 +174,7 @@ def test_build_log_attachment_maps_to_build_evidence() -> None:
         profile,
     )
     assert [type(e).evidence_name for e in evidences] == ["BuildLogEvidence"]
-    assert evidences[0].to_block().label == "BUILD LOG"
+    assert evidences[0].to_block().label.startswith("build.log · ")
 
 
 def test_profile_rules_are_applied_to_content() -> None:

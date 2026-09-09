@@ -27,27 +27,32 @@ def _write(tmp_path: Path, rules: list[dict]) -> Path:
     return path
 
 
-def _findings(error: str = "", blocks: list[str] | None = None) -> Findings:
+def _findings(*blocks: str) -> Findings:
+    """Findings carrying only evidence blocks — that is all a rule can see.
+
+    The scenario's `errorText` is no longer part of `Findings`: VisiumGo
+    derives it from `test.log`, which the profile sends whole, so the same
+    text reaches the rule through the evidence.
+    """
     return Findings(
         scenario_name="S",
-        error_message=error,
-        evidence_blocks=[EvidenceBlock(label="ADIMLAR", content=text) for text in (blocks or [])],
+        evidence_blocks=[EvidenceBlock(label="ADIMLAR", content=text) for text in blocks],
     )
 
 
 def test_noop_precheck_always_returns_none() -> None:
-    assert NoOpPreCheck().check(_findings(error="ORA-01017")) is None
+    assert NoOpPreCheck().check(_findings("ORA-01017")) is None
 
 
 def test_empty_rule_list_never_matches(tmp_path: Path) -> None:
     precheck = RuleBasedPreCheck(load_rules(_write(tmp_path, [])))
-    assert precheck.check(_findings(error="ORA-01017")) is None
+    assert precheck.check(_findings("ORA-01017")) is None
 
 
 def test_matching_rule_returns_canned_answer(tmp_path: Path) -> None:
     precheck = RuleBasedPreCheck(load_rules(_write(tmp_path, [_DB_RULE])))
 
-    result = precheck.check(_findings(error="ORA-01017: invalid username/password"))
+    result = precheck.check(_findings("ORA-01017: invalid username/password"))
 
     assert result is not None
     assert result.verdict.value == "environment_error"
@@ -57,20 +62,17 @@ def test_matching_rule_returns_canned_answer(tmp_path: Path) -> None:
     assert result.error_signature == "db-credentials"  # which rule answered
 
 
-def test_non_matching_error_goes_to_llm(tmp_path: Path) -> None:
+def test_non_matching_evidence_goes_to_llm(tmp_path: Path) -> None:
     precheck = RuleBasedPreCheck(load_rules(_write(tmp_path, [_DB_RULE])))
-    assert precheck.check(_findings(error="NoSuchElementException: #btn")) is None
+    assert precheck.check(_findings("NoSuchElementException: #btn")) is None
 
 
-def test_search_in_evidence_looks_at_blocks(tmp_path: Path) -> None:
-    rule = {**_DB_RULE, "search_in": "evidence"}
-    precheck = RuleBasedPreCheck(load_rules(_write(tmp_path, [rule])))
+def test_rule_matches_across_every_block(tmp_path: Path) -> None:
+    """The haystack is all evidence that would go to the LLM, joined."""
+    precheck = RuleBasedPreCheck(load_rules(_write(tmp_path, [_DB_RULE])))
 
-    # Pattern is only in the log block, not in the error message.
-    assert precheck.check(_findings(error="genel hata", blocks=["ORA-01017 at db"]))
-    # Default (error_message) would not see it.
-    default = RuleBasedPreCheck(load_rules(_write(tmp_path, [_DB_RULE])))
-    assert default.check(_findings(error="genel hata", blocks=["ORA-01017"])) is None
+    assert precheck.check(_findings("genel hata", "ORA-01017 at db")) is not None
+    assert precheck.check(_findings("genel hata", "başka bir satır")) is None
 
 
 def test_first_matching_rule_wins(tmp_path: Path) -> None:
@@ -78,14 +80,14 @@ def test_first_matching_rule_wins(tmp_path: Path) -> None:
     second = {**_DB_RULE, "name": "second", "error_signature": "second"}
     precheck = RuleBasedPreCheck(load_rules(_write(tmp_path, [first, second])))
 
-    result = precheck.check(_findings(error="ORA-01017"))
+    result = precheck.check(_findings("ORA-01017"))
     assert result is not None and result.error_signature == "first"
 
 
 def test_name_falls_back_as_signature(tmp_path: Path) -> None:
     rule = {k: v for k, v in _DB_RULE.items() if k != "error_signature"}
     precheck = RuleBasedPreCheck(load_rules(_write(tmp_path, [rule])))
-    result = precheck.check(_findings(error="ORA-01017"))
+    result = precheck.check(_findings("ORA-01017"))
     assert result is not None and result.error_signature == "db_credentials"
 
 

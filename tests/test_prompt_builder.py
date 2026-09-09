@@ -5,31 +5,19 @@ from pathlib import Path
 import pytest
 
 from app.config import Settings
-from app.domain.enums import StepStatus
-from app.domain.findings import (
-    BLOCK_BUILD,
-    BLOCK_DOM,
-    BLOCK_ERROR,
-    EvidenceBlock,
-    Findings,
-    Step,
-)
+from app.domain.findings import EvidenceBlock, Findings
 from app.prompting.builder import PromptBuilder
 
 
 def _sample_findings(**overrides: object) -> Findings:
     findings = Findings(
-        parameter1="projeX",
-        parameter2="tipY",
         scenario_name="Login - geçerli kullanıcı",
-        failed_step="Giriş butonuna tıkla",
-        error_message="NoSuchElementException: #login-submit",
-        steps=[
-            Step(name="Login sayfasını aç", status=StepStatus.PASSED),
-            Step(name="Giriş butonuna tıkla", status=StepStatus.FAILED),
-        ],
         evidence_blocks=[
-            EvidenceBlock(label=BLOCK_ERROR, content="NoSuchElementException"),
+            EvidenceBlock(
+                label="test.log · koşum logu",
+                content="10:00:07 ERROR NoSuchElementException",
+                evidence_name="TestLogEvidence",
+            ),
         ],
     )
     return findings.model_copy(update=overrides)
@@ -42,16 +30,15 @@ def _builder(settings: Settings) -> PromptBuilder:
 def test_prompt_contains_evidence_and_constraints(settings: Settings) -> None:
     prompt = _builder(settings).build(_sample_findings())
 
-    # identity/context lines (MockLLMProvider relies on the Senaryo: prefix)
+    # identity line (MockLLMProvider relies on the Senaryo: prefix)
     assert "Senaryo: Login - geçerli kullanıcı" in prompt
-    # parameter1/parameter2 are carried, but deliberately NOT written into the
-    # prompt any more: in most runs they literally said "default".
-    assert "projeX" not in prompt and "tipY" not in prompt
-    # organized evidence
-    assert "Giriş butonuna tıkla" in prompt
+    # The evidence itself, under a header that names its file.
+    assert "=== test.log · koşum logu ===" in prompt
     assert "NoSuchElementException" in prompt
-    assert "=== HATA ===" in prompt
-    assert "- Login sayfasını aç: PASSED" in prompt
+    # No fixed sections any more: the scenario's errorText/stepResults are not
+    # repeated here — they live inside test.log, which the profile sends whole.
+    assert "HATA MESAJI" not in prompt and "ADIM SONUÇLARI" not in prompt
+    assert "PATLAYAN ADIM" not in prompt
     # mandatory output contract — all 6 verdict values
     for verdict in (
         "test_maintenance",
@@ -85,12 +72,18 @@ def test_profile_template_decides_which_evidence_fields_appear(settings: Setting
     """Each template shows only the evidence its job group actually produces."""
     findings = _sample_findings(
         prompt_template="buildlog",
-        evidence_blocks=[EvidenceBlock(label=BLOCK_BUILD, content="BUILD FAILED: gradle")],
+        evidence_blocks=[
+            EvidenceBlock(
+                label="build.log · job seviyesi build logu",
+                content="BUILD FAILED: gradle",
+                evidence_name="BuildLogEvidence",
+            )
+        ],
     )
     prompt = _builder(settings).build(findings)
 
-    assert "=== BUILD LOG ===\nBUILD FAILED: gradle" in prompt
-    assert "=== DOM" not in prompt  # not part of this template at all
+    assert "=== build.log · job seviyesi build logu ===\nBUILD FAILED: gradle" in prompt
+    assert "browser.default.html" not in prompt  # not part of this template at all
 
 
 def test_missing_evidence_takes_its_header_with_it(settings: Settings) -> None:
@@ -101,15 +94,21 @@ def test_missing_evidence_takes_its_header_with_it(settings: Settings) -> None:
     """
     prompt = _builder(settings).build(_sample_findings(prompt_template="web"))
 
-    assert "=== DOM ===" not in prompt
-    assert "=== BROWSER LOG ===" not in prompt
+    assert "browser.default.html" not in prompt
+    assert "browser.default.log" not in prompt
     assert "\n\n\n" not in prompt  # the hole is closed, not left gaping
 
 
 def test_evidence_block_reaches_its_own_placeholder(settings: Settings) -> None:
     findings = _sample_findings(
         prompt_template="web",
-        evidence_blocks=[EvidenceBlock(label=BLOCK_DOM, content="<html>login</html>")],
+        evidence_blocks=[
+            EvidenceBlock(
+                label="browser.default.html · hata anındaki sayfa DOM'u",
+                content="<html>login</html>",
+                evidence_name="HtmlEvidence",
+            )
+        ],
     )
     prompt = _builder(settings).build(findings)
 

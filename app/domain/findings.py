@@ -1,49 +1,34 @@
 """Findings contract — the fixed boundary between Extraction and Prompt Building.
 
-Source-shape independent structure; field names are frozen. Evidence block
-labels are architectural constants: raw evidence travels as
-labeled blocks, interpretation is left to the LLM (parse-minimal).
+Source-shape independent structure; field names are frozen. Raw evidence
+travels as labeled blocks, one per file; interpretation is left to the LLM
+(parse-minimal).
 """
 
 from pydantic import BaseModel
-
-from app.domain.enums import StepStatus
-
-# Labeled evidence block names — contract constants, not config.
-# BROWSER LOG = browser.default.log; BUILD LOG = VisiumGo /logs -> build.log (job-level).
-#
-# An evidence that did not arrive produces NO block at all: it leaves the prompt
-# together with its header. There used to be a
-# "(bu kanıt alınamadı)" placeholder so the gap stayed visible; it was dropped
-# because a header with a marker under it is still noise the model has to reason
-# about, and the prompt then had to spend a paragraph explaining the marker.
 
 #: Prompt template used when a profile does not name its own.
 #: Lives here, in the contract layer, because both the profile config and the
 #: prompt builder need it without depending on each other.
 DEFAULT_PROMPT_TEMPLATE = "default"
 
-BLOCK_STEPS = "ADIMLAR"
-BLOCK_ERROR = "HATA"
-BLOCK_DOM = "DOM"
-BLOCK_MOBILE_DOM = "MOBIL DOM"
-BLOCK_BROWSER = "BROWSER LOG"
-BLOCK_BUILD = "BUILD LOG"
-BLOCK_TEST_PROPERTIES = "TEST PROPERTIES"
-
-
-class Step(BaseModel):
-    """One test step and its outcome (`steps`)."""
-
-    name: str
-    status: StepStatus
-
 
 class EvidenceBlock(BaseModel):
-    """A labeled raw-evidence block, rendered as `=== <label> ===` in the prompt."""
+    """One evidence, rendered as `=== <label> ===` + content in the prompt.
+
+    `label` names the FILE it came from plus what that file is, e.g.
+    `test.log · koşum logu: build çıktısı, adımlar ve sonuçları`. The file name
+    is the one VisiumGo's UI shows, so a person and the model are looking at
+    the same thing; the description is there because a bare `browser.default.log`
+    does not tell the model it is a browser console.
+
+    `evidence_name` is the Evidence class behind it — how a template finds this
+    block for its own placeholder (labels vary per run, class names do not).
+    """
 
     label: str
     content: str
+    evidence_name: str = ""
 
 
 class AttachmentReport(BaseModel):
@@ -110,12 +95,13 @@ class Findings(BaseModel):
     reserved keys, recorded on the run and shown by the API, and they take no
     part in any decision the code makes. Nothing that cannot
     influence the analysis belongs in the analysis contract.
+
+    The scenario's `errorText` and `stepResults` are absent for a different
+    reason: VisiumGo derives both by parsing `test.log`, which the profile
+    sends whole. Carrying them here meant shipping the same information twice.
     """
 
     scenario_name: str
-    failed_step: str = ""
-    error_message: str = ""
-    steps: list[Step] = []
     evidence_blocks: list[EvidenceBlock] = []
     screenshot_paths: list[str] = []
     retry_info: str = ""
@@ -137,10 +123,8 @@ class Findings(BaseModel):
     def has_evidence_for_llm(self) -> bool:
         """True if there is anything for the model to reason about.
 
-        False means every block is empty AND there is no error message or step
-        list. Asking the LLM then costs a call to be told "kanıt yok" — which
-        the system already knows.
+        The prompt now carries evidence blocks and nothing else, so this is
+        simply "did any block arrive with content in it". An empty prompt would
+        buy an answer the system already knows ("kanıt yok").
         """
-        if self.error_message.strip() or self.steps:
-            return True
         return any(block.content for block in self.evidence_blocks)

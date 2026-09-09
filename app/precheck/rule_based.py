@@ -30,7 +30,7 @@ class RuleBasedPreCheck(PreCheck):
             block.content for block in findings.evidence_blocks if block.content
         )
         for rule in self._rules:
-            if rule.matches(findings.error_message, evidence_text):
+            if rule.matches(evidence_text):
                 return LLMAnalysis(
                     scenario_name=findings.scenario_name,
                     root_cause=rule.root_cause,

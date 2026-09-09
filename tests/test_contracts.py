@@ -1,18 +1,19 @@
 """Contract tests: frozen field names and enum values."""
 
-from app.domain.enums import AnalysisStatus, RunStatus, StepStatus, Verdict
+from pathlib import Path
+
+from app.domain.enums import AnalysisStatus, RunStatus, Verdict
 from app.domain.findings import Findings
 from app.domain.result import AnalysisResult, LLMAnalysis
+from app.prompting.builder import KNOWN_PLACEHOLDERS
 
 
 def test_findings_contract_fields_are_frozen() -> None:
     # No `parameter1`/`parameter2`: request keys that decide nothing have no
-    # place in the analysis contract.
+    # place in the analysis contract. No `error_message`/`steps` either: the
+    # prompt carries evidence blocks and nothing else.
     assert set(Findings.model_fields) == {
         "scenario_name",
-        "failed_step",
-        "error_message",
-        "steps",
         "evidence_blocks",
         "screenshot_paths",
         "retry_info",
@@ -75,7 +76,6 @@ def test_status_values_are_frozen() -> None:
         "done",
         "failed",
     }
-    assert {status.value for status in StepStatus} == {"PASSED", "FAILED", "SKIPPED"}
     assert {status.value for status in AnalysisStatus} == {
         "ok",
         "analysis_failed",
@@ -117,3 +117,29 @@ def test_request_parameters_reach_no_decision() -> None:
 
     # The one place they legitimately appear: the run row the API shows.
     assert reserved <= set(inspect.signature(AnalyzerService.create_run).parameters)
+
+
+def test_scenario_error_and_steps_never_reach_the_analysis() -> None:
+    """`errorText` stops at the scenario; `stepResults` is not read at all.
+
+    VisiumGo derives both by parsing `test.log`, which the profile sends whole,
+    so carrying them further shipped the same text twice. `error_text` is kept
+    on `RawScenario` for one future reader — PreCheck, which will look at it
+    before any attachment is downloaded.
+    """
+    from app.source.models import RawScenario
+
+    assert "error_text" in RawScenario.model_fields
+    assert "steps" not in RawScenario.model_fields
+
+    for field in ("error_message", "failed_step", "steps"):
+        assert field not in Findings.model_fields
+    for placeholder in ("error_message", "failed_step", "steps"):
+        assert placeholder not in KNOWN_PLACEHOLDERS
+
+    templates = sorted(Path("config/prompts").glob("*.txt"))
+    assert templates
+    for path in templates:
+        text = path.read_text(encoding="utf-8")
+        for placeholder in ("$error_message", "$failed_step", "$steps"):
+            assert placeholder not in text, f"{path.name} hâlâ {placeholder} kullanıyor"

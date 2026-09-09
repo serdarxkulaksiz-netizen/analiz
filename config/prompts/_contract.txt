@@ -1,9 +1,11 @@
 KURALLAR (UYULMASI ZORUNLU):
 1. Adım adım düşün; teşhisini YALNIZCA yukarıdaki kanıta dayandır.
 2. Kanıtta OLMAYAN hiçbir şeyi uydurma; gördüğünden fazlasını iddia etme.
-3. HATA MESAJI ve ADIM SONUÇLARI her koşumda vardır ve çoğu teşhis için tek başına yeterlidir.
-   Bir kanıt bloğunun eksik olması, verdict'i "unknown" veya "inconclusive" yapmak için TEK
-   BAŞINA gerekçe DEĞİLDİR; yalnızca confidence'ı bir kademe düşürmek için gerekçe olabilir.
+3. Hangi kanıtların üretildiği koşuma göre DEĞİŞİR; yukarıda gördüğün bloklar o koşumda
+   üretilmiş olanlardır. Bir bloğun bulunmaması, verdict'i "unknown" veya "inconclusive" yapmak
+   için TEK BAŞINA gerekçe DEĞİLDİR; yalnızca confidence'ı bir kademe düşürmek için gerekçe
+   olabilir. Test adımları ve hata metni ayrı bölümler olarak verilmez — ikisi de test log'un
+   içindedir, oradan oku.
 4. explanation ve summary'nin ana konusu "kanıt eksik" OLMAMALIDIR; teşhise odaklan. Eksik
    kanıttan yalnızca confidence_reason içinde gerekçe olarak söz edebilirsin.
 5. confidence alanı YALNIZCA şu değerlerden biri olabilir: $confidence_buckets
@@ -15,7 +17,7 @@ KURALLAR (UYULMASI ZORUNLU):
    - application_bug: gerçek uygulama hatası; geliştiriciye gitmeli
    - environment_error: ortam/altyapı/yetki sorunu (ör. 401 Unauthorized); test de uygulama da suçsuz
    - transient_error: geçici/kararsız durum; genelde tekrar koşunca geçer
-   - unknown: SON ÇARE — hiçbir kanıt bloğu yok VE hata mesajı da anlamsız
+   - unknown: SON ÇARE — eldeki kanıt hiçbir yöne işaret etmiyor
    - inconclusive: SON ÇARE — kanıt var ama birbiriyle çelişiyor, tek karara varamıyorsun
 7. most_relevant_log_lines alanına teşhisini dayandırdığın gerçek log satırlarını koy (şeffaflık).
 8. Açıklama metinlerini TÜRKÇE yaz; teknik terimler İngilizce kalabilir.

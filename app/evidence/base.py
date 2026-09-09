@@ -91,10 +91,18 @@ class Evidence(ABC):
 
 
 class TextEvidence(Evidence):
-    """Text evidence that renders as one labeled `=== <block_label> ===` block."""
+    """Text evidence rendered as one `=== <dosya adı> · <ne olduğu> ===` block.
 
-    #: Findings evidence-block label this evidence fills.
-    block_label: ClassVar[str]
+    The header names the file the way VisiumGo's UI names it, so a person and
+    the model look at the same thing, and adds one short phrase saying what
+    that file is — `browser.default.log` alone does not tell the model it is a
+    browser console. The phrase is a property of the file type, so it lives on
+    the class; the file name comes from the attachment, so a mobile block shows
+    which device produced it.
+    """
+
+    #: What this file is, in one short phrase (Turkish, prompt-facing).
+    description: ClassVar[str]
 
     def __init__(
         self,
@@ -102,13 +110,21 @@ class TextEvidence(Evidence):
         *,
         goes_to_llm: bool,
         goes_to_store: bool,
+        file_label: str = "",
         rules: list[Rule] | None = None,
         ctx: RuleContext | None = None,
     ) -> None:
         super().__init__(goes_to_llm=goes_to_llm, goes_to_store=goes_to_store)
         self._content = content or ""
+        self._file_label = file_label
         self._rules = rules or []
         self._ctx = ctx or RuleContext()
+
+    @property
+    def block_label(self) -> str:
+        """`<dosya adı> · <ne olduğu>` — the header this evidence renders under."""
+        name = self._file_label or type(self).evidence_name
+        return f"{name} · {type(self).description}" if type(self).description else name
 
     @property
     def is_present(self) -> bool:
@@ -131,7 +147,11 @@ class TextEvidence(Evidence):
 
     def to_block(self) -> EvidenceBlock | None:
         if self.goes_to_llm and self.is_present:
-            return EvidenceBlock(label=self.block_label, content=self.select_content())
+            return EvidenceBlock(
+                label=self.block_label,
+                content=self.select_content(),
+                evidence_name=type(self).evidence_name,
+            )
         return None
 
     @classmethod
@@ -148,6 +168,7 @@ class TextEvidence(Evidence):
             attachment.content,
             goes_to_llm=goes_to_llm,
             goes_to_store=goes_to_store,
+            file_label=attachment.label,
             rules=rules,
             ctx=ctx,
         )

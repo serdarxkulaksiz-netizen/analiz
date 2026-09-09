@@ -6,12 +6,6 @@ hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa 
 
 Senaryo: $scenario_name
 
-$failed_step
-
-$error_message
-
-$steps
-
 $evidence_blocks
 
 KANIT HAKKINDA: Hangi kanıtların üretildiği koşuma ve senaryoya göre DEĞİŞİR; her koşumda her

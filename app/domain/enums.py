@@ -18,14 +18,6 @@ class Verdict(str, Enum):
     INCONCLUSIVE = "inconclusive"  # model looked but reached no single verdict
 
 
-class StepStatus(str, Enum):
-    """Result of a single test step (`steps`)."""
-
-    PASSED = "PASSED"
-    FAILED = "FAILED"
-    SKIPPED = "SKIPPED"
-
-
 class RunStatus(str, Enum):
     """Lifecycle of an analyzer run (+ user-approved 4th value).
 

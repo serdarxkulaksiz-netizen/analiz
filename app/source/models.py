@@ -13,8 +13,6 @@ from pathlib import PurePosixPath
 
 from pydantic import BaseModel
 
-from app.domain.findings import Step
-
 
 class Attachment(BaseModel):
     """One raw file attached to a scenario.
@@ -64,12 +62,18 @@ class RawScenario(BaseModel):
     Any attachment may be absent; the analysis tolerates whatever arrived.
     `raw_detail` is the FULL scenario-detail API response (properties and all),
     persisted for observability — nothing from the source is thrown away.
+
+    `error_text` arrives with the detail call and is kept here but goes nowhere
+    else: it never reaches the prompt, because VisiumGo derives it from
+    `test.log` — which the profile sends whole. Its future reader is PreCheck,
+    which will look at it BEFORE any attachment is downloaded and may decide
+    the scenario needs no analysis at all. The step list is not kept for the
+    same reason and has no such future reader.
     """
 
     scenario_name: str
     scenario_id: str = ""
     error_text: str = ""
-    steps: list[Step] = []
     attachments: list[Attachment] = []
     retry_info: str = ""
     raw_detail: dict = {}
