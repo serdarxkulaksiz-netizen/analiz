@@ -10,7 +10,6 @@ Two traps these tests lock down, both found while hardening the project:
    `.env` happened to be on the machine.
 """
 
-import json
 import os
 import subprocess
 import sys
@@ -21,6 +20,7 @@ from fastapi import FastAPI
 
 from app.config import Settings, get_settings
 from app.main import build_service
+from tests.conftest import write_profiles
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -109,10 +109,9 @@ def test_profile_with_unknown_prompt_template_fails_at_startup(tmp_path: Path) -
     The check can only live in the wiring root (the single place that knows
     both the profiles and the available templates), so it is asserted there.
     """
-    profiles = tmp_path / "profiles.json"
-    profiles.write_text(
-        json.dumps({"default": {"prompt": "yok-boyle-sablon", "evidence_to_llm": []}}),
-        encoding="utf-8",
+    profiles = write_profiles(
+        tmp_path / "profiles.json",
+        {"default": {"prompt": "yok-boyle-sablon", "evidence_to_llm": []}},
     )
     settings = Settings(
         _env_file=None,

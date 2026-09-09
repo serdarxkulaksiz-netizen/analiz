@@ -50,9 +50,10 @@ class EvidenceExtractor(Extractor):
         parameter1: str = "default",
         parameter2: str = "default",
         job_id: str = "",
+        forced_profile: str = "",
         build_log: str = "",
     ) -> Findings:
-        profile = self._profiles.get(job_id=job_id, parameter1=parameter1)
+        profile = self._profiles.get(job_id=job_id, parameter1=parameter1, forced=forced_profile)
 
         # The job-level build log becomes a normal attachment, so the profile
         # can include/exclude it and its rules can slice it per scenario.

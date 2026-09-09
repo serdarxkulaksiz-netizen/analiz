@@ -87,6 +87,35 @@ Mock↔gerçek geçişi yalnız `.env` ile; kod değişmez.
 
 ## A4. Girdi
 
+### A4.0 Hangi koşum analiz edilir + job durumu
+
+Çözümleme **tek yerde**, kanıt indirilmeden önce yapılır (`Source.resolve_run`) ve tek bir
+**koşum özeti** üretir: `run_id` · `job_id` · `job_name` · `state` · `run_result` · ham cevap.
+
+| İstek | Servis | Seçim |
+|---|---|---|
+| `run_id` verildi | `GET /api/runs/{run_id}` | o koşum |
+| `job_id` verildi | `GET /api/runs?jobId=` | `RUNNING` elenir, kalan `PASSED`/`FAILED` içinden **en büyük `id`** |
+
+- `id` **koşum id'sidir** ve her koşumda büyür; sıralama `startTime` ile değil bununla yapılır.
+- **Bilinmeyen bir `state`** (ör. `ABORTED`) de elenir ama **sessizce değil**: atlandığı `runs`
+  satırının `note` alanına yazılır.
+- Analiz edilebilir koşum kalmazsa hata; koşum `failed` biter.
+
+**`runResult.state` job'ın kendi sağlığıdır, senaryoların değil** — gerçek bir koşumda
+`state=PASSED` iken `failScenarios=2` görüldü.
+
+| `state` | Davranış |
+|---|---|
+| `PASSED` | normal zincir |
+| `FAILED` | job'ın kendisi patlamış: `job_ids` eşlemesine **bakılmaz**, her senaryo sabit **`job_failed`** profiliyle analiz edilir; kullanılan profil `note`'a yazılır |
+| `RUNNING` | analiz **yapılmaz**: build log dahil hiçbir istek atılmaz, koşum `failed` biter (yarım koşum teşhis edilmez) |
+
+Dallanma koda dağılmış `if` değil **tek registry satırıdır** (`STATE_PROFILE_OVERRIDE`).
+
+**Profil hangi job ile seçilir:** çağıranın verdiği `job_id`; yalnız `run_id` verilmişse koşum
+cevabındaki `jobId`. Böylece run_id ile gelen istek de kendi job'ının profilini alır.
+
 ### A4.1 Job seviyesi
 - VisiumGo raporu (kaç senaryo koştu, hangileri patladı).
 - **build log** — `GET {BASE}/api/runs/{run_id}/logs`. Bu uç **ZIP** döndürür; içinden
@@ -102,22 +131,39 @@ Mock↔gerçek geçişi yalnız `.env` ile; kod değişmez.
 - **`parameter2`** serbest metin; yalnız kaydedilir.
 - İkisi de yoksa `"default"`; profil o zaman **`job_id`** ile bulunur.
 - Hiçbir şey **dosya adlarından tahmin EDİLMEZ.**
+- **Prompt'a YAZILMAZLAR** (kilitli karar 27). `Findings`'te taşınırlar, `$parameter1` /
+  `$parameter2` yer tutucuları çalışır durumda kalır — ama hiçbir şablon kullanmaz: çoğu koşumda
+  ikisi de kelimenin tam anlamıyla `"default"` yazıyordu, yani modele bilgi değil gürültü.
+  Gerçek değeri olan bir job bunları **yalnız config ile** geri koyabilir.
 
 ### A4.3 Dosya tipleri
 
+Kanıtın kimliği **`deviceId` + dosya uzantısıdır** — VisiumGo önyüzünün gösterdiği adın aynısı.
+Ham `fileName` `<klasör>/<deviceId>_<sayı>.<uzantı>` biçiminde gelir; ortadaki sayı yalnız
+benzersizlik içindir (`test.properties`'te o da yoktur).
+
 | Dosya | Ne zaman | Eşleşme anahtarı |
 |---|---|---|
-| `test.log` | çoğu koşumda (mobilde UI ağacı bunun içinde) | `text/plain` + `test` |
-| `browser.default.html` | web adımları (DOM) | `text/html` + `browser.default` |
-| `browser.default.log` | web adımları | `text/plain` + `browser.default` |
-| `browser.default.png` | web ekran görüntüsü (LLM'e gitmez) | `image/png` + `browser.default` |
-| `mobile.{os}.{marka}.png` | mobil ekran görüntüsü (LLM'e gitmez) | `image/png` + `mobile` öneki |
-| `build.log` | **job seviyesi**; sentetik attachment (`device_id="build"`) | `text/plain` + `build` |
+| `test.log` | çoğu koşumda; adım akışı | `test` + `.log` |
+| `test.properties` | koşum özellikleri (cihaz UDID, `failedStep.*`, retry) | `test` + `.properties` |
+| `browser.default.html` | web adımları (DOM) | `browser.default` + `.html` |
+| `browser.default.log` | web adımları | `browser.default` + `.log` |
+| `browser.default.png` | web ekran görüntüsü (LLM'e gitmez) | `browser.default` + `.png` |
+| `mobile.{os}.{cihaz}.xml` | **mobil UI ağacı** — artık ayrı dosya | `mobile` öneki + `.xml` |
+| `mobile.{os}.{cihaz}.png` | mobil ekran görüntüsü (LLM'e gitmez) | `mobile` öneki + `.png` |
+| `build.log` | **job seviyesi**; sentetik attachment (`device_id="build"`) | `build` + `.log` |
 
-- **Ayrı mobil XML/DOM dosyası YOKTUR.**
-- **Her kanıt gelmeyebilir.** Bazı joblarda senaryo bazlı hiçbir dosya üretilmez; orada tek kanıt
-  **build log**'dur (bkz. A8.2 `buildlog` şablonu).
-- Attachment → Evidence eşlemesi **`mimeType` + `deviceId`** ile yapılır, dosya adıyla değil.
+- **`mimeType` kimliğin parçası DEĞİLDİR:** `test.log` ile `test.properties` aynı cihazda aynı
+  `text/plain`'dir; mime ile eşleştirildiğinde ikisi tek sınıfa düşüyor ve properties içeriği
+  adım akışı bloğuna giriyordu.
+- **Her kanıt gelmeyebilir.** Gözlenen setler: web 5 ek · mobil 4 ek · cihaz düşerse yalnız
+  `test.log` (sebebi `properties` içinde: `ERROR: device disconnected`) · bazı joblarda senaryo
+  bazlı hiçbir dosya yok — orada tek kanıt **build log**'dur (bkz. A8.2 `buildlog` şablonu).
+- **Kayıt yeri:** `database/attachments/<run_id>/<scenario_id>/<deviceId><uzantı>`. Senaryo
+  klasörü şart: bir koşumun her senaryosu kendi `browser.default.html`'ini üretir. Aynı senaryoda
+  aynı ad ikinci kez gelirse `-2` eklenir (üzerine yazılmaz).
+- **Tanınmayan ek düşürülmez:** dosya yine indirilip saklanır ve `evidence_report.unmatched`
+  içine yazılır — "gelmedi mi, eşleşmedi mi?" sorusu tek koşumla cevaplanır.
 
 ### A4.4 Flaky senaryolar
 Tekrar koşumda geçen senaryolar **analiz edilmez** (analiz edilecek hata yok).
@@ -126,10 +172,14 @@ Tekrar koşumda geçen senaryolar **analiz edilmez** (analiz edilecek hata yok).
 
 ## A5. Evidence Mimarisi
 
-### A5.1 Sınıflar (6)
-`TestLogEvidence` · `HtmlEvidence` · `BrowserLogEvidence` · `BuildLogEvidence` ·
-`WebScreenshotEvidence` · `MobileScreenshotEvidence`. Ortak `Evidence` arayüzü, registry'de kayıtlı,
-anahtar `(mime_type, device_id)`. Yeni tip = 1 sınıf + 1 satır.
+### A5.1 Sınıflar (8)
+`TestLogEvidence` · `TestPropertiesEvidence` · `HtmlEvidence` · `MobileDomEvidence` ·
+`BrowserLogEvidence` · `BuildLogEvidence` · `WebScreenshotEvidence` · `MobileScreenshotEvidence`.
+Ortak `Evidence` arayüzü, registry'de kayıtlı, anahtar **`(device_id, extension)`**.
+Yeni tip = 1 sınıf + 1 satır.
+
+`TestPropertiesEvidence` ve `MobileDomEvidence` bugün **hiçbir profilde `evidence_to_llm`
+içinde değildir**: saklanırlar, prompt'a girmezler. İstenirse config satırıyla açılır.
 
 ### A5.2 Profil kararları (`config/profiles.json`)
 
@@ -141,8 +191,9 @@ anahtar `(mime_type, device_id)`. Yeni tip = 1 sınıf + 1 satır.
 - **`extra_context`** — prompt'a eklenecek job grubu cümlesi.
 - **`rules`** — her kanıt için içerik kuralları (A5.3).
 
-**Profil seçimi:** `parameter1` → `job_ids` eşleşmesi → `default`. Eksik `default`, yinelenen
-`job_id`, bozuk kural, **olmayan şablon adı** → **açılışta** hata.
+**Profil seçimi:** job durumu `FAILED` ise **`job_failed`** (A4.0) → `parameter1` →
+`job_ids` eşleşmesi → `default`. Eksik `default` **veya `job_failed`**, yinelenen `job_id`,
+bozuk kural, **olmayan şablon adı** → **açılışta** hata.
 
 > **`default` profil build log GÖNDERMEZ** (kullanıcı kararı). Build log yalnız açıkça tanımlanmış
 > job gruplarında prompt'a girer.
@@ -227,7 +278,7 @@ Bozuk regex / bilinmeyen verdict / kova dışı confidence → **açılışta** 
 |---|---|
 | `default.txt` | profil şablon seçmezse |
 | `web.txt` | test log + DOM + browser log |
-| `mobile.txt` | test log (mobil UI ağacı onun içinde) |
+| `mobile.txt` | test log (+ istenirse mobil UI ağacı: `$mobile_dom`) |
 | `hybrid.txt` | tek akışta hem web hem mobil adım |
 | `buildlog.txt` | senaryo bazlı kanıt üretmeyen joblar; **tek kanıt build log** |
 | `_contract.txt` | **ortak çıktı sözleşmesi** — şablon değil |
@@ -240,9 +291,13 @@ sistem ekler. 5 şablonda elle bakım edilen bir şema er geç dolar; bir harf k
 **sessizce** bozulur. Şablon yazarı yalnız üst kısmı yazar.
 
 ### A8.3 Placeholder'lar
-Ortak: `$parameter1` `$parameter2` `$scenario_name` `$failed_step` `$error_message` `$steps`
-`$extra_context` `$confidence_buckets` · Toplu yerleşim: `$evidence_blocks` ·
-**Kanıt bazlı:** `$test_log` `$dom` `$browser_log` `$build_log`.
+Ortak: `$scenario_name` `$failed_step` `$error_message` `$steps` `$extra_context`
+`$confidence_buckets` · Toplu yerleşim: `$evidence_blocks` ·
+**Kanıt bazlı:** `$test_log` `$dom` `$mobile_dom` `$browser_log` `$build_log` `$test_properties`.
+
+`$parameter1` / `$parameter2` **çalışır ama hiçbir şablonda yoktur** (A4.2): çoğu koşumda
+"default" yazıyorlardı. Yer tutucular duruyor ki gerçek değeri olan bir job onları config ile
+geri koyabilsin.
 
 Şablonun andığı kanıt gelmediyse alan boş kalmaz, yer tutucu yazar (A5.4).
 **Tanınmayan bir `$placeholder` açılışta hatadır** — yoksa LLM'e ham `$dom_excerpt` giderdi.
@@ -372,7 +427,9 @@ adını söyler. `app/main.py` import edilince app kurulmaz (PEP 562) — testle
 
 ## A16. Durum — ne bitti, ne kaldı
 
-**Bitti:** Halka 1-6 gerçek gerçeklemeleriyle · job bazlı profiller + 9 içerik kuralı ·
+**Bitti:** Halka 1-6 gerçek gerçeklemeleriyle · **koşum çözümlemesi + job durumu dallanması
+(A4.0)** · **`deviceId`+uzantı ile kanıt eşleşmesi, ayrı `.xml`/`.properties` kanıtları,
+önyüz adıyla senaryo bazlı kayıt** · job bazlı profiller + 9 içerik kuralı ·
 **job grubuna göre prompt şablonu (5 şablon + ortak sözleşme)** · PreCheck kural motoru ·
 `run_id` bazlı önbellek · GET sadeleştirmesi · config katılığı · **build log hata sebebi** ·
 **kanıt eşleşme raporu** · **kanıtsız senaryoda LLM'e gitmeme** · **prompt sürümü** ·
@@ -381,6 +438,10 @@ adını söyler. `app/main.py` import edilince app kurulmaz (PEP 562) — testle
 **Kalan:**
 - Gerçek VisiumGo + gerçek LLM ile uçtan uca doğrulama (iş-pc).
 - **Gerçek profilleri gerçek `job_ids` ile doldurmak** (config işi) — asıl kalan iş bu.
+- **`job_failed` profilinin içeriği** bilerek boştur (Faz 2): gerçek bir FAILED job'ın kanıtı
+  görülmeden doldurulmaz.
+- **Faz 2 başlıkları:** eşleşme tablosunun config'e taşınması · profilin istemediği ekin hiç
+  indirilmemesi · `properties.failedStep.*` kullanımı · prompt boyutu (340k karakter → timeout).
 - **Senaryo adı eşleşmesi:** `/results`'taki ad ile `build.log` içindeki `[...]` birebir aynı mı?
   Değilse dilimleme olmaz; artık `evidence_report` bunu söylüyor.
 - Golden set'i gerçek vakalarla doldurmak (A19).
@@ -397,8 +458,10 @@ adını söyler. `app/main.py` import edilince app kurulmaz (PEP 562) — testle
 3. **SOLID** her harfine.
 4. **Agentless, tek-atış, parse-minimal, katı prompt.** Üründe LLM loop yok.
 5. `parameter1`/`parameter2` **girdidir**, tahmin edilmez.
-6. Evidence mimarisi: 6 sınıf, profil bayrakları, 9 kural tipi, global trimmer yok.
-7. Mobilde ayrı XML/DOM dosyası yok.
+6. Evidence mimarisi: 8 sınıf, profil bayrakları, 9 kural tipi, global trimmer yok.
+7. **Kanıt kimliği `deviceId` + uzantıdır** (önyüzdeki adın aynısı); `mimeType` kimliğin parçası
+   değildir. Mobil UI ağacı **ayrı `.xml` dosyası** olarak gelir (eski "test.log içinde gelir"
+   kaydı gerçek koşumla çürütüldü).
 8. Parsing yalnız LLM JSON cevabı için (`try_json`); alan-çıkaran parser yok.
 9. `verdict` **6 değer**.
 10. `confidence` **5 kova**; LLM ne dönerse o.
@@ -423,22 +486,31 @@ adını söyler. `app/main.py` import edilince app kurulmaz (PEP 562) — testle
     sözleşme çoğalmaz.
 26. **Boş prompt sorulmaz:** kanıt yoksa LLM çağrılmaz, sonuç `no_evidence`.
 27. **`default` profil build log göndermez;** build log yalnız tanımlı job gruplarında gider.
+28. **`parameter1`/`parameter2` prompt'a yazılmaz** (yapı korunur, şablonlardan çıkarıldı).
+29. **Job durumu analiz kararıdır (A4.0):** `RUNNING` → hiç indirme yok, koşum `failed`;
+    `FAILED` → sabit `job_failed` profili; koşum seçimi `startTime` değil **en büyük `id`**.
+30. **Ekler önyüzdeki adıyla, senaryo klasörü altında saklanır**
+    (`<run_id>/<scenario_id>/<deviceId><uzantı>`); tanınmayan ek de saklanır ve raporlanır.
+31. **Servis metotları tek amaçlı ve public'tir** (`get_run`, `list_runs`, `get_results`,
+    `get_scenario_detail`, `download_attachment`, `fetch_build_log`): sırayı `fetch_job` kurar,
+    metotlar sırayı bilmez. Bu, aynı servislerin ileride sırayı kendi kuran bir katmandan
+    kullanılabilmesi içindir — bugün böyle bir katman **yoktur** (A2 hâlâ geçerli).
 
 ---
 
-## A18. Job-level analiz — KAPSAM DIŞI (kullanıcı kararı, 2026-09-08)
+## A18. Job-level analiz — yönlendirme var, içerik Faz 2'de
 
-Konuşuldu, tasarlandı, **yapılmayacak.** Fikir şuydu: job'ın **kendisi** patladığında (gradle
-build alınamadı, ortam ayağa kalkmadı) senaryo/attachment olmaz, `/results` boş gelir; o zaman
-build log'dan "bu job neden patladı" sorusu ayrı bir prompt'la sorulsun.
+Job'ın **kendisi** patladığında (gradle build alınamadı, ortam ayağa kalkmadı) senaryo bazlı kanıt
+üretilmez; o koşumu normal bir koşum gibi analiz etmek yanlış olur.
 
-**Neden yapılmadı:** (1) kullanıcı "gerek yok" dedi; (2) hatalı job'ın VisiumGo'da hangi durum
-değerini döndürdüğü bilinmiyor (başarılıda `runResult.state == "PASSED"`), uydurma bir değerle
-yazılan kod iş bilgisayarında **sessizce yanlış** çalışırdı.
+**Bugün yapılan (A4.0):** durum değerleri artık **biliniyor** — `PASSED` / `FAILED` / `RUNNING`.
+`state == FAILED` ise `job_ids` eşlemesine bakılmadan sabit **`job_failed`** profiline gidilir ve
+bu, koşum satırının `note` alanına yazılır. Yönlendirme tek registry satırıdır.
 
-> Yeniden istenirse: tespit `runResult.state` + config'ten durum listesi · kanıt build log
-> (mevcut kural motoruyla, yeni parser yok) · ayrı şablon + aynı `_contract.txt` · seçim tek
-> registry lookup'ı (koda dağılmış `if` değil). Bu kadarı tasarım olarak yeterli.
+**Bugün YAPILMAYAN:** `job_failed` profilinin içeriği. `evidence_to_llm` bilerek **boştur**:
+gerçek bir FAILED job'ın kanıtı (build log'un o hâlde ne söylediği) görülmeden doldurulursa
+uydurma olur (B3.3/B3.13). Faz 2'de doldurulacak; şablonu (`buildlog.txt`) ve depolama listesi
+hazır bekliyor.
 
 ---
 

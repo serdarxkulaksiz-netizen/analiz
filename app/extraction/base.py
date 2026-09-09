@@ -4,8 +4,9 @@ Raw evidence goes out as labeled blocks; interpretation belongs to the LLM
 (parse-minimal, plan.md A5/B3.6).
 
 `parameter1` (profile name override) and `job_id` select the analysis profile —
-which evidence reaches the prompt and how its content is shaped. `parameter2`
-is carried through for the record/prompt context. `build_log` is job-level
+which evidence reaches the prompt and how its content is shaped;
+`forced_profile` overrules both (the caller knows the job itself failed).
+`parameter2` is carried through for the record. `build_log` is job-level
 context (plan.md A4.1 — VisiumGo `/logs` -> `build.log`) that becomes the
 `=== BUILD LOG ===` block when the profile includes it.
 """
@@ -27,6 +28,7 @@ class Extractor(ABC):
         parameter1: str = "default",
         parameter2: str = "default",
         job_id: str = "",
+        forced_profile: str = "",
         build_log: str = "",
     ) -> Findings:
         """Build Findings (labeled blocks + minimal fields) from raw evidence."""

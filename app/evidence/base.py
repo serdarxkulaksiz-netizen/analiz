@@ -1,7 +1,7 @@
 """Evidence interface + two families (plan.md A5).
 
 This is the project's flexibility backbone. Each evidence:
-  - declares what it matches: a `mime_type` + `device_id` (plan.md real spec),
+  - declares what it matches: a `device_id` + file extension (plan.md A5.1),
   - knows whether it goes to the LLM / to the store (flags from config, A5.2),
   - carries its own content selector — passthrough today (A5.3),
   - reports presence so missing evidence is tolerated, not fatal (A5.4),
@@ -28,9 +28,11 @@ class Evidence(ABC):
 
     #: Registry key = class name (also used in profile config lists).
     evidence_name: ClassVar[str]
-    #: Attachment identity this evidence matches (plan.md real spec, Bölüm 3).
-    mime_type: ClassVar[str]
+    #: Attachment identity this evidence matches (plan.md A5.1): the device
+    #: that produced it plus the file extension — the same pair VisiumGo's own
+    #: UI shows as the attachment's name.
     device_id: ClassVar[str]
+    extension: ClassVar[str]
 
     def __init__(self, *, goes_to_llm: bool, goes_to_store: bool) -> None:
         self.goes_to_llm = goes_to_llm
@@ -40,11 +42,16 @@ class Evidence(ABC):
     def matches(cls, attachment: Attachment) -> bool:
         """True if this evidence type handles the given attachment.
 
-        `device_id` is matched exactly or by dotted prefix, so mobile pngs
-        (`mobile.ios...`, `mobile.android...`) all map to one class via
+        `device_id` is matched exactly or by dotted prefix, so mobile files
+        (`mobile.ios.iPhone 16`, `mobile.android.Samsung-M31`) all map through
         `device_id = "mobile"` — without any file-name `if`s.
+
+        The extension, not the mime type, is the second half of the identity:
+        `test.log` and `test.properties` arrive as `text/plain` from the same
+        device, so a mime-based match cannot tell them apart (it used to put
+        both into the step-flow block).
         """
-        if attachment.mime_type != cls.mime_type:
+        if attachment.extension != cls.extension:
             return False
         return attachment.device_id == cls.device_id or attachment.device_id.startswith(
             cls.device_id + "."

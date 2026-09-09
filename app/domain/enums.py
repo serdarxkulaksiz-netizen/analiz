@@ -41,6 +41,27 @@ class RunStatus(str, Enum):
     FAILED = "failed"
 
 
+class RunState(str, Enum):
+    """VisiumGo's JOB-level health for one run (`runResult.state`).
+
+    Not the scenarios' health: a run whose `state` is `PASSED` can still carry
+    failed scenarios (observed: `state=PASSED` with `failScenarios=2`). It
+    answers "did the job itself run to completion?", which is why `FAILED`
+    routes every scenario to one fixed profile instead of the job_ids mapping.
+    """
+
+    PASSED = "PASSED"
+    FAILED = "FAILED"
+    RUNNING = "RUNNING"
+
+
+#: States whose run may be analyzed. A `RUNNING` run is deliberately absent:
+#: it is still producing evidence, so analyzing it would judge half a run.
+#: Any other value (a state VisiumGo adds later) is unknown to us and is
+#: skipped as well — but never silently: the skip is recorded on the run row.
+ANALYZABLE_RUN_STATES = frozenset({RunState.PASSED.value, RunState.FAILED.value})
+
+
 class AnalysisStatus(str, Enum):
     """Per-scenario diagnosis outcome (plan.md A10 system-side `status`)."""
 

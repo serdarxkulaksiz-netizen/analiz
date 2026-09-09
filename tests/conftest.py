@@ -1,5 +1,6 @@
 """Shared test fixtures — isolated settings per test (tmp database dir)."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -36,3 +37,15 @@ def profile_registry(settings: Settings) -> ProfileRegistry:
 @pytest.fixture
 def extractor(profile_registry: ProfileRegistry) -> EvidenceExtractor:
     return EvidenceExtractor(EvidenceRegistry(), profile_registry)
+
+
+def write_profiles(path: Path, profiles: dict, *, complete: bool = False) -> Path:
+    """Write a profiles config, filling in the mandatory profiles.
+
+    Every config must carry `default` and `job_failed`; a test about something
+    else should not have to repeat that. `complete=True` writes the dict
+    verbatim — that is how the fail-fast guards themselves are tested.
+    """
+    data = profiles if complete else {"job_failed": {}, **profiles}
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return path

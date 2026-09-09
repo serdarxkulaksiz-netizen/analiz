@@ -20,9 +20,10 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.domain.enums import AnalysisStatus, RunStatus
+from app.domain.enums import AnalysisStatus, RunState, RunStatus
 from app.domain.findings import Findings
 from app.domain.result import AnalysisMeta, AnalysisResult, LLMAnalysis
+from app.evidence.profiles import JOB_FAILED_PROFILE_NAME
 from app.evidence.registry import evidence_name_for
 from app.extraction.base import Extractor
 from app.llm.provider import LLMProvider
@@ -32,6 +33,22 @@ from app.precheck.base import PreCheck
 from app.prompting.builder import PromptBuilder
 from app.source.base import Source
 from app.source.models import RawScenario
+
+#: Job-level run state -> the profile every scenario of that run is analyzed
+#: with, bypassing the job_ids mapping (a state absent here resolves normally).
+#: A registry, not an `if`: a new state is one row (plan.md A0.1 / B3.1).
+STATE_PROFILE_OVERRIDE: dict[str, str] = {RunState.FAILED.value: JOB_FAILED_PROFILE_NAME}
+
+
+def _forced_note(profile_name: str) -> str:
+    """Say it out loud when the job-level state changed the profile.
+
+    Without this the run row would look like an ordinary analysis while every
+    scenario was actually judged with a different profile.
+    """
+    if not profile_name:
+        return ""
+    return f"job durumu nedeniyle '{profile_name}' profili kullanıldı"
 
 
 def _utcnow_iso() -> str:
@@ -148,12 +165,29 @@ class AnalyzerService:
         self._update_run(run, status=RunStatus.RUNNING.value)
 
         # Resolve which run this is BEFORE fetching anything: the cache keys on
-        # run_id, and a hit must not pay for the (expensive) evidence download.
-        # With an explicit run_id this costs no network call at all.
+        # run_id, a hit must not pay for the (expensive) evidence download, and
+        # the job-level state decides whether there is anything to analyze at
+        # all. One lookup serves all three — the summary is not fetched twice.
         job_id = run.get("job_id", "")
         requested_run_id = run.get("run_id", "")  # what the caller asked for
-        resolved_run_id = await self._source.resolve_run_id(job_id, requested_run_id)
-        self._update_run(run, run_id=resolved_run_id)
+        summary = await self._source.resolve_run(job_id, requested_run_id)
+        self._update_run(run, run_id=summary.run_id, note=summary.note)
+
+        if summary.state == RunState.RUNNING.value:
+            # Still running: its evidence is half-written, so nothing is
+            # fetched at all (not even the build log) and the run ends `failed`
+            # with the reason instead of producing a diagnosis of half a run.
+            raise ValueError(
+                f"run_id={summary.run_id!r} hâlâ koşuyor (state=RUNNING); "
+                "koşum bitmeden analiz edilmez."
+            )
+
+        # A job-level failure means the job's own profile describes a run that
+        # never happened, so every scenario goes to one fixed profile instead.
+        forced_profile = STATE_PROFILE_OVERRIDE.get(summary.state, "")
+        # The profile follows the job the CALLER named; with only a run_id it
+        # is the job that run belongs to (from the run response).
+        profile_job_id = job_id or summary.job_id
 
         if settings.cache_enabled:
             cached = self._find_cached_run(run)
@@ -165,18 +199,19 @@ class AnalyzerService:
                     completed_count=cached.get("completed_count", 0),
                     total_scenario_count=cached.get("total_scenario_count", 0),
                     cached_from=cached["analyzer_run_id"],
-                    note=(
-                        "cache: aynı run_id + parametreler daha önce analiz "
-                        "edildi, sonuçlar diskten"
+                    note=" · ".join(
+                        note
+                        for note in (
+                            summary.note,
+                            "cache: aynı run_id + parametreler daha önce analiz "
+                            "edildi, sonuçlar diskten",
+                        )
+                        if note
                     ),
                 )
                 return
 
-        # Pass the ORIGINAL request, not the resolved id: when only a job_id was
-        # given, fetch_job's own resolution is what yields the run summary
-        # (job_name / runResult). One extra cheap call on a cache miss, in
-        # exchange for skipping the whole download on a hit.
-        job = await self._source.fetch_job(job_id, requested_run_id)
+        job = await self._source.fetch_job(summary)
         self._update_run(
             run,
             run_id=job.run_id,  # resolved run id (real source may derive it)
@@ -197,7 +232,8 @@ class AnalyzerService:
         )
 
         if not job.failed_scenarios:
-            self._update_run(run, status=RunStatus.DONE.value, note="analiz edilecek hata yok")
+            notes = [note for note in (summary.note, "analiz edilecek hata yok") if note]
+            self._update_run(run, status=RunStatus.DONE.value, note=" · ".join(notes))
             return
 
         semaphore = asyncio.Semaphore(settings.max_concurrency)
@@ -208,7 +244,8 @@ class AnalyzerService:
                     scenario,
                     parameter1=run.get("parameter1", "default"),
                     parameter2=run.get("parameter2", "default"),
-                    job_id=run.get("job_id", ""),
+                    job_id=profile_job_id,
+                    forced_profile=forced_profile,
                     build_log=job.build_log,
                     semaphore=semaphore,
                 )
@@ -225,14 +262,14 @@ class AnalyzerService:
         escaped = [o for o in outcomes if isinstance(o, BaseException)]
 
         run = self._repo.get(settings.table_runs, run["analyzer_run_id"]) or run
-        note = ""
+        notes = [note for note in (summary.note, _forced_note(forced_profile)) if note]
         if escaped:
             kinds = ", ".join(sorted({f"{type(e).__name__}: {e}" for e in escaped}))
-            note = (
+            notes.append(
                 f"{len(escaped)}/{len(job.failed_scenarios)} senaryo kaydedilemedi "
                 f"({kinds}) — bu senaryoların sonucu diskte yok"
             )
-        self._update_run(run, status=RunStatus.DONE.value, note=note)
+        self._update_run(run, status=RunStatus.DONE.value, note=" · ".join(notes))
 
     def _find_cached_run(self, run: dict[str, Any]) -> dict[str, Any] | None:
         """Find a previously finished analysis of the same run + parameters.
@@ -296,6 +333,7 @@ class AnalyzerService:
         parameter1: str,
         parameter2: str,
         job_id: str,
+        forced_profile: str,
         build_log: str,
         semaphore: asyncio.Semaphore,
     ) -> None:
@@ -320,6 +358,7 @@ class AnalyzerService:
                     parameter1=parameter1,
                     parameter2=parameter2,
                     job_id=job_id,
+                    forced_profile=forced_profile,
                     build_log=build_log,
                 )
 

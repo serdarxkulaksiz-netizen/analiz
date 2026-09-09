@@ -11,10 +11,16 @@ template would mean maintaining the same contract in five files, where one
 silent drift breaks parsing.
 
 Each evidence block is its own placeholder (`$test_log`, `$dom`,
-`$browser_log`, `$build_log`), so a template shows only the evidence that job
-actually produces; `$evidence_blocks` still renders every block at once for
-templates that want the generic layout. A placeholder whose block did not
-arrive renders the "not available" marker instead of vanishing (plan.md A5.4).
+`$mobile_dom`, `$browser_log`, `$build_log`, `$test_properties`), so a template
+shows only the evidence that job actually produces; `$evidence_blocks` still
+renders every block at once for templates that want the generic layout. A
+placeholder whose block did not arrive renders the "not available" marker
+instead of vanishing (plan.md A5.4).
+
+`$parameter1` / `$parameter2` stay available but no template uses them today:
+they carried the literal word "default" in most runs, which is noise, not
+context. The wiring is kept so a job that has real values for them can put
+them back from config alone.
 
 `string.Template` is used on purpose: the contract contains a literal JSON
 schema with `{}` braces, which `str.format` would mangle.
@@ -29,7 +35,9 @@ from app.domain.findings import (
     BLOCK_BROWSER,
     BLOCK_BUILD,
     BLOCK_DOM,
+    BLOCK_MOBILE_DOM,
     BLOCK_STEPS,
+    BLOCK_TEST_PROPERTIES,
     DEFAULT_PROMPT_TEMPLATE,
     EVIDENCE_UNAVAILABLE,
     Findings,
@@ -44,8 +52,10 @@ TEMPLATE_SUFFIX = ".txt"
 BLOCK_PLACEHOLDERS: dict[str, str] = {
     BLOCK_STEPS: "test_log",
     BLOCK_DOM: "dom",
+    BLOCK_MOBILE_DOM: "mobile_dom",
     BLOCK_BROWSER: "browser_log",
     BLOCK_BUILD: "build_log",
+    BLOCK_TEST_PROPERTIES: "test_properties",
 }
 
 #: Everything a template may reference. Anything else is a typo and fails at

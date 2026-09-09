@@ -26,8 +26,11 @@ kaydedilir (boş prompt'un cevabı zaten "kanıt yok" olurdu).
   `job_id`'ye göre otomatik seçilir (`parameter1` ile elle ezilebilir). Profil
   hem *hangi kanıt* prompt'a girer hem de *o kanıtın içine ne yapılır*
   (kes/seç/ekle) belirler. Yeni job = **config'e satır**, kod değişmez.
-- **Evidence mimarisi:** 6 kanıt sınıfı + registry (`mimeType`+`deviceId` eşleme);
-  her kanıtın content selector'ı profil kurallarını uygular.
+- **Evidence mimarisi:** 8 kanıt sınıfı + registry (**`deviceId` + dosya uzantısı** eşleme —
+  önyüzdeki adın aynısı); her kanıtın content selector'ı profil kurallarını uygular.
+- **Job durumu analizi yönlendirir:** `runResult.state` job'ın sağlığıdır (senaryoların değil).
+  `RUNNING` → hiçbir şey indirilmez, koşum `failed`; `FAILED` → job'ın kendisi patlamıştır,
+  her senaryo sabit `job_failed` profiliyle analiz edilir; `PASSED` → normal akış.
 - **Her şey kaydedilir, az şey gösterilir:** VisiumGo'dan gelen tüm ham cevaplar (run, results,
   senaryo detayı, attachment dosyaları, build log) `database/` altına yazılır; **GET cevabı**
   yalnız LLM'in teşhisini döndürür.
@@ -38,8 +41,10 @@ kaydedilir (boş prompt'un cevabı zaten "kanıt yok" olurdu).
 - **DB simülasyonu:** `database/<tablo>/<id>.json`; Repository arayüzü arkasında
   (ileride SQLite/Oracle tak-çıkar).
 - **Halka 1-2 gerçek:** `VisiumGoSource` gerçek API'ye bağlı (run çöz → FAILED
-  senaryolar → detay → attachment indir); `deviceId`+`mimeType` ile Evidence
-  eşlenir. `.env` boşken/`SOURCE_PROVIDER=mock` iken mock'larla uçtan uca çalışır.
+  senaryolar → detay → attachment indir); `deviceId` + uzantı ile Evidence eşlenir.
+  Her VisiumGo ucu **tek amaçlı, public bir metottur** (`get_run`, `list_runs`, `get_results`,
+  `get_scenario_detail`, `download_attachment`, `fetch_build_log`); sırayı yalnız `fetch_job`
+  kurar. `.env` boşken/`SOURCE_PROVIDER=mock` iken mock'larla uçtan uca çalışır.
 - **Mock etiketleme:** tüm mock çıktıları `MOCK_` ile başlar (gerçek veriyle karışmasın).
 - **Docker yok** (iş bilgisayarında mevcut değil).
 
@@ -133,9 +138,13 @@ Kod değişmez; profil `job_id` ile otomatik bulunur.
 }
 ```
 
-**Profil seçimi:** `parameter1` bir profil adı verirse o kazanır → yoksa `job_ids`
-eşleşmesi → yoksa `default`. Var olmayan profil adı verilirse koşum `failed` olur
-(sessizce yanlış profille analiz etmez).
+**Profil seçimi:** job durumu `FAILED` ise `job_failed` (aşağıya bakın) → `parameter1` bir profil
+adı verirse o kazanır → yoksa `job_ids` eşleşmesi → yoksa `default`. Var olmayan profil adı
+verilirse koşum `failed` olur (sessizce yanlış profille analiz etmez).
+
+Config'te **`default` ve `job_failed` profilleri zorunludur**; biri eksikse uygulama açılmaz.
+`job_failed`'ın içeriği bugün bilerek boştur: gerçek bir başarısız job'ın kanıtı görülmeden
+doldurulursa uydurma olur.
 
 **Kural tipleri:** `keep_scenario_section` (job-seviyesi logu senaryo bazında dilimler) ·
 `keep_last_lines` / `keep_first_lines` · `drop_matching` / `keep_matching` (regex) ·
@@ -165,8 +174,10 @@ Prompt metni kodda değil, `config/prompts/` altındadır:
 (`"prompt": "buildlog"`). JSON şeması + verdict listesi + confidence kovaları **tek dosyadadır**
 (`_contract.txt`) ve her şablonun sonuna sistem tarafından eklenir — beş kopya bakım edilmez.
 
-Şablon içinde her kanıtın kendi alanı vardır: `$test_log`, `$dom`, `$browser_log`, `$build_log`
-(ya da hepsi birden için `$evidence_blocks`). Tanınmayan bir alan adı ya da olmayan bir şablon
+Şablon içinde her kanıtın kendi alanı vardır: `$test_log`, `$dom`, `$mobile_dom`, `$browser_log`,
+`$build_log`, `$test_properties` (ya da hepsi birden için `$evidence_blocks`).
+`$parameter1`/`$parameter2` çalışır ama **hiçbir şablonda yoktur**: çoğu koşumda ikisi de
+"default" yazıyordu, yani modele bilgi değil gürültü gidiyordu. Tanınmayan bir alan adı ya da olmayan bir şablon
 adı **açılışta hata** verir. Hangi şablonun hangi cevabı ürettiği `meta.prompt_template` +
 `meta.prompt_version` ile her teşhiste kayıtlıdır.
 

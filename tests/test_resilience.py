@@ -15,7 +15,7 @@ from app.prompting.builder import PromptBuilder
 from app.service import AnalyzerService
 from app.source.base import Source
 from app.source.mock import MockSource
-from app.source.models import JobData, RawScenario
+from app.source.models import JobData, RawScenario, RunSummary
 
 
 class GarbageLLMProvider(LLMProvider):
@@ -87,10 +87,10 @@ async def test_llm_timeout_marks_scenarios_failed_but_job_finishes(
 class FailingSource(Source):
     """A source whose fetch fails (e.g. VisiumGo unreachable / auth error)."""
 
-    async def resolve_run_id(self, job_id, run_id=""):  # type: ignore[no-untyped-def]
-        return run_id or f"RUN_{job_id}"
+    async def resolve_run(self, job_id, run_id=""):  # type: ignore[no-untyped-def]
+        return RunSummary(run_id=run_id or f"RUN_{job_id}", job_id=job_id, state="PASSED")
 
-    async def fetch_job(self, job_id, run_id=""):  # type: ignore[no-untyped-def]
+    async def fetch_job(self, run):  # type: ignore[no-untyped-def]
         raise RuntimeError("VisiumGo unreachable")
 
 
@@ -159,8 +159,8 @@ class BuildLogFailingSource(MockSource):
     normally, only the build log is missing — and it says why.
     """
 
-    async def fetch_job(self, job_id: str, run_id: str = "") -> JobData:
-        job = await super().fetch_job(job_id, run_id)
+    async def fetch_job(self, run: RunSummary) -> JobData:
+        job = await super().fetch_job(run)
         return job.model_copy(
             update={
                 "build_log": "",
@@ -210,8 +210,8 @@ class CountingLLMProvider(LLMProvider):
 class NoEvidenceSource(MockSource):
     """A run whose failed scenario produced nothing: no error text, no files."""
 
-    async def fetch_job(self, job_id: str, run_id: str = "") -> JobData:
-        job = await super().fetch_job(job_id, run_id)
+    async def fetch_job(self, run: RunSummary) -> JobData:
+        job = await super().fetch_job(run)
         bare = RawScenario(scenario_name="MOCK_kanıtsız senaryo")
         return job.model_copy(update={"failed_scenarios": [bare], "build_log": ""})
 

@@ -5,6 +5,8 @@ stored, what content rules shape each evidence, and any extra prompt context.
 Adding a job's behaviour = a config row in `config/profiles.json`, no code.
 
 Resolution order (no `if job_id ==` anywhere — dict/registry lookups):
+    0. a `forced` profile name from the caller (today: the job-level state of
+       a run — a `FAILED` job is analyzed with `job_failed`, whatever job it is)
     1. `parameter1` names a profile explicitly (manual override; unknown -> error)
     2. the job_id appears in some profile's `job_ids`
     3. the mandatory `default` profile
@@ -12,7 +14,7 @@ Resolution order (no `if job_id ==` anywhere — dict/registry lookups):
 `parameter1 == "default"` (the API's default value) means "no override", so the
 job mapping still applies. Everything is validated and compiled at startup:
 unknown rule types, bad regexes, a job_id claimed by two profiles and a missing
-`default` profile all fail immediately rather than mid-analysis.
+`default`/`job_failed` profile all fail immediately rather than mid-analysis.
 """
 
 import json
@@ -24,6 +26,12 @@ from app.domain.findings import DEFAULT_PROMPT_TEMPLATE
 from app.evidence.rules import Rule, RuleContext, build_rule
 
 DEFAULT_PROFILE_NAME = "default"
+
+#: Profile every scenario of a job-level FAILED run is analyzed with, no matter
+#: which job it is: when the job itself failed, its `job_ids` profile describes
+#: a normal run that never happened. Mandatory, like `default`, so the branch
+#: can never land on a missing profile mid-analysis.
+JOB_FAILED_PROFILE_NAME = "job_failed"
 
 
 class ProfileConfig(BaseModel):
@@ -83,17 +91,24 @@ class ProfileRegistry:
                     )
                 self._by_job_id[job_id] = profile
 
-        if DEFAULT_PROFILE_NAME not in self._profiles:
-            raise ValueError(
-                f'profiles config {config_path} must contain a "{DEFAULT_PROFILE_NAME}" profile.'
-            )
+        for required in (DEFAULT_PROFILE_NAME, JOB_FAILED_PROFILE_NAME):
+            if required not in self._profiles:
+                raise ValueError(
+                    f'profiles config {config_path} must contain a "{required}" profile.'
+                )
 
     def prompt_names(self) -> set[str]:
         """Every prompt template name the profiles ask for (startup check)."""
         return {profile.prompt for profile in self._profiles.values()}
 
-    def get(self, job_id: str = "", parameter1: str = "") -> Profile:
+    def get(self, job_id: str = "", parameter1: str = "", forced: str = "") -> Profile:
         """Resolve the profile for this run (see module docstring for order)."""
+        if forced:
+            profile = self._profiles.get(forced)
+            if profile is None:
+                known = ", ".join(sorted(self._profiles))
+                raise ValueError(f"Unknown profile {forced!r}. Known profiles: {known}")
+            return profile
         if parameter1 and parameter1 != DEFAULT_PROFILE_NAME:
             profile = self._profiles.get(parameter1)
             if profile is None:
@@ -107,6 +122,7 @@ class ProfileRegistry:
 
 __all__ = [
     "DEFAULT_PROFILE_NAME",
+    "JOB_FAILED_PROFILE_NAME",
     "Profile",
     "ProfileConfig",
     "ProfileRegistry",

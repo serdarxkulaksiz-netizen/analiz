@@ -44,9 +44,10 @@ def test_prompt_contains_evidence_and_constraints(settings: Settings) -> None:
     prompt = _builder(settings).build(_sample_findings())
 
     # identity/context lines (MockLLMProvider relies on the Senaryo: prefix)
-    assert "Parametre1: projeX" in prompt
-    assert "Parametre2: tipY" in prompt
     assert "Senaryo: Login - geçerli kullanıcı" in prompt
+    # parameter1/parameter2 are carried, but deliberately NOT written into the
+    # prompt any more: in most runs they literally said "default".
+    assert "projeX" not in prompt and "tipY" not in prompt
     # organized evidence
     assert "Giriş butonuna tıkla" in prompt
     assert "NoSuchElementException" in prompt

@@ -9,7 +9,25 @@
     ],
     "evidence_to_store": [
       "TestLogEvidence",
+      "TestPropertiesEvidence",
       "HtmlEvidence",
+      "MobileDomEvidence",
+      "BrowserLogEvidence",
+      "BuildLogEvidence",
+      "WebScreenshotEvidence",
+      "MobileScreenshotEvidence"
+    ]
+  },
+
+  "job_failed": {
+    "job_ids": [],
+    "prompt": "buildlog",
+    "evidence_to_llm": [],
+    "evidence_to_store": [
+      "TestLogEvidence",
+      "TestPropertiesEvidence",
+      "HtmlEvidence",
+      "MobileDomEvidence",
       "BrowserLogEvidence",
       "BuildLogEvidence",
       "WebScreenshotEvidence",
@@ -33,7 +51,12 @@
     "prompt": "mobile",
     "extra_context": "Bu joblar mobil bankacılık joblarıdır.",
     "evidence_to_llm": ["TestLogEvidence"],
-    "evidence_to_store": ["TestLogEvidence", "MobileScreenshotEvidence"],
+    "evidence_to_store": [
+      "TestLogEvidence",
+      "TestPropertiesEvidence",
+      "MobileDomEvidence",
+      "MobileScreenshotEvidence"
+    ],
     "rules": {
       "TestLogEvidence": [
         { "type": "keep_matching", "patterns": ["(?i)error", "(?i)exception", "(?i)failed"] },

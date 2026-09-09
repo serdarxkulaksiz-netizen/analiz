@@ -56,13 +56,20 @@ yalnızca burası değişir; kod bu yüzden böyle kurgulandı.)
 1. `runs` dosyasını diskten okur.
 2. **`_run_job(run)`** çağrılır:
    - Durumu `running` yapar.
-   - **`self._source.resolve_run_id(...)`** — hangi koşum olduğunu **önce** belirler (ucuz).
+   - **`self._source.resolve_run(...)`** — hangi koşum olduğunu **önce** belirler (ucuz, kanıt
+     indirmeden) ve job'ın **durumunu** getirir:
+     - `run_id` verildiyse `GET /api/runs/{run_id}`; `job_id` verildiyse `GET /api/runs?jobId=`
+       → `RUNNING` olanlar elenir, kalanların **en büyük `id`**'lisi seçilir.
+     - `state == "RUNNING"` → koşum yarım; **hiçbir şey indirilmez**, koşum `failed` biter.
+     - `state == "FAILED"` → job'ın kendisi patlamış; her senaryo sabit `job_failed` profiliyle
+       analiz edilir ve bu `note`'a yazılır.
    - **Önbellek kontrolü** (`CACHE_ENABLED` açıksa): aynı `run_id` + parametreler daha önce
      analiz edildiyse hiçbir indirme yapılmadan eski sonuçlar gösterilir. Varsayılan **kapalı**.
-   - **`self._source.fetch_job(job_id, run_id)`** — **Source** halkası
+   - **`self._source.fetch_job(koşum)`** — **Source** halkası
      (`MockSource` veya `VisiumGoSource`):
-     - `VisiumGoSource`: run_id'yi çözer → `/results`'tan **FAILED** senaryoları alır → her senaryonun
-       detayını (`errorText`, `stepResults`, `attachments`) çeker → attachment'ları indirir →
+     - `VisiumGoSource`: çözülmüş koşum için `/results`'tan **FAILED** senaryoları alır → her senaryonun
+       detayını (`errorText`, `stepResults`, `attachments`) çeker → attachment'ları indirip
+       `database/attachments/<run_id>/<scenario_id>/<deviceId><uzantı>` altına kaydeder →
        **build log**'u `/logs` ucundan **ZIP** olarak indirip içinden `build.log`'u çıkarır
        (alınamazsa job durmaz; sebep `build_log_error` alanına yazılır).
        Sonuç: `JobData` (içinde başarısız senaryoların listesi = `RawScenario`'lar).
@@ -77,7 +84,9 @@ yalnızca burası değişir; kod bu yüzden böyle kurgulandı.)
 1. `result_id` üretir (bu senaryonun izini 4 tabloda birbirine bağlayan anahtar).
 2. **`self._extractor.extract(scenario, ...)`** — **Extraction** halkası (`EvidenceExtractor`):
    - `job_id`/`parameter1` ile **analiz profilini** seçer (`config/profiles.json`).
-   - `EvidenceRegistry` ile attachment'ları (`mimeType` + `deviceId`'ye göre) Evidence sınıflarına eşler.
+   - `EvidenceRegistry` ile attachment'ları (**`deviceId` + dosya uzantısı**'na göre) Evidence
+     sınıflarına eşler — bu, VisiumGo önyüzünün gösterdiği adın aynısıdır
+     (`browser.default.html`, `test.properties`).
    - Profilin **içerik kurallarını** uygular (kes/seç/temizle).
    - `Findings` üretir: LLM'e gidecek etiketli bloklar + hata mesajı + adımlar.
      Profilin istediği bir kanıt gelmediyse bloğu **düşmez**, içine
@@ -142,6 +151,7 @@ yalnızca burası değişir; kod bu yüzden böyle kurgulandı.)
 - **Durum diskten okunsun** → sunucu yeniden başlasa bile kaybolmasın; ileride kuyruk/Redis'e geçiş kolay.
 - **Mock↔gerçek geçişi sadece `.env`** → kod değişmeden; test/geliştirme mock'la, üretim gerçekle.
 - **Davranış dallanması yok** (`if mock` / `if type` yok) → her varyant ayrı sınıf + registry + DI.
-- **Job bazlı özelleştirme**: `job_id` (ya da `parameter1`) → `config/profiles.json`'dan analiz
+- **Job bazlı özelleştirme**: job durumu `FAILED` ise `job_failed`, değilse `job_id`
+  (ya da `parameter1`) → `config/profiles.json`'dan analiz
   profili seçilir: hangi kanıt prompt'a girer **ve** o kanıtın içine hangi kurallar uygulanır
   (kes/seç/ekle). Yeni job = config satırı, kod değişmez.

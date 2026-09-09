@@ -31,6 +31,8 @@ A case file (`evals/cases/<ad>.json`):
           {"file_name": "test.log", "mime_type": "text/plain",
            "device_id": "test", "content": "..."}
         ]
+        # An attachment is identified by `device_id` + the file extension,
+        # exactly like in production (`test.log` vs `test.properties`).
       }
     }
 

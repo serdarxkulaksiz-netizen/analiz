@@ -9,6 +9,8 @@ Everything the source received is kept (user rule: save everything for now):
 `raw_results_response` / `raw_run_response` carry the job-level responses.
 """
 
+from pathlib import PurePosixPath
+
 from pydantic import BaseModel
 
 from app.domain.findings import Step
@@ -17,8 +19,12 @@ from app.domain.findings import Step
 class Attachment(BaseModel):
     """One raw file attached to a scenario (plan.md A4.3).
 
-    `mime_type` + `device_id` identify what it is (the Evidence registry maps
-    it). Text files (html/logs) carry `content`; binary files (png) carry only
+    `device_id` + file extension identify what it is — that pair is exactly the
+    label VisiumGo's own UI shows (`browser.default.html`, `test.properties`),
+    and it is what the Evidence registry maps. `mime_type` alone is NOT enough:
+    `test.log` and `test.properties` are both `text/plain` on the same device.
+
+    Text files (html/xml/logs) carry `content`; binary files (png) carry only
     `stored_path` (where the download was saved), `content` stays empty.
     """
 
@@ -27,6 +33,25 @@ class Attachment(BaseModel):
     device_id: str
     content: str = ""
     stored_path: str = ""
+
+    @property
+    def extension(self) -> str:
+        """Lower-cased file extension including the dot ("" if there is none).
+
+        `file_name` arrives as a path with a run-scoped folder and a uniqueness
+        number (`-1643527934/mobile.ios.iPhone 13 Pro Max_779188588.png`), so
+        the suffix is taken with POSIX path semantics, not by splitting on ".".
+        """
+        return PurePosixPath(self.file_name).suffix.lower()
+
+    @property
+    def label(self) -> str:
+        """`<device_id><extension>` — the same name VisiumGo's UI shows.
+
+        Used both to map the attachment to an Evidence class and to name the
+        file on disk, so what we store is what a person sees in VisiumGo.
+        """
+        return f"{self.device_id}{self.extension}"
 
 
 class RawScenario(BaseModel):
@@ -44,6 +69,28 @@ class RawScenario(BaseModel):
     attachments: list[Attachment] = []
     retry_info: str = ""
     raw_detail: dict = {}
+
+
+class RunSummary(BaseModel):
+    """Which run will be analyzed, resolved BEFORE any evidence is fetched.
+
+    Both request shapes converge here: an explicit `run_id` is looked up with
+    `GET /api/runs/{run_id}`, a `job_id` picks its newest analyzable run from
+    `GET /api/runs?jobId=`. `state` is the job-level health that decides how
+    (or whether) the run is analyzed at all — see `RunState`.
+
+    `note` carries anything that was skipped while resolving (e.g. a run with
+    a state we do not know), so a skip is never silent.
+    """
+
+    run_id: str
+    job_id: str = ""
+    job_name: str = ""
+    state: str = ""
+    run_result: dict = {}
+    #: The raw run response this summary was built from (save-everything).
+    raw: dict = {}
+    note: str = ""
 
 
 class JobData(BaseModel):

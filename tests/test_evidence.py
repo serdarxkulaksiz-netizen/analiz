@@ -1,13 +1,21 @@
 """Evidence architecture tests (plan.md A5): attachment mapping + profile flags."""
 
-from app.domain.findings import BLOCK_BROWSER, BLOCK_DOM, BLOCK_STEPS
+from app.domain.findings import (
+    BLOCK_BROWSER,
+    BLOCK_DOM,
+    BLOCK_MOBILE_DOM,
+    BLOCK_STEPS,
+    BLOCK_TEST_PROPERTIES,
+)
 from app.evidence.profiles import Profile, ProfileConfig
 from app.evidence.registry import EvidenceRegistry
 from app.source.models import Attachment, RawScenario
 
 _ALL = [
     "TestLogEvidence",
+    "TestPropertiesEvidence",
     "HtmlEvidence",
+    "MobileDomEvidence",
     "BrowserLogEvidence",
     "BuildLogEvidence",
     "WebScreenshotEvidence",
@@ -25,9 +33,12 @@ def _profile(to_llm: list[str], rules: dict | None = None) -> Profile:
 _FULL_PROFILE = _profile(["TestLogEvidence", "HtmlEvidence", "BrowserLogEvidence"])
 
 
-def _att(mime: str, device: str, content: str = "x", path: str = "") -> Attachment:
+def _att(
+    device: str, extension: str, mime: str = "text/plain", content: str = "x", path: str = ""
+) -> Attachment:
+    """One attachment, named the way VisiumGo names it: folder + device + number."""
     return Attachment(
-        file_name=f"{device}.file",
+        file_name=f"220807234/{device}_12345{extension}",
         mime_type=mime,
         device_id=device,
         content=content,
@@ -37,10 +48,11 @@ def _att(mime: str, device: str, content: str = "x", path: str = "") -> Attachme
 
 def _web_attachments() -> list[Attachment]:
     return [
-        _att("text/plain", "test", "steps"),
-        _att("text/plain", "browser.default", "blog"),
-        _att("text/html", "browser.default", "<html/>"),
-        _att("image/png", "browser.default", "", "web.png"),
+        _att("test", ".log", content="steps"),
+        _att("test", ".properties", content="retryNumber=1"),
+        _att("browser.default", ".log", content="blog"),
+        _att("browser.default", ".html", mime="text/html", content="<html/>"),
+        _att("browser.default", ".png", mime="image/png", content="", path="web.png"),
     ]
 
 
@@ -53,6 +65,7 @@ def test_attachments_map_to_expected_classes() -> None:
     names = {type(e).evidence_name for e in evidences}
     assert names == {
         "TestLogEvidence",
+        "TestPropertiesEvidence",
         "BrowserLogEvidence",
         "HtmlEvidence",
         "WebScreenshotEvidence",
@@ -62,7 +75,9 @@ def test_attachments_map_to_expected_classes() -> None:
 def test_two_text_plain_split_by_device_id() -> None:
     # text/plain + test -> TestLog ; text/plain + browser.default -> BrowserLog
     evidences = EvidenceRegistry().build_for(
-        _scenario([_att("text/plain", "test", "T"), _att("text/plain", "browser.default", "B")]),
+        _scenario(
+            [_att("test", ".log", content="T"), _att("browser.default", ".log", content="B")]
+        ),
         _FULL_PROFILE,
     )
     by_name = {type(e).evidence_name: e for e in evidences}
@@ -70,9 +85,51 @@ def test_two_text_plain_split_by_device_id() -> None:
     assert by_name["BrowserLogEvidence"].to_block().label == BLOCK_BROWSER
 
 
+def test_test_log_and_test_properties_are_different_evidence() -> None:
+    """Same mime, same device, different file: they must not share a class.
+
+    They used to both match `text/plain` + `test`, so a profile asking for the
+    step flow got the properties file inside the same prompt block.
+    """
+    evidences = EvidenceRegistry().build_for(
+        _scenario(
+            [
+                _att("test", ".log", content="steps"),
+                _att("test", ".properties", content="retryNumber=1"),
+            ]
+        ),
+        _profile(["TestLogEvidence", "TestPropertiesEvidence"]),
+    )
+    blocks = {type(e).evidence_name: e.to_block() for e in evidences}
+    assert blocks["TestLogEvidence"].label == BLOCK_STEPS
+    assert blocks["TestLogEvidence"].content == "steps"
+    assert blocks["TestPropertiesEvidence"].label == BLOCK_TEST_PROPERTIES
+
+
+def test_test_properties_stays_out_of_the_prompt_by_default() -> None:
+    """Faz 1 decision: stored, never prompted unless a profile asks for it."""
+    evidences = EvidenceRegistry().build_for(
+        _scenario([_att("test", ".properties", content="retryNumber=1")]), _FULL_PROFILE
+    )
+    assert [type(e).evidence_name for e in evidences] == ["TestPropertiesEvidence"]
+    assert evidences[0].to_block() is None
+
+
+def test_mobile_dom_xml_is_its_own_evidence() -> None:
+    """The mobile UI tree now arrives as its own `.xml` attachment (was in test.log)."""
+    evidences = EvidenceRegistry().build_for(
+        _scenario(
+            [_att("mobile.android.Samsung-M31", ".xml", mime="text/xml", content="<hierarchy/>")]
+        ),
+        _profile(["MobileDomEvidence"]),
+    )
+    assert [type(e).evidence_name for e in evidences] == ["MobileDomEvidence"]
+    assert evidences[0].to_block().label == BLOCK_MOBILE_DOM
+
+
 def test_mobile_png_prefix_matches_mobile_screenshot() -> None:
     evidences = EvidenceRegistry().build_for(
-        _scenario([_att("image/png", "mobile.ios.iPhone 14 Pro Max", "", "m.png")]),
+        _scenario([_att("mobile.ios.iPhone 14 Pro Max", ".png", mime="image/png", path="m.png")]),
         _FULL_PROFILE,
     )
     by_name = {type(e).evidence_name: e for e in evidences}
@@ -100,7 +157,7 @@ def test_profile_controls_llm_flag() -> None:
 
 def test_unknown_attachment_is_skipped() -> None:
     evidences = EvidenceRegistry().build_for(
-        _scenario([_att("application/pdf", "weird", "?")]), _FULL_PROFILE
+        _scenario([_att("weird", ".pdf", mime="application/pdf", content="?")]), _FULL_PROFILE
     )
     assert evidences == []
 
@@ -108,7 +165,17 @@ def test_unknown_attachment_is_skipped() -> None:
 def test_build_log_attachment_maps_to_build_evidence() -> None:
     profile = _profile(["BuildLogEvidence"])
     evidences = EvidenceRegistry().build_for(
-        _scenario([_att("text/plain", "build", "job log")]), profile
+        _scenario(
+            [
+                Attachment(
+                    file_name="build.log",
+                    mime_type="text/plain",
+                    device_id="build",
+                    content="job log",
+                )
+            ]
+        ),
+        profile,
     )
     assert [type(e).evidence_name for e in evidences] == ["BuildLogEvidence"]
     assert evidences[0].to_block().label == "BUILD LOG"

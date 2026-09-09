@@ -8,11 +8,28 @@
     ],
     "evidence_to_store": [
       "TestLogEvidence",
+      "TestPropertiesEvidence",
       "HtmlEvidence",
+      "MobileDomEvidence",
       "BrowserLogEvidence",
       "BuildLogEvidence",
       "WebScreenshotEvidence",
       "MobileScreenshotEvidence"
     ]
+  },
+  "job_failed": {
+    "job_ids": [],
+    "evidence_to_llm": [],
+    "evidence_to_store": [
+      "TestLogEvidence",
+      "TestPropertiesEvidence",
+      "HtmlEvidence",
+      "MobileDomEvidence",
+      "BrowserLogEvidence",
+      "BuildLogEvidence",
+      "WebScreenshotEvidence",
+      "MobileScreenshotEvidence"
+    ],
+    "prompt": "buildlog"
   }
 }

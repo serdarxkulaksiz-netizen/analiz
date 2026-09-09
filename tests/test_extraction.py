@@ -15,9 +15,12 @@ from app.extraction.evidence_extractor import EvidenceExtractor
 from app.source.models import Attachment, RawScenario
 
 
-def _att(mime: str, device: str, content: str = "x", path: str = "") -> Attachment:
+def _att(
+    device: str, extension: str, mime: str = "text/plain", content: str = "x", path: str = ""
+) -> Attachment:
+    """One attachment, named like VisiumGo names it (folder + device + number)."""
     return Attachment(
-        file_name=f"{device}.file",
+        file_name=f"220807234/{device}_12345{extension}",
         mime_type=mime,
         device_id=device,
         content=content,
@@ -34,10 +37,10 @@ def _scenario(**overrides: object) -> RawScenario:
             Step(name="Adım iki", status=StepStatus.FAILED),
         ],
         "attachments": [
-            _att("text/plain", "test", "test log"),
-            _att("text/plain", "browser.default", "browser log"),
-            _att("text/html", "browser.default", "<html/>"),
-            _att("image/png", "browser.default", "", "web.png"),
+            _att("test", ".log", content="test log"),
+            _att("browser.default", ".log", content="browser log"),
+            _att("browser.default", ".html", mime="text/html", content="<html/>"),
+            _att("browser.default", ".png", mime="image/png", content="", path="web.png"),
         ],
         "raw_detail": {"properties": {"x": "1"}},
     }
@@ -81,7 +84,7 @@ def test_missing_evidence_gets_placeholder_block(
 ) -> None:
     """Profile wants DOM but it never arrived -> block stays, says so."""
     scenario = _scenario(
-        attachments=[_att("text/plain", "test", "test log")]  # no html at all
+        attachments=[_att("test", ".log", content="test log")]  # no html at all
     )
     findings = extractor.extract(scenario)
 
@@ -96,8 +99,8 @@ def test_empty_evidence_also_gets_placeholder(extractor: EvidenceExtractor) -> N
     # Attachment arrived but the download failed -> empty content, same result.
     scenario = _scenario(
         attachments=[
-            _att("text/plain", "test", "test log"),
-            _att("text/html", "browser.default", ""),
+            _att("test", ".log", content="test log"),
+            _att("browser.default", ".html", mime="text/html", content=""),
         ]
     )
     findings = extractor.extract(scenario)
@@ -117,28 +120,29 @@ def test_evidence_report_shows_what_arrived_and_what_matched(
 ) -> None:
     """One real run must answer "did it not arrive, or did it not match?".
 
-    An attachment whose mime_type/device_id no Evidence claims used to vanish
+    An attachment whose device_id/extension no Evidence claims used to vanish
     without trace: the prompt block simply showed "(bu kanıt alınamadı)" and the
     cause was indistinguishable from the file never being produced.
     """
     scenario = _scenario()
     scenario.attachments.append(
         Attachment(
-            file_name="beklenmeyen.xml",
-            mime_type="application/xml",
+            file_name="beklenmeyen.pdf",
+            mime_type="application/pdf",
             device_id="unknown-device",
-            content="<x/>",
+            content="?",
         )
     )
 
     report = extractor.extract(scenario).evidence_report
 
-    assert "beklenmeyen.xml" in report.unmatched
+    assert "beklenmeyen.pdf" in report.unmatched
     by_name = {row.file_name: row for row in report.attachments}
-    assert by_name["beklenmeyen.xml"].evidence_name == ""  # nothing claimed it
-    assert by_name["test.file"].evidence_name == "TestLogEvidence"
-    assert by_name["test.file"].goes_to_llm is True
-    assert by_name["test.file"].chars > 0
+    assert by_name["beklenmeyen.pdf"].evidence_name == ""  # nothing claimed it
+    test_log = "220807234/test_12345.log"
+    assert by_name[test_log].evidence_name == "TestLogEvidence"
+    assert by_name[test_log].goes_to_llm is True
+    assert by_name[test_log].chars > 0
 
     blocks = {row.label: row for row in report.blocks}
     assert blocks["ADIMLAR"].available is True

@@ -4,8 +4,6 @@ GÖREV: Aşağıda bir MOBİL (cihaz) otomasyon senaryosunun başarısız koşum
 Bunları incele ve KESİN HÜKÜM DEĞİL, gerekçeli bir ÖN TEŞHİS üret:
 hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa geçici mi?
 
-Parametre1: $parameter1
-Parametre2: $parameter2
 Senaryo: $scenario_name
 
 === PATLAYAN ADIM ===

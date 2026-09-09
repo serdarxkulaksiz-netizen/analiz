@@ -1,6 +1,5 @@
 """Profile registry tests: job_id mapping, manual override, fail-fast config."""
 
-import json
 from pathlib import Path
 
 import pytest
@@ -9,6 +8,7 @@ from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
 from app.extraction.evidence_extractor import EvidenceExtractor
 from app.prompting.builder import PromptBuilder
+from tests.conftest import write_profiles
 from tests.test_extraction import _scenario  # reuse the sample scenario
 
 _CONFIG = {
@@ -31,14 +31,14 @@ _CONFIG = {
 }
 
 
-def _write(tmp_path: Path, data: dict) -> Path:
-    path = tmp_path / "profiles.json"
-    path.write_text(json.dumps(data), encoding="utf-8")
-    return path
+def _write(tmp_path: Path, data: dict, *, complete: bool = False) -> Path:
+    return write_profiles(tmp_path / "profiles.json", data, complete=complete)
 
 
-def _registry(tmp_path: Path, data: dict | None = None) -> ProfileRegistry:
-    return ProfileRegistry(_write(tmp_path, data or _CONFIG))
+def _registry(
+    tmp_path: Path, data: dict | None = None, *, complete: bool = False
+) -> ProfileRegistry:
+    return ProfileRegistry(_write(tmp_path, data or _CONFIG, complete=complete))
 
 
 def test_job_id_selects_profile(tmp_path: Path) -> None:
@@ -71,6 +71,12 @@ def test_unknown_profile_name_raises(tmp_path: Path) -> None:
 def test_missing_default_profile_fails_fast(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="default"):
         _registry(tmp_path, {"onlyone": {"job_ids": ["1"]}})
+
+
+def test_missing_job_failed_profile_fails_fast(tmp_path: Path) -> None:
+    """A config without `job_failed` cannot serve a job-level FAILED run."""
+    with pytest.raises(ValueError, match="job_failed"):
+        _registry(tmp_path, {"default": {}}, complete=True)
 
 
 def test_duplicate_job_id_fails_fast(tmp_path: Path) -> None:

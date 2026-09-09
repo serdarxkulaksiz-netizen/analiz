@@ -30,7 +30,7 @@ Source → Extraction(+Evidence) → PreCheck → Prompt → LLM → Parse → P
 | `app/config.py` | `Settings` — tüm ayarlar (kontrol paneli) |
 | `app/domain/` | Sözleşmeler: enum'lar, `Findings`, `LLMAnalysis`/`AnalysisResult`, `api.py` (GET görünümü) |
 | `app/source/` | Halka 1 — veri çekme (Mock + VisiumGo + HTTP client) |
-| `app/evidence/` | Kanıt sınıfları + registry (mimeType+deviceId eşleme) |
+| `app/evidence/` | Kanıt sınıfları + registry (deviceId + uzantı eşleme) |
 | `app/extraction/` | Halka 2 — ham veri → `Findings` |
 | `app/precheck/` | LLM öncesi kısa devre: `NoOpPreCheck` + kural tabanlı `RuleBasedPreCheck` |
 | `app/prompting/` | Halka 3 — `Findings` → prompt metni |
@@ -97,7 +97,9 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 
 ## 4. Veri modelleri (kutular)
 
-**`Attachment`** (bir ham dosya) — `file_name`, `mime_type`, `device_id`, `content` (metin), `stored_path` (diskteki yolu).
+**`Attachment`** (bir ham dosya) — `file_name`, `mime_type`, `device_id`, `content` (metin), `stored_path` (diskteki yolu) + türetilmiş `extension` ve `label` (`<deviceId><uzantı>` = önyüzdeki ad).
+
+**`RunSummary`** (çözülmüş koşum) — `run_id`, `job_id`, `job_name`, `state`, `run_result`, ham cevap, `note`.
 
 **`RawScenario`** (bir başarısız senaryonun ham hali) — `scenario_name`, `scenario_id`,
 `error_text`, `steps: list[Step]`, `attachments: list[Attachment]`, `retry_info`,
@@ -141,25 +143,32 @@ sayılır ve boş kalır), `raw_run_response`, `raw_results_response` (ham /resu
 **`Source`** (arayüz)
 | Method | Ne yapar |
 |---|---|
-| `resolve_run_id(job_id, run_id="")` | **Hangi koşum?** — ucuz; `run_id` verilmişse ağa hiç çıkmaz, yoksa en yeni koşumu bulur. Cache kontrolü bunun sonucuyla yapılır (isabet ederse indirme hiç olmaz) |
-| `fetch_job(job_id, run_id="")` | Bir job'ın başarısız senaryolarını `JobData` olarak döndürür. `job_id` veya `run_id`'den biri koşumu belirler (parametreler source'a gitmez — yalnız analiz tarafını özelleştirir) |
+| `resolve_run(job_id, run_id="")` | **Hangi koşum?** — ucuz, kanıt indirmeden. `RunSummary` döner: `run_id`, `job_id`, `job_name`, **`state`**, `run_result`, ham cevap, `note`. Cache kontrolü ve job durumu dallanması bunun sonucuyla yapılır |
+| `fetch_job(run)` | Çözülmüş koşumun başarısız senaryolarını `JobData` olarak döndürür. Çözümleme burada **tekrar yapılmaz** (parametreler source'a gitmez — yalnız analiz tarafını özelleştirir) |
 
 **`MockSource`** (sahte veri; VisiumGo kapalıyken çalışır)
 | Method | Ne yapar |
 |---|---|
-| `fetch_job(...)` | 2 başarısız sahte senaryo döndürür (hepsi `MOCK_` etiketli). `job_id` sonu `-clean` → hatasız job. Her senaryo TÜM attachment tiplerini taşır; prompt'a ne gireceğini profil seçer |
+| `resolve_run(...)` | Sahte koşum özeti; `state` job_id sonekinden gelir: `-running` → RUNNING, `-jobfail` → FAILED, yoksa PASSED |
+| `fetch_job(run)` | 2 başarısız sahte senaryo döndürür (hepsi `MOCK_` etiketli). `job_id` sonu `-clean` → hatasız job. Her senaryo TÜM attachment tiplerini taşır (web + mobil + `test.properties`); prompt'a ne gireceğini profil seçer |
 
 **`VisiumGoSource`** (gerçek VisiumGo API)
 | Method | Ne yapar |
 |---|---|
 | `__init__(client, attachments_dir, build_log_path="", build_log_entry="build.log")` | HTTP client + indirme klasörü + (varsa) `/logs` yolu ve ZIP içinden okunacak dosya |
-| `fetch_job(...)` | Zincir A-D'yi çalıştırır, `JobData` döndürür |
-| `_resolve_run(job_id, run_id)` | **Adım A**: `run_id` verildiyse onu kullanır; yoksa `/api/runs?jobId=` → `startTime` en büyük koşum |
-| `_build_scenario(run_id, record)` | **Adım C**: senaryo detayını çeker (`errorText`, `stepResults`, `attachments`) → `RawScenario`; ham detay cevabı `raw_detail`'de saklanır. Adım adı `line`'dan alınır |
-| `_download_attachment(run_id, meta)` | **Adım D**: dosyayı indirir (URL-encode), diske kaydeder; inmezse boş `Attachment` (o kanıt "eksik" sayılır) |
-| `_save(run_id, file_name, data)` | İnen dosyayı `database/attachments/...` altına yazar (pathlib) |
-| `_fetch_build_log(run_id)` | VisiumGo `/logs`'tan **ZIP** indirir, `_extract_log` ile `build.log`'u çıkarır. `(log, sebep)` döner: yol boşsa atlar (ikisi de boş); ağ/404/ZIP/dosya hatasında log boş kalır ama **sebep** döner ve job devam eder |
+| `get_run(run_id)` | `GET /api/runs/{run_id}` → tek koşum (`id, jobId, jobName, startTime, duration, runResult{state,…}`) |
+| `list_runs(job_id)` | `GET /api/runs?jobId=` → o job'ın koşumları, aynı şemada |
+| `get_results(run_id)` | `GET /api/runs/{run_id}/results` → senaryolar (`resultType`: FAILED/PASSED/UNSTABLE) |
+| `get_scenario_detail(run_id, scenario_id)` | `GET .../results/{id}` → `errorText`, `stepResults`, `attachments`, `properties` |
+| `download_attachment(run_id, meta, scenario_id="")` | Dosyayı indirir (URL-encode), diske kaydeder; inmezse boş `Attachment` (o kanıt "eksik" sayılır) |
+| `fetch_build_log(run_id)` | VisiumGo `/logs`'tan **ZIP** indirir, `_extract_log` ile `build.log`'u çıkarır. `(log, sebep)` döner: yol boşsa atlar (ikisi de boş); ağ/404/ZIP/dosya hatasında log boş kalır ama **sebep** döner ve job devam eder |
+| `resolve_run(job_id, run_id="")` | **Adım A**: `run_id` → `get_run`; yoksa `list_runs` → `RUNNING` elenir, kalan `PASSED`/`FAILED` içinden **en büyük `id`**. Bilinmeyen durum elenirse `note`'a yazılır; hiç kalmazsa hata |
+| `fetch_job(run)` | Adım B-D'yi çözülmüş koşum için çalıştırır, `JobData` döndürür |
+| `_build_scenario(run_id, record)` | **Adım C**: senaryo detayını çeker → `RawScenario`; ham detay cevabı `raw_detail`'de saklanır. Adım adı `line`'dan alınır |
+| `_save(run_id, scenario_id, attachment, data)` | İnen dosyayı `database/attachments/<run_id>/<scenario_id>/<deviceId><uzantı>` altına yazar; aynı ad ikinci kez gelirse `-2` (üzerine yazmaz) |
 | `_extract_log(archive)` | ZIP'ten yapılandırılmış dosyayı okur (ham ZIP saklanmaz) |
+
+> Her uç **tek amaçlı ve public**; sırayı yalnız `fetch_job` kurar. Metotlar sırayı bilmez.
 
 > **Adım B** (`fetch_job` içinde): `/api/runs/{run_id}/results` → `resultType == "FAILED"` filtresi; PASSED/flaky atlanır.
 
@@ -177,7 +186,7 @@ sayılır ve boş kalır), `raw_run_response`, `raw_results_response` (ham /resu
 **`Extractor`** (arayüz)
 | Method | Ne yapar |
 |---|---|
-| `extract(scenario, *, parameter1="default", parameter2="default", job_id="", build_log="")` | `RawScenario` → `Findings` (profil job_id/parameter1 ile seçilir) |
+| `extract(scenario, *, parameter1="default", parameter2="default", job_id="", forced_profile="", build_log="")` | `RawScenario` → `Findings` (profil: `forced_profile` → `parameter1` → `job_id` → `default`) |
 
 **`EvidenceExtractor`** (tek, kaynaktan bağımsız gerçekleme)
 | Method | Ne yapar |
@@ -188,8 +197,8 @@ sayılır ve boş kalır), `raw_run_response`, `raw_results_response` (ham /resu
 **`Evidence`** (kanıt arayüzü — 2 aile: metin ve ekran görüntüsü)
 | Üye | Ne yapar |
 |---|---|
-| `mime_type` / `device_id` (sınıf özelliği) | Bu kanıtın hangi attachment'a uyduğu |
-| `matches(attachment)` | mimeType eşit + deviceId tam/prefix eşleşiyor mu (mobil için `mobile.` prefix) |
+| `device_id` / `extension` (sınıf özelliği) | Bu kanıtın hangi attachment'a uyduğu (önyüzdeki adın aynısı) |
+| `matches(attachment)` | Uzantı eşit + deviceId tam/prefix eşleşiyor mu (mobil için `mobile.` prefix). **mimeType kimliğin parçası değildir**: `test.log` ile `test.properties` ikisi de `text/plain` |
 | `is_present` | Kanıt geldi mi (eksik tolere edilir) |
 | `to_block()` | LLM'e gidecek `=== etiket ===` bloğu (uygunsa), yoksa `None` |
 | `screenshot_path` | Ekran görüntüsü yolu (metin kanıtlarında boş) |
@@ -197,26 +206,28 @@ sayılır ve boş kalır), `raw_run_response`, `raw_results_response` (ham /resu
 | `select_content()` (metin) | İçerik seçici — profilin kurallarını **sırayla** uygular (kural yoksa passthrough) |
 | `was_trimmed` | Kurallar içeriği gerçekten değiştirdi mi (görünür bayrak) |
 
-**6 kanıt sınıfı** (yalnızca bunlar):
-| Sınıf | mimeType + deviceId | Varsayılan profilde LLM'e |
+**8 kanıt sınıfı** (yalnızca bunlar):
+| Sınıf | deviceId + uzantı | Varsayılan profilde LLM'e |
 |---|---|---|
-| `TestLogEvidence` | text/plain + `test` → **ADIMLAR** | ✅ |
-| `BrowserLogEvidence` | text/plain + `browser.default` → **BROWSER LOG** | ✅ |
-| `BuildLogEvidence` | text/plain + `build` → **BUILD LOG** | ❌ (job-seviyesi; profil açar) |
-| `HtmlEvidence` | text/html + `browser.default` → **DOM** | ✅ |
-| `WebScreenshotEvidence` | image/png + `browser.default` | ❌ (sadece diske) |
-| `MobileScreenshotEvidence` | image/png + `mobile.*` | ❌ (sadece diske) |
+| `TestLogEvidence` | `test` + `.log` → **ADIMLAR** | ✅ |
+| `TestPropertiesEvidence` | `test` + `.properties` → **TEST PROPERTIES** | ❌ (sadece saklanır) |
+| `BrowserLogEvidence` | `browser.default` + `.log` → **BROWSER LOG** | ✅ |
+| `BuildLogEvidence` | `build` + `.log` → **BUILD LOG** | ❌ (job-seviyesi; profil açar) |
+| `HtmlEvidence` | `browser.default` + `.html` → **DOM** | ✅ |
+| `MobileDomEvidence` | `mobile.*` + `.xml` → **MOBIL DOM** | ❌ (sadece saklanır) |
+| `WebScreenshotEvidence` | `browser.default` + `.png` | ❌ (sadece diske) |
+| `MobileScreenshotEvidence` | `mobile.*` + `.png` | ❌ (sadece diske) |
 
 **`EvidenceRegistry`**
 | Method | Ne yapar |
 |---|---|
-| `build_for(scenario, profile, ctx=None)` | Attachment'ları (mimeType+deviceId ile) Evidence'lara eşler; bayrakları **ve kuralları** profilden enjekte eder |
+| `build_for(scenario, profile, ctx=None)` | Attachment'ları (deviceId + uzantı ile) Evidence'lara eşler; bayrakları **ve kuralları** profilden enjekte eder |
 
 **`ProfileRegistry`** (`app/evidence/profiles.py`)
 | Method | Ne yapar |
 |---|---|
-| `__init__(config_path)` | `profiles.json`'ı yükler, kuralları **açılışta derler**; `default` profili yoksa / aynı job_id iki profildeyse / kural config'i bozuksa **açılışta patlar** (fail-fast) |
-| `get(job_id="", parameter1="")` | Profili döndürür; sıra: `parameter1` (profil adı) → `job_ids` eşleşmesi → `default`. Bilinmeyen profil adı → hata |
+| `__init__(config_path)` | `profiles.json`'ı yükler, kuralları **açılışta derler**; `default` **veya `job_failed`** profili yoksa / aynı job_id iki profildeyse / kural config'i bozuksa **açılışta patlar** (fail-fast) |
+| `get(job_id="", parameter1="", forced="")` | Profili döndürür; sıra: `forced` (job durumu) → `parameter1` (profil adı) → `job_ids` eşleşmesi → `default`. Bilinmeyen profil adı → hata |
 
 **Kural motoru** (`app/evidence/rules.py`) — `Rule.apply(text, ctx)`; `RULE_REGISTRY`'den seçilir.
 | Kural | Ne yapar |
@@ -258,7 +269,7 @@ Bozuk regex / bilinmeyen verdict / kova dışı confidence → **açılışta** 
 | Method | Ne yapar |
 |---|---|
 | `__init__(template_path, confidence_buckets)` | Şablonu dosyadan yükler (yoksa açılışta patlar = fail-fast) |
-| `build(findings)` | `findings.prompt_template`'in seçtiği şablonu doldurur: ortak alanlar (`$parameter1`, `$scenario_name`, `$failed_step`, `$error_message`, `$steps`, `$extra_context`, `$confidence_buckets`), toplu `$evidence_blocks` ve **kanıt bazlı** `$test_log` / `$dom` / `$browser_log` / `$build_log`. Gelmeyen kanıt yer tutucu yazar |
+| `build(findings)` | `findings.prompt_template`'in seçtiği şablonu doldurur: ortak alanlar (`$scenario_name`, `$failed_step`, `$error_message`, `$steps`, `$extra_context`, `$confidence_buckets`), toplu `$evidence_blocks` ve **kanıt bazlı** `$test_log` / `$dom` / `$mobile_dom` / `$browser_log` / `$build_log` / `$test_properties`. Gelmeyen kanıt yer tutucu yazar. `$parameter1`/`$parameter2` çalışır ama hiçbir şablonda yoktur (plan.md A4.2) |
 | `version_of(name)` | Şablonun (şablon + sözleşme) tam metninin kısa hash'i → `meta.prompt_version` |
 | `ensure_templates_exist(names)` | Profillerin istediği şablonlar var mı — **açılışta** doğrulanır |
 
@@ -315,7 +326,7 @@ Tüm halkaları enjekte alır; hiçbirini kendisi yaratmaz.
 | `__init__(settings, repository, source, extractor, prompt_builder, llm_provider, precheck)` | Parçaları takar; run satırı kilidi kurar |
 | `create_run(parameter1, job_id, parameter2, run_id="")` | `runs/` tablosuna `pending` satır yazar, `analyzer_run_id` döndürür (POST bunu çağırır) |
 | `run_analysis(analyzer_run_id)` | **Tek tetik** (arka plan girişi). `_run_job`'u sarar; job-seviyesi hata → `status=failed` + not |
-| `_run_job(run)` | `running` yapar → (cache açıksa kontrol) → `source.fetch_job` → run'ı günceller → hata yoksa `done` → varsa her senaryo için `_analyze_scenario` (paralel, `Semaphore`) → `done` |
+| `_run_job(run)` | `running` yapar → **`source.resolve_run`** (koşum + job durumu) → `RUNNING` ise hiçbir şey indirmeden hata → (cache açıksa kontrol) → `source.fetch_job(summary)` → run'ı günceller → hata yoksa `done` → varsa her senaryo için `_analyze_scenario` (paralel, `Semaphore`) → `done`. `state == FAILED` ise her senaryo `job_failed` profiliyle analiz edilir ve bu `note`'a yazılır |
 | `_analyze_scenario(...)` | **Asıl zincir** (aşağıda). Asla exception fırlatmaz (bir senaryo koşuyu düşürmez) |
 | `_find_cached_run(run)` | Aynı **run_id** + parametrelerin daha önce tam analizli koşumunu bulur. job_id ile eşleşmez (bir job'ın çok koşumu olur); run_id boşsa cache aranmaz |
 | `_screenshot_paths(scenario)` | Ham iz satırı için image attachment yollarını toplar |
@@ -382,7 +393,7 @@ değil, **API sınırında** yapılır: `AnalyzerService.get_run()` tam kaydı d
 | `prompts/` | **Giden** taraf: `prompt` + gönderilen tam `request` |
 | `llm_responses/` | **Gelen** taraf: `raw_response` (tam zarf) + `content` + model/token/süre |
 | `analysis_results/` | Nihai teşhis (`verdict`, `root_cause`... + sistem meta + `status`) |
-| `attachments/` | (gerçek VisiumGo) inen ham dosyalar |
+| `attachments/` | (gerçek VisiumGo) inen ham dosyalar: `<run_id>/<scenario_id>/<deviceId><uzantı>` — dosya adı önyüzdekiyle aynı (`browser.default.html`, `test.properties`) |
 
 Aynı senaryonun izi **aynı `result_id`** ile `evidence`/`prompts`/`llm_responses`/`analysis_results`
 arasında bağlıdır. `analyzer_run_id` ise hepsini bir job koşusuna bağlar.

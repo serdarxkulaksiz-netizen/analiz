@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from tests.conftest import write_profiles
 
 
 def _client(settings: Settings) -> TestClient:
@@ -110,8 +111,7 @@ def test_evidence_to_store_controls_inline_content(settings: Settings, tmp_path)
             "evidence_to_store": ["TestLogEvidence"],
         }
     }
-    path = tmp_path / "p.json"
-    path.write_text(json.dumps(profiles), encoding="utf-8")
+    path = write_profiles(tmp_path / "p.json", profiles)
     settings = settings.model_copy(update={"profiles_config_path": path})
     client = _client(settings)
 
@@ -339,9 +339,9 @@ def test_cache_hit_does_not_fetch_evidence(settings: Settings) -> None:
     calls: list[str] = []
     real_fetch = service._source.fetch_job
 
-    async def counting_fetch(job_id: str, run_id: str = ""):
-        calls.append(run_id or job_id)
-        return await real_fetch(job_id, run_id)
+    async def counting_fetch(run):
+        calls.append(run.run_id)
+        return await real_fetch(run)
 
     service._source.fetch_job = counting_fetch  # type: ignore[method-assign]
 

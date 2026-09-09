@@ -1,12 +1,12 @@
 """Evidence registry (plan.md A5 / real-spec Bölüm 3).
 
-Maps attachments to Evidence classes by `(mime_type, device_id)` — no file-name
+Maps attachments to Evidence classes by `(device_id, extension)` — no file-name
 `if`s. The active Profile decides which evidence goes to the LLM / to the store
 and which content rules shape each one; both are injected per call.
 
-Attachments with no matching class are skipped for the LLM mapping, but note
-that downloading/storing raw files happens in the Source layer regardless —
-nothing is silently dropped from disk.
+Attachments with no matching class are skipped for the LLM mapping, but they
+are neither lost nor invisible: the Source downloads and stores every file
+regardless, and extraction records the unmatched ones in the evidence report.
 """
 
 from app.evidence.base import Evidence
@@ -16,17 +16,21 @@ from app.evidence.types import (
     BrowserLogEvidence,
     BuildLogEvidence,
     HtmlEvidence,
+    MobileDomEvidence,
     MobileScreenshotEvidence,
     TestLogEvidence,
+    TestPropertiesEvidence,
     WebScreenshotEvidence,
 )
 from app.source.models import Attachment, RawScenario
 
 _EVIDENCE_CLASSES: tuple[type[Evidence], ...] = (
     TestLogEvidence,
+    TestPropertiesEvidence,
     BrowserLogEvidence,
     BuildLogEvidence,
     HtmlEvidence,
+    MobileDomEvidence,
     WebScreenshotEvidence,
     MobileScreenshotEvidence,
 )

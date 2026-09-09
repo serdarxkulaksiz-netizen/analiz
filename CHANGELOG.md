@@ -1536,3 +1536,96 @@ tek kelimeyle kesiyor.
 `pytest` **137/137** · ruff + format + mypy temiz.
 
 **Sıradaki adım:** testler — gerçek build.log ile senaryo dilimlemesinin doğrulanması.
+
+---
+
+# [Servis fazı 1/2] Koşum çözümleme, job durumu, kanıt kimliği (2026-09-08)
+
+Plan: `docs/servis-fazi-notlari.md` (kararlar S1-S13 + servis referansı).
+**Kapsam:** Halka 1 + kanıt tanıma/kaydetme. Prompt ve profil içeriği **Faz 2**.
+
+## Koşum çözümlemesi tek yere indi
+
+Yeni `Source.resolve_run(job_id, run_id)` → **`RunSummary`** (`run_id`, `job_id`, `job_name`,
+`state`, `run_result`, ham cevap, `note`). `fetch_job` artık çözümleme yapmıyor, çözülmüş koşumu
+alıyor. İki eski kusur birden kapandı: `job_id` yolunda `/api/runs?jobId=` **iki kez**
+çağrılıyordu, `run_id` yolunda ise hiç çağrılmadığı için `raw_run` boş kalıyor, `job_name` ve
+`runResult` hiç dolmuyordu.
+
+- **`run_id` verildiğinde** artık `GET /api/runs/{run_id}` çağrılıyor (bugüne kadar hiç
+  çağrılmıyordu). Profil, cevabın `jobId`'siyle seçilebiliyor: run_id ile gelen istek de kendi
+  job'ının profilini alıyor.
+- **`job_id` verildiğinde** koşum seçimi `startTime` yerine **en büyük `id`** ile yapılıyor
+  (`id` = run_id ve her koşumda büyüyor). `RUNNING` koşumlar eleniyor; **bilinmeyen** bir durum
+  da eleniyor ama sessizce değil, `runs` satırının `note`'una yazılıyor.
+
+## Job durumu (`runResult.state`) analizi yönlendiriyor
+
+`state` **job'ın** sağlığıdır, senaryoların değil — gerçek bir koşumda `state=PASSED` iken
+`failScenarios=2` görüldü. Dallanma koda dağılmış `if` değil, tek registry satırı
+(`STATE_PROFILE_OVERRIDE`):
+
+| `state` | Davranış |
+|---|---|
+| `PASSED` | normal zincir |
+| `FAILED` | `job_ids` eşlemesine bakılmadan sabit **`job_failed`** profili; kullanılan profil `note`'a yazılır |
+| `RUNNING` | **hiçbir istek atılmaz** (build log dahil), koşum `failed` biter |
+
+`job_failed` profili artık **zorunlu** (`default` gibi): yoksa uygulama açılmıyor. İçeriği
+(`evidence_to_llm`) bilerek **boş**: gerçek bir FAILED job'ın kanıtı görülmeden doldurulursa
+uydurma olur (B3.3/B3.13). Bugünkü davranışı: senaryolar `errorText` + adımlarla analiz edilir.
+
+## Kanıt kimliği: `deviceId` + uzantı (mime değil)
+
+Gerçek cevaplarda önyüz etiketinin **`deviceId` + dosya uzantısı** olduğu görüldü
+(`browser.default.html`, `test.properties`); ham `fileName` ise
+`<klasör>/<deviceId>_<sayı>.<uzantı>`.
+
+Bu, **gerçek bir hatayı** kapattı: `test.log` ve `test.properties` ikisi de `text/plain` +
+`test` olduğu için **aynı** Evidence sınıfına düşüyordu — profil adım akışını istediğinde
+properties dosyası da aynı `=== ADIMLAR ===` bloğuna giriyordu.
+
+- **İki yeni kanıt sınıfı:** `MobileDomEvidence` (`mobile.*` + `.xml`) ve
+  `TestPropertiesEvidence` (`test` + `.properties`). İkisi de **saklanır, prompt'a girmez**;
+  istenirse config satırıyla açılır.
+- `plan.md` A4.3'teki **"ayrı mobil XML/DOM dosyası yoktur"** kaydı gerçek koşumla çürüdü:
+  mobil UI ağacı artık ayrı `.xml` dosyası olarak geliyor. Kilitli karar 7 yeniden yazıldı.
+
+## Ekler önyüzdeki adıyla, senaryo klasörü altında
+
+`database/attachments/<run_id>/<scenario_id>/<deviceId><uzantı>`. Senaryo klasörü şart: bir
+koşumun her senaryosu kendi `browser.default.html`'ini üretir, düz isimle birbirinin üstüne
+yazarlardı. Aynı senaryoda aynı ad ikinci kez gelirse `-2` eklenir (üzerine yazılmaz).
+
+## `parameter1` / `parameter2` prompt'tan çıktı
+
+Beş şablondan `Parametre1/2` satırları kaldırıldı. Yapı **duruyor**: `Findings` alanları,
+`$parameter1`/`$parameter2` yer tutucuları ve `parameter1`'in profil override görevi aynı —
+gerçek değeri olan bir job bunları yalnız config ile geri koyabilir. Sebep: çoğu koşumda ikisi de
+kelimenin tam anlamıyla "default" yazıyordu, modele bilgi değil gürültü gidiyordu.
+
+## Servisler agent'a hazır (yalnız maliyetsiz kısım)
+
+Her VisiumGo ucu artık **tek amaçlı, public, dönüş şeması dokümante** bir metot:
+`get_run` · `list_runs` · `get_results` · `get_scenario_detail` · `download_attachment` ·
+`fetch_build_log`. Sırayı yalnız `fetch_job` kurar. Tool şeması / agent döngüsü / yeni tablo
+**yazılmadı** (B3.13); A2'nin "agentless tek-atış" kararı yürürlükte.
+
+## Mock gerçeğe hizalandı
+
+`MockSource` artık gerçekte görülen tam eki üretiyor (`test.log`, `test.properties`,
+`browser.default.*`, `mobile.*.xml/.png`) ve job durumunu veri koşuluyla:
+`-clean` (hatasız) · `-jobfail` (FAILED) · `-running` (RUNNING). Aksi hâlde Mac'te yeşil olan
+testler iş bilgisayarındaki gerçeği temsil etmez.
+
+## Doğrulama
+
+`pytest` **150/150** (+5) · `ruff check .` · `ruff format --check` · `mypy` temiz.
+Yeni testler: koşum seçimi (RUNNING eleme + en büyük id + bilinmeyen durum notu) · üç durum
+dallanması uçtan uca · run_id-only isteğin profili · `test.log`/`test.properties` ayrımı ·
+mobil `.xml` kanıtı · ek kayıt yolu ve önyüz adları · `fetch_job`'un yeniden çözümleme yapmaması.
+Mock modda POST→GET elle de koşturuldu (üç durum).
+
+**Sıradaki adım (Faz 2):** eşleşme tablosunun config'e taşınması · profilin istemediği ekin hiç
+indirilmemesi · `job_failed` profilinin içeriği · `properties.failedStep.*` · prompt boyutu
+(340k karakter → timeout) · build log dilimlemesinin gerçek logla doğrulanması.
