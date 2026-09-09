@@ -58,6 +58,28 @@
       ]
     }
   },
+  "finart_regresyon": {
+    "job_ids": [
+      "885",
+      "886",
+      "887"
+    ],
+    "prompt": "buildlog",
+    "extra_context": "",
+    "evidence_to_store": [
+      "BuildLogEvidence"
+    ],
+    "evidence_to_llm": [
+      "BuildLogEvidence"
+    ],
+    "rules": {
+      "BuildLogEvidence": [
+        {
+          "type": "keep_scenario_section"
+        }
+      ]
+    }
+  },
   "job_failed": {
     "job_ids": [],
     "prompt": "buildlog",
