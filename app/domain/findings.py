@@ -11,10 +11,12 @@ from app.domain.enums import StepStatus
 
 # Labeled evidence block names (plan.md A6) — contract constants, not config.
 # BROWSER LOG = browser.default.log; BUILD LOG = VisiumGo /logs -> build.log (job-level).
-#: Written in place of an evidence the profile asked for but that never arrived
-#: (or arrived empty), so the gap is visible to the LLM instead of the block
-#: silently disappearing from the prompt.
-EVIDENCE_UNAVAILABLE = "(bu kanıt alınamadı / bulunmuyor)"
+#
+# An evidence that did not arrive produces NO block at all: it leaves the prompt
+# together with its header (plan.md A5.4). There used to be a
+# "(bu kanıt alınamadı)" placeholder so the gap stayed visible; it was dropped
+# because a header with a marker under it is still noise the model has to reason
+# about, and the prompt then had to spend a paragraph explaining the marker.
 
 #: Prompt template used when a profile does not name its own (plan.md A8).
 #: Lives here, in the contract layer, because both the profile config and the
@@ -60,6 +62,10 @@ class AttachmentReport(BaseModel):
     evidence_name: str = ""
     #: Whether the active profile sends this evidence to the LLM.
     goes_to_llm: bool = False
+    #: True when the profile wanted neither to prompt nor to store this file,
+    #: so it was never fetched. Distinguishes "we chose not to" from "it did
+    #: not arrive" — both leave `chars` at 0.
+    download_skipped: bool = False
     #: Size as received (before content rules).
     chars: int = 0
 
@@ -67,9 +73,9 @@ class AttachmentReport(BaseModel):
 class BlockReport(BaseModel):
     """One prompt block as it left extraction.
 
-    `available=False` means the block carries the "not available" marker rather
-    than content. `trimmed=False` with a huge `chars` on a job-level log is the
-    signal that a slicing rule found no marker and kept everything.
+    `available=False` means the block reached the prompt empty (so it was left
+    out). `trimmed=False` with a huge `chars` on a job-level log is the signal
+    that a slicing rule found no marker and kept everything.
     """
 
     label: str = ""
@@ -89,6 +95,8 @@ class EvidenceReport(BaseModel):
     blocks: list[BlockReport] = []
     #: File names VisiumGo sent that no Evidence class claimed.
     unmatched: list[str] = []
+    #: File names the active profile did not ask for (never downloaded).
+    skipped: list[str] = []
 
 
 class Findings(BaseModel):
@@ -98,13 +106,12 @@ class Findings(BaseModel):
     `evidence_blocks` (e.g. the `=== DOM ===` block), so the contract stays
     source-shape independent.
 
-    `parameter1`/`parameter2` are the generic customization keys from the
-    request (user decision superseding plan.md A6 bank/platform): they select
-    the analysis profile and are stamped through to the stored result.
+    The request's `parameter1`/`parameter2` are deliberately ABSENT: they are
+    reserved keys, recorded on the run and shown by the API, and they take no
+    part in any decision the code makes (plan.md A4.2). Nothing that cannot
+    influence the analysis belongs in the analysis contract.
     """
 
-    parameter1: str = "default"
-    parameter2: str = "default"
     scenario_name: str
     failed_step: str = ""
     error_message: str = ""
@@ -130,13 +137,10 @@ class Findings(BaseModel):
     def has_evidence_for_llm(self) -> bool:
         """True if there is anything for the model to reason about.
 
-        False means every block is empty or carries the "not available" marker
-        AND there is no error message or step list. Asking the LLM then costs a
-        call to be told "kanıt yok" — which the system already knows.
+        False means every block is empty AND there is no error message or step
+        list. Asking the LLM then costs a call to be told "kanıt yok" — which
+        the system already knows.
         """
         if self.error_message.strip() or self.steps:
             return True
-        return any(
-            block.content and block.content != EVIDENCE_UNAVAILABLE
-            for block in self.evidence_blocks
-        )
+        return any(block.content for block in self.evidence_blocks)

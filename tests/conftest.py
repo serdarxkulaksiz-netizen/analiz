@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.config import Settings
-from app.evidence.profiles import ProfileRegistry
+from app.evidence.profiles import DEFAULT_PROFILE_NAME, JOB_FAILED_PROFILE_NAME, ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
 from app.extraction.evidence_extractor import EvidenceExtractor
 
@@ -25,7 +25,6 @@ def settings(tmp_path: Path) -> Settings:
         prompts_dir=PROJECT_ROOT / "config" / "prompts",
         profiles_config_path=PROJECT_ROOT / "config" / "profiles.json",
         max_concurrency=2,
-        cache_enabled=True,
     )
 
 
@@ -40,12 +39,21 @@ def extractor(profile_registry: ProfileRegistry) -> EvidenceExtractor:
 
 
 def write_profiles(path: Path, profiles: dict, *, complete: bool = False) -> Path:
-    """Write a profiles config, filling in the mandatory profiles.
+    """Write a profiles config, filling in what every legal config must carry.
 
-    Every config must carry `default` and `job_failed`; a test about something
-    else should not have to repeat that. `complete=True` writes the dict
-    verbatim — that is how the fail-fast guards themselves are tested.
+    Two pieces of boilerplate a test about something else should not repeat:
+    the mandatory `default_web` + `job_failed` profiles, and the rule that
+    prompted evidence must also be stored (what is not downloaded cannot be
+    prompted). `complete=True` writes the dict verbatim — that is how the
+    fail-fast guards themselves are tested.
     """
-    data = profiles if complete else {"job_failed": {}, **profiles}
+    if complete:
+        path.write_text(json.dumps(profiles, ensure_ascii=False), encoding="utf-8")
+        return path
+
+    data = {DEFAULT_PROFILE_NAME: {}, JOB_FAILED_PROFILE_NAME: {}, **profiles}
+    for row in data.values():
+        if isinstance(row, dict) and "evidence_to_store" not in row:
+            row["evidence_to_store"] = list(row.get("evidence_to_llm", []))
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     return path

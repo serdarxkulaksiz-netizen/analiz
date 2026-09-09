@@ -6,28 +6,22 @@ hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa 
 
 Senaryo: $scenario_name
 
-=== PATLAYAN ADIM ===
 $failed_step
 
-=== HATA MESAJI ===
 $error_message
 
-=== ADIM SONUÇLARI ===
 $steps
 
-=== TEST LOG (zaman sıralı adım akışı) ===
 $test_log
 
-=== DOM (hata anındaki sayfa) ===
 $dom
 
-=== BROWSER LOG ===
 $browser_log
 
 WEB BAĞLAMI: "element bulunamadı" tipi bir hata web'de genelde iki şeyden birine işaret eder:
 locator eskimiştir (test bakımı) ya da sayfa beklenen hâle hiç gelmemiştir (uygulama/ortam).
 DOM'da elementin gerçekten olup olmadığına, sayfanın hangi ekranda kaldığına bak.
-Bir blokta "(bu kanıt alınamadı / bulunmuyor)" yazıyorsa o kanıt bu koşumda üretilmemiştir;
-bu normaldir, teşhisi elindeki diğer kanıtlarla üret.
+Yukarıda görmediğin bir kanıt bu koşumda üretilmemiştir; bu normaldir, teşhisi elindeki
+kanıtlarla üret.
 
 $extra_context

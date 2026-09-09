@@ -19,8 +19,9 @@ from pydantic import BaseModel, model_validator
 from app.config import Settings, get_settings
 from app.domain.api import RunView, build_run_view
 from app.domain.enums import RunStatus
+from app.evidence.planner import AttachmentPlanner
 from app.evidence.profiles import ProfileRegistry
-from app.evidence.registry import EvidenceRegistry
+from app.evidence.registry import EvidenceRegistry, known_evidence_names
 from app.extraction.evidence_extractor import EvidenceExtractor
 from app.llm.mock import MockLLMProvider
 from app.llm.openai_compatible import OpenAICompatibleLLMProvider
@@ -41,9 +42,10 @@ from app.source.visiumgo_client import VisiumGoClient
 class AnalyzeRequest(BaseModel):
     """Body of POST /analyze/visiumgo.
 
-    `parameter1`/`parameter2` are generic customization keys selecting the
-    analysis profile (config/profiles.json); omitted -> "default". Either
-    `job_id` or `run_id` must be given (run_id wins if both are present).
+    `parameter1`/`parameter2` are reserved keys: they are recorded on the run
+    and returned by GET, and they influence NOTHING — not the profile, not the
+    prompt (plan.md A4.2). Either `job_id` or `run_id` must be given (run_id
+    wins if both are present).
     """
 
     parameter1: str = "default"
@@ -65,7 +67,7 @@ def _attachments_dir(settings: Settings):
 # --- Registries (plan.md A0.1): name -> factory. A new variant = one row. -----
 
 SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
-    "mock": lambda s: MockSource(),
+    "mock": lambda s: MockSource(_attachments_dir(s)),
     "visiumgo": lambda s: VisiumGoSource(
         VisiumGoClient(
             s.visiumgo_base_url,
@@ -124,8 +126,15 @@ def build_service(settings: Settings) -> AnalyzerService:
     profiles = ProfileRegistry(settings.profiles_config_path)
     prompt_builder = PromptBuilder(settings.prompts_dir, settings.confidence_buckets)
     # Only this place knows both sides, so this is where a profile naming a
-    # template that does not exist has to fail — at startup, not mid-analysis.
+    # template or an evidence that does not exist has to fail — at startup, not
+    # mid-analysis.
     prompt_builder.ensure_templates_exist(profiles.prompt_names())
+    unknown = sorted(profiles.evidence_names() - known_evidence_names())
+    if unknown:
+        known = ", ".join(sorted(known_evidence_names()))
+        raise ValueError(
+            f"Profile(s) ask for unknown evidence: {', '.join(unknown)}. Known: {known}."
+        )
 
     return AnalyzerService(
         settings=settings,
@@ -135,6 +144,7 @@ def build_service(settings: Settings) -> AnalyzerService:
         prompt_builder=prompt_builder,
         llm_provider=_select(LLM_REGISTRY, settings.llm_provider, "llm")(settings),
         precheck=_select(PRECHECK_REGISTRY, settings.precheck_provider, "precheck")(settings),
+        planner=AttachmentPlanner(profiles),
     )
 
 

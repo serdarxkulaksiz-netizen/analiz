@@ -1629,3 +1629,184 @@ Mock modda POST→GET elle de koşturuldu (üç durum).
 **Sıradaki adım (Faz 2):** eşleşme tablosunun config'e taşınması · profilin istemediği ekin hiç
 indirilmemesi · `job_failed` profilinin içeriği · `properties.failedStep.*` · prompt boyutu
 (340k karakter → timeout) · build log dilimlemesinin gerçek logla doğrulanması.
+
+---
+
+# [Servis fazı 2/2] Profil sözleşmesi, boş blok temizliği, kontrol aracı (2026-09-09)
+
+Plan: `docs/servis-fazi-notlari.md` → "Faz 2" (kararlar F1-F8).
+**Kapsam:** profilin *mekanizması*. Profillerin **içeriği** (gerçek `job_ids`, kurallar, şablon
+metinleri) **Faz 3**'te.
+
+## Profil artık indirmeyi de belirliyor
+
+| Alan | Anlamı |
+|---|---|
+| `evidence_to_store` | **İnecek** ekler → diske + `database/` satırına ham hâliyle |
+| `evidence_to_llm` | Prompt'a girecek ekler; `evidence_to_store`'un **alt kümesi olmak zorunda** |
+| `rules` | Yalnız **prompt kopyasını** kırpar; diskteki ham içerik tam kalır |
+
+Hiçbir listede olmayan ek için **istek bile atılmıyor**. Kazanç kullanmadığımız 340k'lık DOM;
+bedeli, "her şeyi sakla" kuralının bilerek delinmesi: o dosya diskte hiç olmuyor.
+
+**Katman ihlali yapılmadı:** kaynak Evidence sınıflarını bilmiyor. `fetch_job(run, wants)` ile
+bir yordam **enjekte ediliyor**; onu profilden `AttachmentPlanner` üretiyor. Ek metadata'sı
+(`deviceId`, `mimeType`, `fileName`) senaryo detayında indirmeden önce geldiği için karar bedava.
+
+**Sessiz kayıp yok:** indirilmeyen ekin satırı `download_skipped` bayrağıyla duruyor ve
+`evidence_report.skipped` içine yazılıyor. **Hiçbir sınıfın sahiplenmediği dosya ise her zaman
+indiriliyor** — bakmadan yargılayamayız; yeni bir cihaz/dosya tipini ancak böyle fark ederiz.
+
+**`evidence_to_llm ⊄ evidence_to_store` → açılışta hata.** Aynı yerde bir denetim daha:
+profilde **tanınmayan bir kanıt adı** (`TestLogEvidenc`) da açılışta patlıyor — eskiden sessizce
+o kanıdı devre dışı bırakıyordu.
+
+## Gelmeyen kanıt prompt'ta hiç görünmüyor
+
+Şablon artık `=== DOM ===` yazmıyor; başlık **placeholder'ın içinden** geliyor. Kanıt yoksa
+placeholder boş string oluyor, arkasında kalan boşluk kapatılıyor. Aynısı sabit alanlar için de:
+`$failed_step`, `$error_message`, `$steps`.
+
+`EVIDENCE_UNAVAILABLE` yer tutucusu ve beş şablondaki "eksik kanıt normaldir" paragrafı silindi:
+boş bir başlık da modelin kendine açıklaması gereken bir şeydi ve prompt'un bir paragrafını
+hiç görmeyeceği bir işareti anlatmaya harcıyorduk. **Bu bilinçli bir geri dönüş** — "gelmedi mi,
+eşleşmedi mi, istenmedi mi" sorusunun yeri artık yalnızca `evidence_report`.
+
+## Profil seti + isim
+
+`test_all` (araç profili, her şeyi indirir) · **`default_web`** (fallback) · `job_failed`.
+`config/profiles.example.json` **silindi**: iki kaynağı bakım etmek bayatlama üretiyordu, artık
+`profiles.json`'ın kendisi bir testle kilitli.
+
+Fallback profilin adı `default` → `default_web` oldu. Buradan **gerçek bir hata** çıktı ve
+düzeltildi: `parameter1 == "default"` (API'nin "override yok" değeri) fallback profilin adıyla
+aynı sabite bağlıydı; rename her sıradan isteği "bilinmeyen profil 'default'" hatasına çevirirdi.
+İkisi artık ayrı sabit (`PARAMETER1_NO_OVERRIDE`).
+
+Bir davranış plana **geri hizalandı**: bilinmeyen bir `parameter1` artık koşumu `failed`
+yapıyor (plan.md A4.2). Eskiden hata her senaryonun içinde patlıyor, koşum "başarılı ama hepsi
+`analysis_failed`" görünüyordu.
+
+## `tools/inspect_run.py` — tek komutluk kontrol
+
+```bash
+python -m tools.inspect_run --run-id 148918      # ya da --job-id 886
+```
+
+Gerçek zinciri koşturur, her ek için "indi / diskte yok / eşleşmedi" satırı basar, blok
+boyutlarını ve `prompt_chars`'ı verir. Sorun varsa **çıkış kodu 1**.
+
+- **Gerçek LLM'e asla gitmez:** `.env` ne derse desin servis `mock` sağlayıcıyla kurulur,
+  bayrak da yok. Bir test bunu, çağrıldığında patlayan bir sağlayıcı takarak kilitliyor.
+- **`test_all` profilini zorlar** (`run_analysis(profile_override=...)`); `parameter1`'e
+  dokunulmaz. Zorlama koşum satırının `note`'una yazılır — "çağıran istedi" ile "job durumu
+  FAILED" birbirine karışmaz.
+- Job seviyesindeki build log dosya beklemez, "JOB LOGU" diye işaretlenir (yanlış alarm yok).
+
+## Mock artık dosyalarını gerçekten yazıyor
+
+`MockSource` eklerini `attachments/<run_id>/<scenario_id>/<ad>` altına **gerçekten** yazıyor
+(kayıt kuralı `app/source/storage.py`'de, iki kaynak da onu kullanıyor). Aksi hâlde "dosya
+diskte var mı" sorusu Mac'te hiç sınanamazdı — ki aracın tek işi bu.
+
+## Doğrulama
+
+`pytest` **161/161** (+10) · `ruff check .` · `ruff format --check` · `mypy` temiz
+(`tools/` de kapsamda). Yeni testler: profil filtresi · istenmeyen ek için istek atılmaması ·
+tanınmayan dosyanın yine de inmesi · `llm ⊄ store` ve tanınmayan kanıt adının açılışta patlaması ·
+boş kanıdın başlığıyla birlikte düşmesi · aracın gerçek LLM'e gitmemesi ve çıkış kodu.
+
+**Sıradaki adım (Faz 3):** profillerin gerçek `job_ids` ile doldurulması · `job_failed` içeriği ·
+şablon metinleri · `properties.failedStep.*` · prompt boyutu ölçümü · `MAX_CONCURRENCY` ·
+build log dilimlemesinin gerçek logla doğrulanması.
+
+---
+
+# [Düzeltme] `parameter1`/`parameter2` koddan tamamen çıkarıldı (2026-09-09)
+
+**Kullanıcı eleştirisi (haklı):** *"Parametre1 ve parametre2 değerlerinin şu anda hiçbir yerde
+olmasını istemiyorum. Sadece API'den görülsün. Taşınsın ama kodda hiçbir şekilde kullanılmasın.
+Prompt'ta yer almasın."*
+
+Bu iki alan her fazda bir iş kuralına sızmıştı. Tarayınca dört yer çıktı:
+
+| Yer | Ne yapıyordu |
+|---|---|
+| `ProfileRegistry.get` | **`parameter1` profil seçiyordu**; bilinmeyen ad koşumu düşürüyordu |
+| `AttachmentPlanner.wants_for` | Aynı seçimi taşıyarak **hangi eklerin indirileceğini** etkiliyordu |
+| `EvidenceExtractor.extract` | Profil seçimine taşıyordu; ikisi de `Findings`'e yazılıyordu |
+| `_find_cached_run` | **Önbellek anahtarı** `run_id + parameter1 + parameter2` idi |
+
+Hepsi kaldırıldı. Şimdi:
+
+- **Profil seçimi:** çağıranın dayattığı profil (job durumu `FAILED` → `job_failed`, ya da
+  `tools.inspect_run`) → `job_ids` eşleşmesi → `default_web`. Başka girdi yok.
+- **Önbellek anahtarı:** yalnız `run_id`. Parametreler hiçbir şeyi etkilemediği için aynı koşumun
+  ikinci isteği aynı sonucu üretir; yeniden analiz etmek sadece iki kez ödemekti.
+- **`Findings`**'te parameter alanı **yok**; analiz sözleşmesine hiç girmiyorlar.
+- **Prompt**'ta `$parameter1`/`$parameter2` yer tutucusu **yok**; bir şablonda kullanılırsa
+  açılışta "tanınmayan placeholder" hatası verir.
+- **Teşhis satırında** tekrarlanmıyorlar (koşum satırındalar zaten).
+- **Bilinmeyen değer artık hata değil:** hiçbir şeyi adlandırmıyorlar. `{"parameter1": "xyz"}`
+  koşumu düşürmüyor.
+- Kalan tek yer: `create_run` onları `runs` satırına yazıyor, `GET` cevabı geri döndürüyor.
+
+`PARAMETER1_NO_OVERRIDE` sabiti de gitti — override mekanizmasının kendisi kalktı.
+
+**Tekrar sızmasın diye bir test kondu** (`test_request_parameters_reach_no_decision`): profil
+çözümleyicinin, planlayıcının, extractor'ın, önbelleğin ve senaryo analizinin imzalarında bu iki
+ad **olamaz**; prompt placeholder listesinde, `Findings`'te ve teşhis satırında da bulunamaz.
+Sadece `create_run` imzasında bulunmak zorunda. İhlal edilirse `pytest` kırmızı.
+
+## Doğrulama
+
+`pytest` **160/160** · ruff + format + mypy temiz. `evals` vaka biçiminden de parametreler
+çıkarıldı (eskiden koşturucuya taşınıyorlardı). `plan.md` A4.2 yeniden yazıldı, kilitli karar 5
+ve 28 güncellendi; README ve `docs/*` hizalandı.
+
+**Sıradaki adım:** VisiumGo'dan veri alırken bulunan sorunlar (ek indirilemezse sebebin hiçbir
+yere yazılmaması · metin/ikili kararının mime'a bakması · cevap biçiminin doğrulanmaması ·
+`run_id` yolunda bilinmeyen `state`'in kabul edilmesi) — konuşulacak, sonra düzeltilecek.
+
+---
+
+# [Sadeleştirme] Önbellek sistemi tamamen kaldırıldı (2026-09-09)
+
+**Kullanıcı kararı:** *"Bütün cache sistemini kaldır, projeyi sadeleştirelim."*
+
+Mekanizma zaten **kapalıydı** (`CACHE_ENABLED=false`, `Settings` varsayılanı da `False`), yani
+sistem her isteği baştan analiz ediyordu. Açılsaydı da tutarsız çalışacaktı: anahtar
+`parameter1`/`parameter2` çıkarıldıktan sonra yalnız `run_id`'ye inmişti, ama "yeniden
+kullanılabilir" koşulu koşum satırının `note` alanının **boş** olmasını şart koşuyordu — `note`
+ise Faz 1-2'de bilgi notu olarak da kullanılmaya başlanmıştı (`'job_failed' profili kullanıldı`,
+`analiz edilecek hata yok`, `test_all` zorlaması, `bilinmeyen koşum durumu atlandı`). Sonuç:
+sağlıklı koşumların çoğu **hiçbir zaman** cache'lenemezdi. Kullanılmayan ve yanlış davranan bir
+mekanizmayı taşımak yerine kaldırdık.
+
+## Ne gitti
+
+- `AnalyzerService._find_cached_run` metodu ve `_run_job` içindeki cache dalı.
+- `Settings.cache_enabled` ayarı, `.env.example` ve yerel `.env`'deki `CACHE_ENABLED` satırı.
+- `runs` satırındaki **`cached_from`** alanı ve `RunView.cached_from` — **API sözleşmesi
+  değişti:** `GET` cevabında bu alan artık yok (eskiden hep `""` dönüyordu).
+- `get_run` sadeleşti: sonuçlar doğrudan koşumun kendi `analyzer_run_id`'siyle aranıyor,
+  "başka koşumun satırlarını göster" dolambacı kalktı.
+
+## Ne değişmedi
+
+Analiz zincirinin hiçbir halkası: kaynak, kanıt eşleşmesi, extraction, prompt, LLM, parse,
+persistence. Koşum çözümlemesi (`resolve_run`) ve `RUNNING` denetimi de yerinde — ikisi de
+cache'e bağlı değildi.
+
+## Davranış
+
+Aynı `run_id` iki kez istenirse **iki ayrı analiz** yapılır; her koşumun kendi
+`evidence`/`prompts`/`llm_responses`/`analysis_results` satırları olur. Bu, silinen beş cache
+testinin yerine konan tek testle kayıt altında
+(`test_same_run_requested_twice_is_analyzed_twice`): sessizce geri gelmesin diye.
+
+## Doğrulama
+
+`pytest` **156/156** · ruff + format + mypy temiz. Mock modda uçtan uca: aynı job'a iki POST →
+iki `analyzer_run_id`, dört teşhis satırı, `GET` cevabında `cached_from` alanı yok.
+`plan.md` (Önbellek bölümü silindi, kilitli karar **36** eklendi), README, `docs/*` hizalandı.

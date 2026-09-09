@@ -6,9 +6,9 @@ from app.domain.result import AnalysisResult, LLMAnalysis
 
 
 def test_findings_contract_fields_are_frozen() -> None:
+    # No `parameter1`/`parameter2`: request keys that decide nothing have no
+    # place in the analysis contract (plan.md A4.2).
     assert set(Findings.model_fields) == {
-        "parameter1",
-        "parameter2",
         "scenario_name",
         "failed_step",
         "error_message",
@@ -47,8 +47,6 @@ def test_analysis_result_adds_only_system_meta() -> None:
     assert system_fields == {
         "result_id",
         "analyzer_run_id",
-        "parameter1",
-        "parameter2",
         "profile_name",
         "truncated",
         "truncated_note",
@@ -85,3 +83,37 @@ def test_status_values_are_frozen() -> None:
         # deliberately distinct from a failed analysis.
         "no_evidence",
     }
+
+
+def test_request_parameters_reach_no_decision() -> None:
+    """`parameter1`/`parameter2` must stay out of every decision (plan.md A4.2).
+
+    They are reserved request keys: recorded on the run, returned by GET, and
+    that is all. This is a guard, not a style check — they have crept back into
+    profile selection, the prompt and the (since removed) cache key once each,
+    and every time the symptom was a silently different analysis.
+    """
+    import inspect
+
+    from app.evidence.planner import AttachmentPlanner
+    from app.evidence.profiles import ProfileRegistry
+    from app.extraction.base import Extractor
+    from app.prompting.builder import KNOWN_PLACEHOLDERS
+    from app.service import AnalyzerService
+
+    reserved = {"parameter1", "parameter2"}
+
+    for func in (
+        ProfileRegistry.get,
+        AttachmentPlanner.wants_for,
+        Extractor.extract,
+        AnalyzerService._analyze_scenario,
+    ):
+        assert not reserved & set(inspect.signature(func).parameters), func.__qualname__
+
+    assert not reserved & KNOWN_PLACEHOLDERS  # no prompt placeholder either
+    assert not reserved & set(Findings.model_fields)
+    assert not reserved & set(AnalysisResult.model_fields)
+
+    # The one place they legitimately appear: the run row the API shows.
+    assert reserved <= set(inspect.signature(AnalyzerService.create_run).parameters)

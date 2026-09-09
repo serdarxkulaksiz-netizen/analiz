@@ -6,16 +6,12 @@ Teşhisini BUNUN ÜZERİNDEN kur: KESİN HÜKÜM DEĞİL, gerekçeli bir ÖN TE�
 
 Senaryo: $scenario_name
 
-=== PATLAYAN ADIM ===
 $failed_step
 
-=== HATA MESAJI ===
 $error_message
 
-=== ADIM SONUÇLARI ===
 $steps
 
-=== BUILD LOG ===
 $build_log
 
 BUILD LOG HAKKINDA: Bu log tüm koşumu kapsayan job log'udur; yukarıdaki bölüm bu senaryoya ait

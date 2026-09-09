@@ -3,7 +3,7 @@
 `LLMAnalysis` = fields the LLM must return (field names English, text content
 Turkish). `AnalysisResult` = the stored row: the same flat fields plus
 system-side metadata the code attaches (the LLM never produces these — notably
-`parameter1`/`parameter2`, which come from the request, not the model).
+`profile_name`, which the code attaches, not the model).
 
 No fabricated defaults for text fields (plan.md A10): if the LLM leaves a
 field out, it stays empty.
@@ -55,9 +55,9 @@ class AnalysisResult(BaseModel):
     """Stored analysis row: LLM fields (flat) + system-side meta.
 
     On `status=analysis_failed`, LLM analysis fields stay empty/None; only
-    `scenario_name`/`parameter1`/`parameter2` are filled by the system from the
-    request/Findings (factual identity, not fabricated analysis) so the row
-    stays traceable.
+    `scenario_name` is filled by the system (factual identity, not fabricated
+    analysis) so the row stays traceable. The request's parameters are not
+    repeated here: they live on the run row this result belongs to.
     """
 
     # --- persistence keys (system) ---
@@ -78,8 +78,6 @@ class AnalysisResult(BaseModel):
     error_signature: str = ""
 
     # --- system-side meta (plan.md A10; code attaches, LLM never produces) ---
-    parameter1: str = "default"
-    parameter2: str = "default"
     profile_name: str = ""  # which analysis profile actually ran
     truncated: bool = False
     truncated_note: str = ""

@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     visiumgo_build_log_entry: str = "build.log"
 
     # --- extraction / Halka 2 (plan.md A5) ---
-    # Analysis profiles: job_id (or parameter1) -> which evidence goes to the
+    # Analysis profiles: job_id -> which evidence goes to the
     # LLM / to the store, plus the content rules that trim each one.
     # New job behaviour = a row in this file, not code.
     profiles_config_path: Path = Path("config") / "profiles.json"
@@ -87,8 +87,6 @@ class Settings(BaseSettings):
 
     # --- API & background processing (plan.md A11) ---
     max_concurrency: int = 2  # asyncio.Semaphore size
-    # Run cache off: the same job is always re-analyzed (no reuse of prior runs).
-    cache_enabled: bool = False
 
 
 @lru_cache

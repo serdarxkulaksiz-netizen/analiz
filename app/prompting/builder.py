@@ -13,20 +13,25 @@ silent drift breaks parsing.
 Each evidence block is its own placeholder (`$test_log`, `$dom`,
 `$mobile_dom`, `$browser_log`, `$build_log`, `$test_properties`), so a template
 shows only the evidence that job actually produces; `$evidence_blocks` still
-renders every block at once for templates that want the generic layout. A
-placeholder whose block did not arrive renders the "not available" marker
-instead of vanishing (plan.md A5.4).
+renders every block at once for templates that want the generic layout.
 
-`$parameter1` / `$parameter2` stay available but no template uses them today:
-they carried the literal word "default" in most runs, which is noise, not
-context. The wiring is kept so a job that has real values for them can put
-them back from config alone.
+**A placeholder carries its own `=== ETİKET ===` header.** Templates must NOT
+type the header themselves: an evidence that did not arrive then leaves the
+prompt completely (header included) instead of leaving a heading with nothing
+under it. Same for the fixed fields (`$failed_step`, `$error_message`,
+`$steps`). Blank runs left behind by a missing section are collapsed, so the
+prompt reads the same whether three blocks arrived or one.
+
+`$parameter1` / `$parameter2` do not exist: those request keys decide nothing
+and reach nothing (plan.md A4.2). In most runs they literally said "default" —
+noise, not context — and a placeholder nobody may use is a trap, not an option.
 
 `string.Template` is used on purpose: the contract contains a literal JSON
 schema with `{}` braces, which `str.format` would mangle.
 """
 
 import hashlib
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from string import Template
@@ -39,13 +44,34 @@ from app.domain.findings import (
     BLOCK_STEPS,
     BLOCK_TEST_PROPERTIES,
     DEFAULT_PROMPT_TEMPLATE,
-    EVIDENCE_UNAVAILABLE,
     Findings,
 )
 
 #: Shared output contract appended to every template (not a template itself).
 CONTRACT_FILE = "_contract.txt"
 TEMPLATE_SUFFIX = ".txt"
+
+#: Headers of the fixed Findings fields. In code, not config: like the evidence
+#: block labels, these are format, not a per-job decision.
+FIELD_LABELS: dict[str, str] = {
+    "failed_step": "PATLAYAN ADIM",
+    "error_message": "HATA MESAJI",
+    "steps": "ADIM SONUÇLARI",
+}
+
+#: Three or more newlines -> one blank line (a dropped section leaves a hole).
+_BLANK_RUN = re.compile(r"\n{3,}")
+
+
+def _section(label: str, content: str) -> str:
+    """`=== LABEL ===` + content, or "" when there is no content.
+
+    The header travels WITH the content on purpose: that is what makes an
+    absent evidence disappear from the prompt entirely instead of leaving a
+    heading over an empty space.
+    """
+    return f"=== {label} ===\n{content}" if content.strip() else ""
+
 
 #: Evidence block label -> its own template placeholder. A template can then
 #: place each evidence exactly where it wants it, or ignore it entirely.
@@ -62,8 +88,6 @@ BLOCK_PLACEHOLDERS: dict[str, str] = {
 #: startup — an unknown `$placeholder` would otherwise be sent to the LLM raw.
 KNOWN_PLACEHOLDERS = frozenset(
     {
-        "parameter1",
-        "parameter2",
         "scenario_name",
         "failed_step",
         "error_message",
@@ -153,28 +177,29 @@ class PromptBuilder:
 
         steps_text = "\n".join(f"- {step.name}: {step.status.value}" for step in findings.steps)
         evidence_text = "\n\n".join(
-            f"=== {block.label} ===\n{block.content}"
+            _section(block.label, block.content)
             for block in findings.evidence_blocks
-            if block.content
+            if block.content.strip()
         )
         by_label = {block.label: block.content for block in findings.evidence_blocks}
-        # A template may name an evidence this run did not produce: render the
-        # marker instead of an empty gap, so "absent" stays visible (A5.4).
+        # A template may name an evidence this run did not produce: that
+        # placeholder renders as nothing at all — header included (A5.4).
         blocks = {
-            placeholder: by_label.get(label) or EVIDENCE_UNAVAILABLE
+            placeholder: _section(label, by_label.get(label, ""))
             for label, placeholder in BLOCK_PLACEHOLDERS.items()
         }
         buckets_text = " / ".join(str(bucket) for bucket in self._confidence_buckets)
 
-        return template.safe_substitute(
-            parameter1=findings.parameter1,
-            parameter2=findings.parameter2,
+        prompt = template.safe_substitute(
             scenario_name=findings.scenario_name,
-            failed_step=findings.failed_step,
-            error_message=findings.error_message,
-            steps=steps_text,
+            failed_step=_section(FIELD_LABELS["failed_step"], findings.failed_step),
+            error_message=_section(FIELD_LABELS["error_message"], findings.error_message),
+            steps=_section(FIELD_LABELS["steps"], steps_text),
             evidence_blocks=evidence_text,
             extra_context=findings.extra_context,
             confidence_buckets=buckets_text,
             **blocks,
         )
+        # Dropped sections leave holes; without this the prompt's shape would
+        # advertise exactly what is missing.
+        return _BLANK_RUN.sub("\n\n", prompt).strip() + "\n"

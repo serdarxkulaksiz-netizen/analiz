@@ -6,29 +6,25 @@ hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa 
 
 Senaryo: $scenario_name
 
-=== PATLAYAN ADIM ===
 $failed_step
 
-=== HATA MESAJI ===
 $error_message
 
-=== ADIM SONUÇLARI ===
 $steps
 
-=== TEST LOG (zaman sıralı adım akışı) ===
 $test_log
 
-=== DOM (hata anındaki sayfa) ===
 $dom
 
-=== BROWSER LOG ===
+$mobile_dom
+
 $browser_log
 
 HİBRİT BAĞLAMI: Bu senaryo TEK akışta hem web hem mobil adım içerir (ör. web'de işlem başlar →
 telefona push gelir → cihazda onaylanır → web'e dönülür). Bu yüzden "element bulunamadı" gibi bir
 hatanın anlamı, hatanın akışın hangi ayağında olduğuna göre değişir: adım akışından önce hatanın
 web tarafında mı cihaz tarafında mı olduğunu tespit et, teşhisi ondan sonra kur.
-Cihaz tarafı kanıtı web tarafına göre daha sık eksik kalır; bir blokta
-"(bu kanıt alınamadı / bulunmuyor)" yazması normaldir.
+Cihaz tarafı kanıtı web tarafına göre daha sık eksik kalır; bir bloğu hiç görmemen
+normaldir.
 
 $extra_context

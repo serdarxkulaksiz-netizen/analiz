@@ -6,6 +6,7 @@ BackgroundTasks before returning the response, so no polling loop is needed.
 """
 
 import json
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -63,11 +64,11 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     # Same for the diagnosis rows: system meta lives on disk, not in the API.
     for stored in (settings.database_dir / settings.table_analysis_results).glob("*.json"):
         diagnosis = json.loads(stored.read_text("utf-8"))
-        assert diagnosis["parameter1"] == "default"
-        assert diagnosis["parameter2"] == "default"
-        assert diagnosis["profile_name"] == "default"  # which profile ran
+        assert "parameter1" not in diagnosis  # request keys live on the run row
+        assert diagnosis["profile_name"] == "default_web"  # which profile ran
+        # Screenshots are referenced by where they were actually written.
         assert diagnosis["screenshot_paths"] and all(
-            p.startswith("MOCK_") for p in diagnosis["screenshot_paths"]
+            Path(p).is_file() and "MOCK_" in p for p in diagnosis["screenshot_paths"]
         )
         # raw_llm_response is the FULL envelope (not just content).
         assert '"choices"' in diagnosis["raw_llm_response"]
@@ -102,12 +103,19 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     assert "request" not in llm_row  # no duplication
 
 
-def test_evidence_to_store_controls_inline_content(settings: Settings, tmp_path) -> None:
-    """A profile can keep an evidence out of the store; metadata still shows it."""
+def test_evidence_the_profile_did_not_ask_for_is_never_fetched(
+    settings: Settings, tmp_path
+) -> None:
+    """An evidence in neither list is not downloaded — but it is still reported.
+
+    That is the whole point of binding downloads to the profile: a job that
+    never reads the DOM must not pay for a 340k file. What must NOT happen is
+    the file disappearing without trace.
+    """
     profiles = {
-        "default": {
+        "default_web": {
             "evidence_to_llm": ["TestLogEvidence"],
-            # HtmlEvidence deliberately NOT stored
+            # HtmlEvidence deliberately in neither list
             "evidence_to_store": ["TestLogEvidence"],
         }
     }
@@ -121,14 +129,14 @@ def test_evidence_to_store_controls_inline_content(settings: Settings, tmp_path)
     row = json.loads(
         next((settings.database_dir / settings.table_evidence).glob("*.json")).read_text("utf-8")
     )
-    assert "HtmlEvidence" in row["excluded_from_store"]
     by_file = {a["file_name"]: a for a in row["raw_scenario"]["attachments"]}
     html = by_file["MOCK_browser.default.html"]
-    # Excluded: content dropped but the file is still visible in the trace.
-    assert html["content"] == ""
-    assert html["mime_type"] == "text/html" and html["stored_path"]  # metadata kept
-    assert html["content_stored"] is False
-    # Kept evidence is untouched.
+    # Never fetched: no content, no file on disk — but the row is still there.
+    assert html["content"] == "" and html["stored_path"] == ""
+    assert html["download_skipped"] is True
+    assert html["mime_type"] == "text/html"  # metadata kept
+    assert "MOCK_browser.default.html" in row["evidence_report"]["skipped"]
+    # Wanted evidence is untouched.
     assert by_file["MOCK_test.log"]["content"]
 
 
@@ -230,24 +238,30 @@ def test_get_exposes_only_the_diagnosis_not_the_raw_trace(
     assert stored["raw_llm_response"] and stored["screenshot_paths"]
 
 
-def test_explicit_parameters_are_recorded(settings: Settings) -> None:
+def test_parameters_are_recorded_and_change_nothing(settings: Settings) -> None:
+    """Reserved keys: they come back from the API and influence nothing.
+
+    Any value at all is accepted — they name no profile, so a value that
+    matches no profile is not an error either.
+    """
     client = _client(settings)
 
     rid = client.post(
         "/analyze/visiumgo",
-        json={"parameter1": "projeX", "parameter2": "tipY", "job_id": "job-9"},
+        json={"parameter1": "boyle-bir-sey-yok", "parameter2": "tipY", "job_id": "job-9"},
     ).json()["analyzer_run_id"]
 
     result = client.get(f"/analyze/visiumgo/{rid}").json()
-    assert result["parameter1"] == "projeX"
+    assert result["status"] == "done"
+    assert result["parameter1"] == "boyle-bir-sey-yok"
     assert result["parameter2"] == "tipY"
-    assert result["results"]  # parameters are run-level in the API view
+    assert result["results"]  # analysis ran normally
 
-    # Per-diagnosis parameters are still stamped on the stored rows.
+    # The job mapping alone chose the profile.
     for stored in (settings.database_dir / settings.table_analysis_results).glob("*.json"):
         diagnosis = json.loads(stored.read_text("utf-8"))
-        assert diagnosis["parameter1"] == "projeX"
-        assert diagnosis["parameter2"] == "tipY"
+        assert diagnosis["profile_name"] == "default_web"
+        assert "parameter1" not in diagnosis
 
 
 def test_clean_job_returns_nothing_to_analyze(settings: Settings) -> None:
@@ -271,104 +285,34 @@ def test_job_or_run_id_required(settings: Settings) -> None:
     assert resp.status_code == 422
 
 
-def test_cache_reuses_previous_analysis(settings: Settings) -> None:
+def test_same_run_requested_twice_is_analyzed_twice(settings: Settings) -> None:
+    """There is no reuse: every request analyzes the run it names, from scratch.
+
+    The project used to cache finished runs by `run_id`; that was removed, so
+    this test is the record of the behaviour that replaced it — two requests,
+    two independent analyses, each with its own rows on disk.
+    """
     client = _client(settings)
     job = {"job_id": "job-7"}
 
     first_id = client.post("/analyze/visiumgo", json=job).json()["analyzer_run_id"]
     second_id = client.post("/analyze/visiumgo", json=job).json()["analyzer_run_id"]
 
-    second = client.get(f"/analyze/visiumgo/{second_id}").json()
-    assert second["status"] == "done"
-    assert second["cached_from"] == first_id
-    assert len(second["results"]) == 2  # served from the first run's rows
-
-    # No new analysis rows were produced for the second run.
-    db = settings.database_dir
-    assert len(list((db / settings.table_analysis_results).glob("*.json"))) == 2
-
-
-def test_cache_key_includes_parameters(settings: Settings) -> None:
-    # Same run, different parameters -> NOT served from cache.
-    client = _client(settings)
-
-    client.post("/analyze/visiumgo", json={"job_id": "job-7"})
-    second_id = client.post(
-        "/analyze/visiumgo", json={"job_id": "job-7", "parameter1": "projeX"}
-    ).json()["analyzer_run_id"]
-
-    second = client.get(f"/analyze/visiumgo/{second_id}").json()
-    assert second["cached_from"] == ""  # re-analyzed, not cached
-
-
-def test_cache_key_is_run_not_job(settings: Settings) -> None:
-    """Same job, DIFFERENT run -> must be re-analyzed, not served from cache.
-
-    A job runs many times; each run has its own failures. Keying the cache on
-    job_id would hand back an older run's diagnoses.
-    """
-    client = _client(settings)
-
-    first_id = client.post("/analyze/visiumgo", json={"job_id": "job-7", "run_id": "RUN_1"}).json()[
-        "analyzer_run_id"
-    ]
-    second_id = client.post(
-        "/analyze/visiumgo", json={"job_id": "job-7", "run_id": "RUN_2"}
-    ).json()["analyzer_run_id"]
-
     first = client.get(f"/analyze/visiumgo/{first_id}").json()
     second = client.get(f"/analyze/visiumgo/{second_id}").json()
-    assert first["run_id"] == "RUN_1" and second["run_id"] == "RUN_2"
-    assert second["cached_from"] == ""  # NOT cached — different run
-    db = settings.database_dir
-    assert len(list((db / settings.table_analysis_results).glob("*.json"))) == 4
 
-    # Same run again -> now it IS cached.
-    third_id = client.post("/analyze/visiumgo", json={"job_id": "job-7", "run_id": "RUN_2"}).json()[
-        "analyzer_run_id"
+    assert first_id != second_id
+    assert first["status"] == second["status"] == "done"
+    assert len(first["results"]) == len(second["results"]) == 2
+
+    # Each run owns its rows: 2 scenarios x 2 runs, and no row is shared.
+    db = settings.database_dir
+    rows = [
+        json.loads(path.read_text("utf-8"))
+        for path in (db / settings.table_analysis_results).glob("*.json")
     ]
-    third = client.get(f"/analyze/visiumgo/{third_id}").json()
-    assert third["cached_from"] == second_id
-
-
-def test_cache_hit_does_not_fetch_evidence(settings: Settings) -> None:
-    """A cache hit must skip the whole (expensive) download, not just the LLM."""
-    from app.main import build_service
-
-    service = build_service(settings)
-    calls: list[str] = []
-    real_fetch = service._source.fetch_job
-
-    async def counting_fetch(run):
-        calls.append(run.run_id)
-        return await real_fetch(run)
-
-    service._source.fetch_job = counting_fetch  # type: ignore[method-assign]
-
-    import asyncio
-
-    first = service.create_run("default", "job-7", "default", "RUN_9")
-    asyncio.run(service.run_analysis(first))
-    assert len(calls) == 1  # first run fetched
-
-    second = service.create_run("default", "job-7", "default", "RUN_9")
-    asyncio.run(service.run_analysis(second))
-    assert len(calls) == 1  # cache hit -> no fetch at all
-    assert service.get_run(second)["cached_from"] == first
-
-
-def test_cache_disabled_reanalyzes(settings: Settings) -> None:
-    settings = settings.model_copy(update={"cache_enabled": False})
-    client = _client(settings)
-    job = {"job_id": "job-7"}
-
-    client.post("/analyze/visiumgo", json=job)
-    second_id = client.post("/analyze/visiumgo", json=job).json()["analyzer_run_id"]
-
-    second = client.get(f"/analyze/visiumgo/{second_id}").json()
-    assert second["cached_from"] == ""
-    db = settings.database_dir
-    assert len(list((db / settings.table_analysis_results).glob("*.json"))) == 4
+    assert len(rows) == 4
+    assert {row["analyzer_run_id"] for row in rows} == {first_id, second_id}
 
 
 def test_unknown_run_id_returns_404(settings: Settings) -> None:

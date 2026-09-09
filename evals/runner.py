@@ -20,8 +20,6 @@ A case file (`evals/cases/<ad>.json`):
       "name": "login-locator-degismis",
       "expected_verdict": "test_maintenance",
       "job_id": "1321",
-      "parameter1": "default",
-      "parameter2": "default",
       "build_log": "",
       "scenario": {
         "scenario_name": "Login - geçerli kullanıcı",
@@ -67,8 +65,6 @@ class EvalCase(BaseModel):
     expected_verdict: str
     scenario: RawScenario
     job_id: str = ""
-    parameter1: str = "default"
-    parameter2: str = "default"
     build_log: str = ""
 
 
@@ -102,8 +98,6 @@ async def run_case(
     """Replay one case through the real chain and score its verdict."""
     findings = extractor.extract(
         case.scenario,
-        parameter1=case.parameter1,
-        parameter2=case.parameter2,
         job_id=case.job_id,
         build_log=case.build_log,
     )

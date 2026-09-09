@@ -6,22 +6,17 @@ hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa 
 
 Senaryo: $scenario_name
 
-=== PATLAYAN ADIM ===
 $failed_step
 
-=== HATA MESAJI ===
 $error_message
 
-=== ADIM SONUÇLARI ===
 $steps
 
---- HAM KANIT BLOKLARI ---
 $evidence_blocks
---- HAM KANIT SONU ---
 
-KANIT HAKKINDA (ÖNEMLİ): Hangi kanıtların üretildiği koşuma ve senaryoya göre DEĞİŞİR; her
-koşumda her kanıt bulunmaz. Bir blokta "(bu kanıt alınamadı / bulunmuyor)" yazıyorsa o kanıt bu
-koşumda üretilmemiştir. Bu NORMALDİR — başlı başına bir arıza, bir bulgu ya da bir teşhis
-DEĞİLDİR. Görevin eksikleri raporlamak değil, ELİNDEKİ kanıtla en iyi teşhisi üretmektir.
+KANIT HAKKINDA: Hangi kanıtların üretildiği koşuma ve senaryoya göre DEĞİŞİR; her koşumda her
+kanıt bulunmaz. Prompt'a yalnız GELEN kanıtlar konur — görmediğin bir blok o koşumda
+üretilmemiş demektir ve bu NORMALDİR. Görevin eksikleri raporlamak değil, ELİNDEKİ kanıtla en
+iyi teşhisi üretmektir.
 
 $extra_context

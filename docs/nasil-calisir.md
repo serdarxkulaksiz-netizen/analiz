@@ -36,7 +36,9 @@ böylece mock↔gerçek geçişi kod değişmeden olur.
 
 1. **FastAPI gövdeyi doğrular.** `AnalyzeRequest` modeli `{parameter1?, parameter2?, job_id | run_id}`
    bekler; parametreler verilmezse `"default"` olur. job_id ve run_id'nin ikisi de yoksa → `422` hata.
-2. **`service.create_run(parameter1, job_id, parameter2, run_id)`** çağrılır (`app/service.py`):
+2. **`service.create_run(parameter1, job_id, parameter2, run_id)`** çağrılır (`app/service.py`).
+   `parameter1`/`parameter2` burada **yazılır ve bir daha okunmaz**: ayrılmış anahtarlardır,
+   GET ile geri dönerler, hiçbir kararı etkilemezler (plan.md A4.2):
    - Rastgele bir kimlik üretir: `analyzer_run_id`.
    - `database/runs/{analyzer_run_id}.json` dosyasını `status="pending"` ile **diske yazar**.
    - Bu id'yi döndürür.
@@ -63,9 +65,9 @@ yalnızca burası değişir; kod bu yüzden böyle kurgulandı.)
      - `state == "RUNNING"` → koşum yarım; **hiçbir şey indirilmez**, koşum `failed` biter.
      - `state == "FAILED"` → job'ın kendisi patlamış; her senaryo sabit `job_failed` profiliyle
        analiz edilir ve bu `note`'a yazılır.
-   - **Önbellek kontrolü** (`CACHE_ENABLED` açıksa): aynı `run_id` + parametreler daha önce
-     analiz edildiyse hiçbir indirme yapılmadan eski sonuçlar gösterilir. Varsayılan **kapalı**.
-   - **`self._source.fetch_job(koşum)`** — **Source** halkası
+   - **Profil çözülür** ve ondan "hangi ekler inecek" filtresi üretilir: profilin ne prompt'a
+     ne depoya istediği bir ek için **istek bile atılmaz** (satırı `download_skipped` ile durur).
+   - **`self._source.fetch_job(koşum, filtre)`** — **Source** halkası
      (`MockSource` veya `VisiumGoSource`):
      - `VisiumGoSource`: çözülmüş koşum için `/results`'tan **FAILED** senaryoları alır → her senaryonun
        detayını (`errorText`, `stepResults`, `attachments`) çeker → attachment'ları indirip
@@ -83,14 +85,15 @@ yalnızca burası değişir; kod bu yüzden böyle kurgulandı.)
 
 1. `result_id` üretir (bu senaryonun izini 4 tabloda birbirine bağlayan anahtar).
 2. **`self._extractor.extract(scenario, ...)`** — **Extraction** halkası (`EvidenceExtractor`):
-   - `job_id`/`parameter1` ile **analiz profilini** seçer (`config/profiles.json`).
+   - `job_id` ile **analiz profilini** seçer (`config/profiles.json`); job durumu `FAILED` ise
+     ya da çağıran bir profil dayattıysa o kazanır.
    - `EvidenceRegistry` ile attachment'ları (**`deviceId` + dosya uzantısı**'na göre) Evidence
      sınıflarına eşler — bu, VisiumGo önyüzünün gösterdiği adın aynısıdır
      (`browser.default.html`, `test.properties`).
    - Profilin **içerik kurallarını** uygular (kes/seç/temizle).
    - `Findings` üretir: LLM'e gidecek etiketli bloklar + hata mesajı + adımlar.
-     Profilin istediği bir kanıt gelmediyse bloğu **düşmez**, içine
-     `(bu kanıt alınamadı / bulunmuyor)` yazar.
+     Gelmeyen kanıt için **blok hiç oluşmaz**; prompt'ta ne başlığı ne yer tutucusu kalır.
+     Ne gelip ne gelmediği `evidence_report`'a yazılır.
 3. **`self._precheck.check(findings)`** — **PreCheck**:
    - `NoOpPreCheck` (varsayılan) → `None` → LLM'e devam.
    - `RuleBasedPreCheck` → bir kural eşleşirse **hazır teşhis** döner ve **4-5. adımlar atlanır**
@@ -152,6 +155,6 @@ yalnızca burası değişir; kod bu yüzden böyle kurgulandı.)
 - **Mock↔gerçek geçişi sadece `.env`** → kod değişmeden; test/geliştirme mock'la, üretim gerçekle.
 - **Davranış dallanması yok** (`if mock` / `if type` yok) → her varyant ayrı sınıf + registry + DI.
 - **Job bazlı özelleştirme**: job durumu `FAILED` ise `job_failed`, değilse `job_id`
-  (ya da `parameter1`) → `config/profiles.json`'dan analiz
+  → `config/profiles.json`'dan analiz
   profili seçilir: hangi kanıt prompt'a girer **ve** o kanıtın içine hangi kurallar uygulanır
   (kes/seç/ekle). Yeni job = config satırı, kod değişmez.

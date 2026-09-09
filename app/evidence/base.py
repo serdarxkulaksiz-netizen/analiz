@@ -178,6 +178,10 @@ class ScreenshotEvidence(Evidence):
         rules: list[Rule] | None = None,  # not applicable to binary evidence
         ctx: RuleContext | None = None,
     ) -> "ScreenshotEvidence":
-        # A screenshot's reference is its stored path (fallback: file name).
-        path = attachment.stored_path or attachment.file_name
+        # A screenshot's reference is where it was actually written. A file the
+        # profile never asked for has no path at all: pointing at a name that
+        # was never downloaded would be worse than admitting it is not there.
+        path = (
+            "" if attachment.download_skipped else (attachment.stored_path or attachment.file_name)
+        )
         return cls(path, goes_to_llm=goes_to_llm, goes_to_store=goes_to_store)

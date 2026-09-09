@@ -2,8 +2,6 @@
   "name": "ornek-login-locator-degismis",
   "expected_verdict": "test_maintenance",
   "job_id": "1321",
-  "parameter1": "default",
-  "parameter2": "default",
   "build_log": "",
   "scenario": {
     "scenario_name": "Login - geçerli kullanıcı ile giriş",

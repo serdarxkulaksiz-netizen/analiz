@@ -86,7 +86,7 @@ async def test_score_counts_matching_verdicts(
     assert "skor: 1/2 doğru" in report
     # The report names the prompt version behind the score — that is what makes
     # a later regression traceable to a prompt change.
-    assert "default@" in report
+    assert "prompt: web@" in report  # the fallback profile's template
     assert all(row.prompt_version for row in outcomes)
 
 

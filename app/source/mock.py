@@ -11,16 +11,24 @@ exist" is exactly what varies in production, and a mock that only knows the
 happy set hides mapping bugs until the work PC finds them. Which of them reach
 the prompt is decided downstream by the analysis profile, like with real data.
 
+Given an `attachments_dir`, the mock also WRITES its files there, under the
+same naming rule as the real source. A mock that only pretends to save would
+leave "did the file actually land on disk?" untestable on the machine where all
+development happens — and that is exactly what `tools.inspect_run` checks.
+
 Mock conveniences, all DATA conditions on `job_id` (not variant switches):
   `-clean`   -> a run with zero failures
   `-jobfail` -> the job itself failed (`runResult.state == "FAILED"`)
   `-running` -> the run is still going (`RUNNING`); the service refuses it
 """
 
+from pathlib import Path
+
 from app.domain.enums import RunState, StepStatus
 from app.domain.findings import Step
-from app.source.base import Source
+from app.source.base import AttachmentFilter, Source, accept_all
 from app.source.models import Attachment, JobData, RawScenario, RunSummary
+from app.source.storage import save_attachment
 
 CLEAN_JOB_SUFFIX = "-clean"
 JOB_FAILED_SUFFIX = "-jobfail"
@@ -93,13 +101,36 @@ _ALL_ATTACHMENTS: list[Attachment] = [
 ]
 
 
-def _scenario(name: str, retry_info: str = "") -> RawScenario:
+def _scenario(
+    name: str,
+    retry_info: str = "",
+    wants: AttachmentFilter = accept_all,
+    run_id: str = "",
+    attachments_dir: Path | None = None,
+) -> RawScenario:
+    scenario_id = f"MOCK_{name}"
+    # Honour the download filter like the real source does: a mock that hands
+    # out files the profile never asked for would hide the very bug the filter
+    # exists to prevent.
+    attachments: list[Attachment] = []
+    for att in _ALL_ATTACHMENTS:
+        if not wants(att):
+            attachments.append(
+                att.model_copy(update={"content": "", "stored_path": "", "download_skipped": True})
+            )
+            continue
+        if attachments_dir is None:
+            attachments.append(att)
+            continue
+        data = att.content.encode("utf-8") if att.content else b"MOCK_PNG_BYTES"
+        stored = save_attachment(attachments_dir, run_id, scenario_id, att, data)
+        attachments.append(att.model_copy(update={"stored_path": str(stored)}))
     return RawScenario(
         scenario_name=name,
-        scenario_id=f"MOCK_{name}",
+        scenario_id=scenario_id,
         error_text=_ERROR_TEXT,
         steps=_STEPS,
-        attachments=_ALL_ATTACHMENTS,
+        attachments=attachments,
         retry_info=retry_info,
         raw_detail={"MOCK_note": "sahte senaryo-detay ham cevabı", "name": name},
     )
@@ -118,11 +149,16 @@ def _state_for(job_id: str) -> str:
 class MockSource(Source):
     """Returns a canned job with two failed scenarios (out of 100)."""
 
+    def __init__(self, attachments_dir: Path | None = None) -> None:
+        #: When set, mock attachments are really written here (same layout as
+        #: the real source), so "is it on disk?" is answerable in mock mode.
+        self._attachments_dir = attachments_dir
+
     async def resolve_run(self, job_id: str, run_id: str = "") -> RunSummary:
         if not job_id and not run_id:
             raise ValueError("Either job_id or run_id is required.")
         # Per-job ids, like the real source: two different jobs must never look
-        # like the same run (the cache keys on run_id).
+        # like the same run.
         resolved = run_id or f"MOCK_run_{job_id}"
         clean = job_id.endswith(CLEAN_JOB_SUFFIX)
         failed_count = 0 if clean else 2
@@ -141,14 +177,22 @@ class MockSource(Source):
             raw={"jobName": "MOCK_nightly-test", "id": resolved, "jobId": job_id},
         )
 
-    async def fetch_job(self, run: RunSummary) -> JobData:
+    async def fetch_job(self, run: RunSummary, wants: AttachmentFilter = accept_all) -> JobData:
         failed: list[RawScenario] = []
         if not run.job_id.endswith(CLEAN_JOB_SUFFIX):
             failed = [
-                _scenario("MOCK_Login - geçerli kullanıcı ile giriş"),
+                _scenario(
+                    "MOCK_Login - geçerli kullanıcı ile giriş",
+                    wants=wants,
+                    run_id=run.run_id,
+                    attachments_dir=self._attachments_dir,
+                ),
                 _scenario(
                     "MOCK_Hesap özeti - hareket listesi görüntüleme",
                     retry_info="MOCK_1. koşum: FAILED",
+                    wants=wants,
+                    run_id=run.run_id,
+                    attachments_dir=self._attachments_dir,
                 ),
             ]
         return JobData(

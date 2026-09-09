@@ -32,19 +32,15 @@ from typing import Any
 
 from app.domain.enums import ANALYZABLE_RUN_STATES, RunState, StepStatus
 from app.domain.findings import Step
-from app.source.base import Source
+from app.source.base import AttachmentFilter, Source, accept_all
 from app.source.models import Attachment, JobData, RawScenario, RunSummary
+from app.source.storage import save_attachment
 from app.source.visiumgo_client import VisiumGoClient, encode_segment
 
 #: Upper bound for the recorded build-log failure reason (see
 #: `fetch_build_log`): keeps a long exception text or ZIP listing from
 #: bloating the persisted run row.
 _BUILD_LOG_ERROR_MAX_CHARS = 500
-
-
-def _safe_path_part(value: str) -> str:
-    """Make an id/file name safe to use as a filesystem path segment."""
-    return value.replace("/", "_").replace(":", "_").replace("\\", "_")
 
 
 def _to_step_status(result_type: str) -> StepStatus | None:
@@ -165,6 +161,20 @@ class VisiumGoSource(Source):
             # run row. Architectural guard, not a tunable setting.
             return "", reason[:_BUILD_LOG_ERROR_MAX_CHARS]
 
+    @staticmethod
+    def describe_attachment(meta: dict[str, Any]) -> Attachment:
+        """One `attachments[]` row as an Attachment — metadata only, no bytes.
+
+        This is what the download filter judges: `deviceId`, `mimeType` and
+        `fileName` all arrive with the scenario detail, so a file the profile
+        does not want costs nothing at all.
+        """
+        return Attachment(
+            file_name=str(meta.get("fileName", "")),
+            mime_type=str(meta.get("mimeType", "")),
+            device_id=str(meta.get("deviceId", "")),
+        )
+
     async def download_attachment(
         self, run_id: str, meta: dict[str, Any], scenario_id: str = ""
     ) -> Attachment:
@@ -174,10 +184,9 @@ class VisiumGoSource(Source):
         startTime, duration}`. A failed download returns the attachment with
         empty content — the scenario continues (real-spec Bölüm 5).
         """
-        file_name = str(meta.get("fileName", ""))
-        mime_type = str(meta.get("mimeType", ""))
-        device_id = str(meta.get("deviceId", ""))
-        attachment = Attachment(file_name=file_name, mime_type=mime_type, device_id=device_id)
+        attachment = self.describe_attachment(meta)
+        file_name = attachment.file_name
+        mime_type = attachment.mime_type
         path = f"/api/runs/{encode_segment(run_id)}/attachments/{encode_segment(file_name)}"
 
         try:
@@ -235,7 +244,7 @@ class VisiumGoSource(Source):
         note = f"bilinmeyen koşum durumu atlandı: {', '.join(unknown)}" if unknown else ""
         return _summary_from(max(analyzable, key=_run_order_key), job_id=job_id, note=note)
 
-    async def fetch_job(self, run: RunSummary) -> JobData:
+    async def fetch_job(self, run: RunSummary, wants: AttachmentFilter = accept_all) -> JobData:
         """Adım B-D: evidence for an already-resolved run."""
         build_log, build_log_error = await self.fetch_build_log(run.run_id)
 
@@ -244,7 +253,7 @@ class VisiumGoSource(Source):
 
         scenarios: list[RawScenario] = []
         for record in failed:
-            scenarios.append(await self._build_scenario(run.run_id, record))
+            scenarios.append(await self._build_scenario(run.run_id, record, wants))
 
         total = run.run_result.get("totalScenarios", len(results))
         return JobData(
@@ -275,7 +284,9 @@ class VisiumGoSource(Source):
                 )
             return bundle.read(wanted).decode("utf-8", errors="replace")
 
-    async def _build_scenario(self, run_id: str, record: dict[str, Any]) -> RawScenario:
+    async def _build_scenario(
+        self, run_id: str, record: dict[str, Any], wants: AttachmentFilter = accept_all
+    ) -> RawScenario:
         """Adım C: fetch scenario detail and its attachments."""
         scenario_id = str(record.get("id", ""))
         detail = await self.get_scenario_detail(run_id, scenario_id)
@@ -292,6 +303,12 @@ class VisiumGoSource(Source):
 
         attachments: list[Attachment] = []
         for meta in detail.get("attachments", []):
+            described = self.describe_attachment(meta)
+            if not wants(described):
+                # Not wanted by this profile: no request, no bytes, no file —
+                # but the row stays, flagged, so the gap is explained later.
+                attachments.append(described.model_copy(update={"download_skipped": True}))
+                continue
             attachments.append(await self.download_attachment(run_id, meta, scenario_id))
 
         return RawScenario(
@@ -305,27 +322,5 @@ class VisiumGoSource(Source):
         )
 
     def _save(self, run_id: str, scenario_id: str, attachment: Attachment, data: bytes) -> Path:
-        """Write one attachment under `<run_id>/<scenario_id>/<device><ext>`.
-
-        The file is named the way VisiumGo's UI names it (`browser.default.html`,
-        `test.properties`) instead of carrying the API's uniqueness number, and
-        the scenario folder is what keeps those names from colliding: every
-        scenario of a run produces its own `browser.default.html`.
-        """
-        folder = self._attachments_dir / _safe_path_part(run_id)
-        if scenario_id:
-            folder = folder / _safe_path_part(scenario_id)
-        folder.mkdir(parents=True, exist_ok=True)
-
-        name = _safe_path_part(attachment.label) or _safe_path_part(attachment.file_name)
-        dest = folder / name
-        # Same device + extension twice in one scenario has not been observed;
-        # if it ever happens, keep both instead of overwriting one with the other.
-        if dest.exists():
-            stem, suffix = dest.stem, dest.suffix
-            index = 2
-            while dest.exists():
-                dest = folder / f"{stem}-{index}{suffix}"
-                index += 1
-        dest.write_bytes(data)
-        return dest
+        """Write one attachment under the shared naming rule (see `storage`)."""
+        return save_attachment(self._attachments_dir, run_id, scenario_id, attachment, data)

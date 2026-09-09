@@ -51,8 +51,6 @@ def _scenario(**overrides: object) -> RawScenario:
 def test_default_profile_full_findings(extractor: EvidenceExtractor) -> None:
     findings = extractor.extract(_scenario())
 
-    assert findings.parameter1 == "default"
-    assert findings.parameter2 == "default"
     assert findings.failed_step == "Adım iki"  # first FAILED step
     assert findings.error_message == "NoSuchElementException: #btn"
     labels = [b.label for b in findings.evidence_blocks]
@@ -63,39 +61,43 @@ def test_default_profile_full_findings(extractor: EvidenceExtractor) -> None:
     assert findings.screenshot_paths == ["web.png"]
 
 
-def test_parameters_are_stamped(extractor: EvidenceExtractor) -> None:
-    # parameter2 is free text (recorded only); parameter1 must name a profile.
-    findings = extractor.extract(_scenario(), parameter2="tipY")
-    assert findings.parameter1 == "default"
-    assert findings.parameter2 == "tipY"
-    assert findings.profile_name == "default"
+def test_request_parameters_never_reach_extraction(extractor: EvidenceExtractor) -> None:
+    """`Findings` has no parameter fields at all — they decide nothing.
+
+    Keeping them in the analysis contract invited exactly what happened before:
+    they crept into profile selection and into the prompt.
+    """
+    findings = extractor.extract(_scenario())
+
+    assert not hasattr(findings, "parameter1")
+    assert not hasattr(findings, "parameter2")
+    assert findings.profile_name == "default_web"  # job mapping alone decided
     labels = [b.label for b in findings.evidence_blocks]
     assert BLOCK_DOM in labels and BLOCK_BROWSER in labels
 
 
-def test_unknown_profile_name_raises(extractor: EvidenceExtractor) -> None:
+def test_unknown_forced_profile_raises(extractor: EvidenceExtractor) -> None:
     # Loud failure instead of silently analyzing with the wrong profile.
     with pytest.raises(ValueError, match="Unknown profile"):
-        extractor.extract(_scenario(), parameter1="boyle-profil-yok")
+        extractor.extract(_scenario(), forced_profile="boyle-profil-yok")
 
 
-def test_missing_evidence_gets_placeholder_block(
+def test_missing_evidence_produces_no_block_at_all(
     extractor: EvidenceExtractor,
 ) -> None:
-    """Profile wants DOM but it never arrived -> block stays, says so."""
+    """Profile wants DOM but it never arrived -> no block, no header, no marker."""
     scenario = _scenario(
         attachments=[_att("test", ".log", content="test log")]  # no html at all
     )
     findings = extractor.extract(scenario)
 
-    dom = next(b for b in findings.evidence_blocks if b.label == BLOCK_DOM)
-    assert "alınamadı" in dom.content
+    assert not [b for b in findings.evidence_blocks if b.label == BLOCK_DOM]
     # Present evidence is untouched.
     steps = next(b for b in findings.evidence_blocks if b.label == BLOCK_STEPS)
     assert steps.content == "test log"
 
 
-def test_empty_evidence_also_gets_placeholder(extractor: EvidenceExtractor) -> None:
+def test_empty_evidence_also_produces_no_block(extractor: EvidenceExtractor) -> None:
     # Attachment arrived but the download failed -> empty content, same result.
     scenario = _scenario(
         attachments=[
@@ -104,8 +106,7 @@ def test_empty_evidence_also_gets_placeholder(extractor: EvidenceExtractor) -> N
         ]
     )
     findings = extractor.extract(scenario)
-    dom = next(b for b in findings.evidence_blocks if b.label == BLOCK_DOM)
-    assert "alınamadı" in dom.content
+    assert not [b for b in findings.evidence_blocks if b.label == BLOCK_DOM]
 
 
 def test_build_log_is_profile_controlled(extractor: EvidenceExtractor) -> None:
@@ -121,8 +122,8 @@ def test_evidence_report_shows_what_arrived_and_what_matched(
     """One real run must answer "did it not arrive, or did it not match?".
 
     An attachment whose device_id/extension no Evidence claims used to vanish
-    without trace: the prompt block simply showed "(bu kanıt alınamadı)" and the
-    cause was indistinguishable from the file never being produced.
+    without trace: the block simply vanished from the prompt and the cause was
+    indistinguishable from the file never being produced.
     """
     scenario = _scenario()
     scenario.attachments.append(

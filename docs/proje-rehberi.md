@@ -37,7 +37,7 @@ Source → Extraction(+Evidence) → PreCheck → Prompt → LLM → Parse → P
 | `app/llm/` | Halka 4 — LLM'e çağrı (Mock + gerçek) |
 | `app/parsing/` | Halka 5 — LLM cevabından JSON çıkar |
 | `app/persistence/` | Halka 6 — diske yaz/oku (Repository) |
-| `config/profiles.example.json` | Kopyalanabilir profil örnekleri (job grubu → şablon + kanıt + kural) |
+| `tools/` | Geliştirme araçları — `inspect_run.py` (kanıtlar geliyor mu?); `app/` import etmez |
 | `config/prompts/*.txt` | Prompt şablonları: `default` · `web` · `mobile` · `hybrid` · `buildlog` (profil seçer) |
 | `config/prompts/_contract.txt` | Ortak çıktı sözleşmesi (JSON şeması + verdict + confidence) — her şablonun sonuna eklenir |
 | `database/` | Sahte veritabanı (klasör=tablo, JSON=satır) |
@@ -71,7 +71,6 @@ Hepsi `app/config.py` → `Settings`; `.env` ile ezilir. Kodda hardcode yok.
 | `llm_temperature` / `llm_max_tokens` / `llm_timeout_seconds` | 0 / 8000 / 120 | LLM çağrı parametreleri |
 | `llm_verify_ssl` | `False` | LLM SSL doğrulama |
 | `max_concurrency` | `2` | Aynı anda kaç senaryo işlenir (`Semaphore`) |
-| `cache_enabled` | `False` | Aynı **koşumu** (run_id + parametreler) tekrar analiz etmeme (kapalı) |
 
 `get_settings()` → süreç boyunca tek `Settings` örneği döndürür (`@lru_cache`).
 
@@ -112,13 +111,13 @@ sayılır ve boş kalır), `raw_run_response`, `raw_results_response` (ham /resu
 
 **`Findings`** (Halka 2 → 3 sözleşmesi) — ayrıca `profile_name`, `extra_context`, `truncated`,
 `truncated_note`, `excluded_from_store` (hangi profil çalıştı, ek bağlam, kırpma/saklama bayrakları) —
-`parameter1`, `parameter2`, `scenario_name`, `failed_step`,
+`scenario_name`, `failed_step`,
 `error_message`, `steps: list[Step]`, `evidence_blocks: list[EvidenceBlock]`,
 `screenshot_paths: list`, `retry_info`.
 
 **`Profile`** (analiz profili) — `name`, `job_ids: list`, `evidence_to_llm: list`,
 `evidence_to_store: list`, `rules_for(evidence_name) -> list[Rule]`, `extra_context`
-(`config/profiles.json`'dan; job_id ya da parameter1 ile seçilir).
+(`config/profiles.json`'dan; job_id ile — ya da job durumu/çağıran dayattıysa onunla — seçilir).
 
 **`Rule`** (içerik kuralı) — `apply(text, ctx) -> str`. `RuleContext`: `scenario_name`.
 
@@ -129,7 +128,7 @@ sayılır ve boş kalır), `raw_run_response`, `raw_results_response` (ham /resu
 `summary`, `most_relevant_log_lines: list`, `error_signature`.
 
 **`AnalysisResult`** (diske yazılan teşhis satırı) — `result_id`, `analyzer_run_id` + tüm LLM alanları
-+ sistem meta: `parameter1`, `parameter2`, `profile_name`, `truncated`, `truncated_note`, `screenshot_paths`,
++ sistem meta: `profile_name`, `truncated`, `truncated_note`, `screenshot_paths`,
 `raw_llm_response`, `status` (AnalysisStatus), `meta`.
 
 **`AnalysisMeta`** — `llm_model`, `input_tokens`, `output_tokens`, `duration_ms`, `analyzed_at`.
@@ -144,7 +143,7 @@ sayılır ve boş kalır), `raw_run_response`, `raw_results_response` (ham /resu
 | Method | Ne yapar |
 |---|---|
 | `resolve_run(job_id, run_id="")` | **Hangi koşum?** — ucuz, kanıt indirmeden. `RunSummary` döner: `run_id`, `job_id`, `job_name`, **`state`**, `run_result`, ham cevap, `note`. Cache kontrolü ve job durumu dallanması bunun sonucuyla yapılır |
-| `fetch_job(run)` | Çözülmüş koşumun başarısız senaryolarını `JobData` olarak döndürür. Çözümleme burada **tekrar yapılmaz** (parametreler source'a gitmez — yalnız analiz tarafını özelleştirir) |
+| `fetch_job(run, wants=accept_all)` | Çözülmüş koşumun başarısız senaryolarını `JobData` olarak döndürür. Çözümleme burada **tekrar yapılmaz**. `wants` = "bu ek indirilsin mi?" — profilden üretilip enjekte edilir; kaynak Evidence sınıflarını bilmez |
 
 **`MockSource`** (sahte veri; VisiumGo kapalıyken çalışır)
 | Method | Ne yapar |
@@ -186,7 +185,7 @@ sayılır ve boş kalır), `raw_run_response`, `raw_results_response` (ham /resu
 **`Extractor`** (arayüz)
 | Method | Ne yapar |
 |---|---|
-| `extract(scenario, *, parameter1="default", parameter2="default", job_id="", forced_profile="", build_log="")` | `RawScenario` → `Findings` (profil: `forced_profile` → `parameter1` → `job_id` → `default`) |
+| `extract(scenario, *, job_id="", forced_profile="", build_log="")` | `RawScenario` → `Findings` (profil: `forced_profile` → `job_id` → `default_web`). İstek parametreleri buraya **hiç gelmez** |
 
 **`EvidenceExtractor`** (tek, kaynaktan bağımsız gerçekleme)
 | Method | Ne yapar |
@@ -223,11 +222,17 @@ sayılır ve boş kalır), `raw_run_response`, `raw_results_response` (ham /resu
 |---|---|
 | `build_for(scenario, profile, ctx=None)` | Attachment'ları (deviceId + uzantı ile) Evidence'lara eşler; bayrakları **ve kuralları** profilden enjekte eder |
 
+**`AttachmentPlanner`** (`app/evidence/planner.py`)
+| Method | Ne yapar |
+|---|---|
+| `wants_for(job_id, forced)` | Aktif profilden "bu ek indirilsin mi?" yordamı üretir. Hiçbir sınıfın sahiplenmediği dosya **her zaman** iner (bakmadan yargılanamaz) |
+
 **`ProfileRegistry`** (`app/evidence/profiles.py`)
 | Method | Ne yapar |
 |---|---|
 | `__init__(config_path)` | `profiles.json`'ı yükler, kuralları **açılışta derler**; `default` **veya `job_failed`** profili yoksa / aynı job_id iki profildeyse / kural config'i bozuksa **açılışta patlar** (fail-fast) |
-| `get(job_id="", parameter1="", forced="")` | Profili döndürür; sıra: `forced` (job durumu) → `parameter1` (profil adı) → `job_ids` eşleşmesi → `default`. Bilinmeyen profil adı → hata |
+| `get(job_id="", forced="")` | Profili döndürür; sıra: `forced` (çağıran ya da job durumu) → `job_ids` eşleşmesi → `default_web`. Bilinmeyen `forced` adı → hata |
+| `wanted_evidence` (Profile) | `evidence_to_llm ∪ evidence_to_store` — indirmeye değer kanıtlar |
 
 **Kural motoru** (`app/evidence/rules.py`) — `Rule.apply(text, ctx)`; `RULE_REGISTRY`'den seçilir.
 | Kural | Ne yapar |
@@ -269,7 +274,7 @@ Bozuk regex / bilinmeyen verdict / kova dışı confidence → **açılışta** 
 | Method | Ne yapar |
 |---|---|
 | `__init__(template_path, confidence_buckets)` | Şablonu dosyadan yükler (yoksa açılışta patlar = fail-fast) |
-| `build(findings)` | `findings.prompt_template`'in seçtiği şablonu doldurur: ortak alanlar (`$scenario_name`, `$failed_step`, `$error_message`, `$steps`, `$extra_context`, `$confidence_buckets`), toplu `$evidence_blocks` ve **kanıt bazlı** `$test_log` / `$dom` / `$mobile_dom` / `$browser_log` / `$build_log` / `$test_properties`. Gelmeyen kanıt yer tutucu yazar. `$parameter1`/`$parameter2` çalışır ama hiçbir şablonda yoktur (plan.md A4.2) |
+| `build(findings)` | `findings.prompt_template`'in seçtiği şablonu doldurur: ortak alanlar (`$scenario_name`, `$failed_step`, `$error_message`, `$steps`, `$extra_context`, `$confidence_buckets`), toplu `$evidence_blocks` ve **kanıt bazlı** `$test_log` / `$dom` / `$mobile_dom` / `$browser_log` / `$build_log` / `$test_properties`. Gelmeyen kanıt için alan **tamamen boş** kalır (başlık da gitmez). `$parameter1`/`$parameter2` **yoktur**: tanınmayan placeholder açılışta hata (plan.md A4.2) |
 | `version_of(name)` | Şablonun (şablon + sözleşme) tam metninin kısa hash'i → `meta.prompt_version` |
 | `ensure_templates_exist(names)` | Profillerin istediği şablonlar var mı — **açılışta** doğrulanır |
 
@@ -326,9 +331,8 @@ Tüm halkaları enjekte alır; hiçbirini kendisi yaratmaz.
 | `__init__(settings, repository, source, extractor, prompt_builder, llm_provider, precheck)` | Parçaları takar; run satırı kilidi kurar |
 | `create_run(parameter1, job_id, parameter2, run_id="")` | `runs/` tablosuna `pending` satır yazar, `analyzer_run_id` döndürür (POST bunu çağırır) |
 | `run_analysis(analyzer_run_id)` | **Tek tetik** (arka plan girişi). `_run_job`'u sarar; job-seviyesi hata → `status=failed` + not |
-| `_run_job(run)` | `running` yapar → **`source.resolve_run`** (koşum + job durumu) → `RUNNING` ise hiçbir şey indirmeden hata → (cache açıksa kontrol) → `source.fetch_job(summary)` → run'ı günceller → hata yoksa `done` → varsa her senaryo için `_analyze_scenario` (paralel, `Semaphore`) → `done`. `state == FAILED` ise her senaryo `job_failed` profiliyle analiz edilir ve bu `note`'a yazılır |
+| `_run_job(run)` | `running` yapar → **`source.resolve_run`** (koşum + job durumu) → `RUNNING` ise hiçbir şey indirmeden hata → `source.fetch_job(summary, filtre)` → run'ı günceller → hata yoksa `done` → varsa her senaryo için `_analyze_scenario` (paralel, `Semaphore`) → `done`. `state == FAILED` ise her senaryo `job_failed` profiliyle analiz edilir ve bu `note`'a yazılır |
 | `_analyze_scenario(...)` | **Asıl zincir** (aşağıda). Asla exception fırlatmaz (bir senaryo koşuyu düşürmez) |
-| `_find_cached_run(run)` | Aynı **run_id** + parametrelerin daha önce tam analizli koşumunu bulur. job_id ile eşleşmez (bir job'ın çok koşumu olur); run_id boşsa cache aranmaz |
 | `_screenshot_paths(scenario)` | Ham iz satırı için image attachment yollarını toplar |
 | `_increment_completed(id)` | Kilit altında `completed_count += 1` |
 | `_update_run(run, **fields)` | Run satırını güncelleyip diske yazar |
@@ -374,7 +378,7 @@ değil, **API sınırında** yapılır: `AnalyzerService.get_run()` tam kaydı d
 
 **API'de görünmeyen (diskte tam duran):** `raw_run_response`, `raw_results_response`,
 `run_result`, `build_log`, `raw_llm_response`, `profile_name`, `truncated(_note)`,
-`screenshot_paths`, satır seviyesi `parameter1/2`.
+`screenshot_paths`. İstek parametreleri burada tekrarlanmaz — koşum satırındadır.
 
 > `build_log` API'ye girmez ama `build_log_error` **girer**: biri kanıtın *içeriği*, diğeri
 > "alınamadı" bilgisidir — `note` gibi koşum seviyesi sistem durumu.
@@ -388,8 +392,8 @@ değil, **API sınırında** yapılır: `AnalyzerService.get_run()` tam kaydı d
 
 | Tablo (klasör) | Bir satırda ne var |
 |---|---|
-| `runs/` | Job durumu: parameter1/2, job_id/run_id, status, sayaçlar, `run_result`, `raw_run_response`, `raw_results_response` |
-| `evidence/` | Senaryonun ham hali (`raw_scenario` + screenshot yolları + `excluded_from_store`). Profilin `evidence_to_store`'a koymadığı kanıdın **içeriği boş**, metadata durur |
+| `runs/` | Job durumu: job_id/run_id, status, sayaçlar, (kayıt amaçlı `parameter1/2`), `run_result`, `raw_run_response`, `raw_results_response` |
+| `evidence/` | Senaryonun ham hali (`raw_scenario` + screenshot yolları + `evidence_report`). Profilin istemediği ek **hiç indirilmemiştir**: içerik ve dosya yolu boş, metadata + `download_skipped` durur |
 | `prompts/` | **Giden** taraf: `prompt` + gönderilen tam `request` |
 | `llm_responses/` | **Gelen** taraf: `raw_response` (tam zarf) + `content` + model/token/süre |
 | `analysis_results/` | Nihai teşhis (`verdict`, `root_cause`... + sistem meta + `status`) |

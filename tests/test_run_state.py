@@ -67,7 +67,7 @@ def test_passed_job_uses_normal_profile_resolution(settings: Settings) -> None:
 
     assert result["status"] == "done"
     assert result["note"] == ""
-    assert {row["profile_name"] for row in result["results"]} == {"default"}
+    assert {row["profile_name"] for row in result["results"]} == {"default_web"}
 
 
 @pytest.mark.asyncio

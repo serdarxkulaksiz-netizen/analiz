@@ -4,6 +4,7 @@ import pytest
 
 from app.config import Settings
 from app.domain.api import build_run_view
+from app.evidence.planner import AttachmentPlanner
 from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
 from app.extraction.evidence_extractor import EvidenceExtractor
@@ -13,7 +14,7 @@ from app.persistence.file_repository import FileRepository
 from app.precheck.noop import NoOpPreCheck
 from app.prompting.builder import PromptBuilder
 from app.service import AnalyzerService
-from app.source.base import Source
+from app.source.base import AttachmentFilter, Source, accept_all
 from app.source.mock import MockSource
 from app.source.models import JobData, RawScenario, RunSummary
 
@@ -33,16 +34,16 @@ class TimeoutLLMProvider(LLMProvider):
 
 
 def _service(settings: Settings, llm: LLMProvider) -> AnalyzerService:
+    profiles = ProfileRegistry(settings.profiles_config_path)
     return AnalyzerService(
         settings=settings,
         repository=FileRepository(settings.database_dir),
         source=MockSource(),
-        extractor=EvidenceExtractor(
-            EvidenceRegistry(), ProfileRegistry(settings.profiles_config_path)
-        ),
+        extractor=EvidenceExtractor(EvidenceRegistry(), profiles),
         prompt_builder=PromptBuilder(settings.prompts_dir, settings.confidence_buckets),
         llm_provider=llm,
         precheck=NoOpPreCheck(),
+        planner=AttachmentPlanner(profiles),
     )
 
 
@@ -90,22 +91,22 @@ class FailingSource(Source):
     async def resolve_run(self, job_id, run_id=""):  # type: ignore[no-untyped-def]
         return RunSummary(run_id=run_id or f"RUN_{job_id}", job_id=job_id, state="PASSED")
 
-    async def fetch_job(self, run):  # type: ignore[no-untyped-def]
+    async def fetch_job(self, run, wants=accept_all):  # type: ignore[no-untyped-def]
         raise RuntimeError("VisiumGo unreachable")
 
 
 @pytest.mark.asyncio
 async def test_source_failure_finishes_run_with_note(settings: Settings) -> None:
+    profiles = ProfileRegistry(settings.profiles_config_path)
     service = AnalyzerService(
         settings=settings,
         repository=FileRepository(settings.database_dir),
         source=FailingSource(),
-        extractor=EvidenceExtractor(
-            EvidenceRegistry(), ProfileRegistry(settings.profiles_config_path)
-        ),
+        extractor=EvidenceExtractor(EvidenceRegistry(), profiles),
         prompt_builder=PromptBuilder(settings.prompts_dir, settings.confidence_buckets),
         llm_provider=GarbageLLMProvider(),
         precheck=NoOpPreCheck(),
+        planner=AttachmentPlanner(profiles),
     )
     run_id = service.create_run("default", "job-1", "default")
 
@@ -159,8 +160,8 @@ class BuildLogFailingSource(MockSource):
     normally, only the build log is missing — and it says why.
     """
 
-    async def fetch_job(self, run: RunSummary) -> JobData:
-        job = await super().fetch_job(run)
+    async def fetch_job(self, run: RunSummary, wants: AttachmentFilter = accept_all) -> JobData:
+        job = await super().fetch_job(run, wants)
         return job.model_copy(
             update={
                 "build_log": "",
@@ -210,8 +211,8 @@ class CountingLLMProvider(LLMProvider):
 class NoEvidenceSource(MockSource):
     """A run whose failed scenario produced nothing: no error text, no files."""
 
-    async def fetch_job(self, run: RunSummary) -> JobData:
-        job = await super().fetch_job(run)
+    async def fetch_job(self, run: RunSummary, wants: AttachmentFilter = accept_all) -> JobData:
+        job = await super().fetch_job(run, wants)
         bare = RawScenario(scenario_name="MOCK_kanıtsız senaryo")
         return job.model_copy(update={"failed_scenarios": [bare], "build_log": ""})
 

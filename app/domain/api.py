@@ -61,8 +61,6 @@ class RunView(BaseModel):
     #: system state like `note` — NOT raw evidence: the build log itself stays
     #: on disk and never enters the API (plan.md A13).
     build_log_error: str = ""
-    #: Set when this run reused an earlier run's results (cache hit).
-    cached_from: str = ""
     created_at: str = ""
     updated_at: str = ""
     results: list[DiagnosisView] = []

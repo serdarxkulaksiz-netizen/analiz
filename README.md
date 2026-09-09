@@ -23,7 +23,7 @@ kaydedilir (boş prompt'un cevabı zaten "kanıt yok" olurdu).
 - **Agentless / tek-atış:** senaryo başına tek prompt, tek LLM çağrısı; tool-calling yok.
 - **Parse-minimal:** ham kanıt etiketli bloklar halinde LLM'e gider; alan-parser yok.
 - **Job bazlı özelleştirme:** `config/profiles.json`'daki **analiz profili**,
-  `job_id`'ye göre otomatik seçilir (`parameter1` ile elle ezilebilir). Profil
+  `job_id`'ye göre seçilir. Profil
   hem *hangi kanıt* prompt'a girer hem de *o kanıtın içine ne yapılır*
   (kes/seç/ekle) belirler. Yeni job = **config'e satır**, kod değişmez.
 - **Evidence mimarisi:** 8 kanıt sınıfı + registry (**`deviceId` + dosya uzantısı** eşleme —
@@ -80,8 +80,9 @@ uvicorn app.main:app --reload
 
 ```bash
 # analizi başlat (hemen analyzer_run_id döner, arka planda çalışır)
-# parameter1/parameter2 opsiyonel (verilmezse "default") — analiz profilini seçer
 # job_id VEYA run_id verilir (ikisi de olursa run_id kazanır)
+# parameter1/parameter2 opsiyoneldir: kaydedilir ve GET ile geri döner,
+# ama hiçbir kararı etkilemez (ne profil, ne prompt)
 curl -X POST http://127.0.0.1:8000/analyze/visiumgo \
   -H "Content-Type: application/json" \
   -d '{"job_id": "job-42"}'
@@ -89,7 +90,7 @@ curl -X POST http://127.0.0.1:8000/analyze/visiumgo \
 # özelleştirilmiş analiz (config/profiles.json'daki profil seçilir)
 curl -X POST http://127.0.0.1:8000/analyze/visiumgo \
   -H "Content-Type: application/json" \
-  -d '{"parameter1": "projeX", "parameter2": "minimal", "job_id": "job-42"}'
+  -d '{"job_id": "job-42", "parameter1": "projeX", "parameter2": "minimal"}'
 
 # durumu / sonuçları sorgula
 curl http://127.0.0.1:8000/analyze/visiumgo/<analyzer_run_id>
@@ -138,13 +139,17 @@ Kod değişmez; profil `job_id` ile otomatik bulunur.
 }
 ```
 
-**Profil seçimi:** job durumu `FAILED` ise `job_failed` (aşağıya bakın) → `parameter1` bir profil
-adı verirse o kazanır → yoksa `job_ids` eşleşmesi → yoksa `default`. Var olmayan profil adı
-verilirse koşum `failed` olur (sessizce yanlış profille analiz etmez).
+**Profil seçimi:** job durumu `FAILED` ise `job_failed` → `job_ids` eşleşmesi → `default_web`.
+Başka girdi yoktur; istekteki `parameter1`/`parameter2` profil **seçmez**.
 
-Config'te **`default` ve `job_failed` profilleri zorunludur**; biri eksikse uygulama açılmaz.
+Config'te **`default_web` ve `job_failed` profilleri zorunludur**; biri eksikse uygulama açılmaz.
 `job_failed`'ın içeriği bugün bilerek boştur: gerçek bir başarısız job'ın kanıtı görülmeden
 doldurulursa uydurma olur.
+
+**Profil üç şeyi söyler:** `evidence_to_store` = hangi ekler **iner** ve `database/`'e yazılır
+(listede olmayan ek için **istek bile atılmaz**) · `evidence_to_llm` = hangileri prompt'a girer
+(store'un alt kümesi olmalı, değilse **açılışta hata**) · `rules` = her kanıt **prompt'a giderken**
+nasıl kırpılır (diskteki ham kopya tam kalır).
 
 **Kural tipleri:** `keep_scenario_section` (job-seviyesi logu senaryo bazında dilimler) ·
 `keep_last_lines` / `keep_first_lines` · `drop_matching` / `keep_matching` (regex) ·
@@ -155,17 +160,32 @@ doldurulursa uydurma olur.
 > Kesme olduysa sonuçta `truncated=true` + `truncated_note` görünür (sessiz kayıp yok).
 
 **Eksik kanıt:** profil bir kanıt istediği hâlde o kanıt gelmediyse (ör. tarayıcı açılmadığı için
-DOM yok) blok prompt'tan düşmez — `=== DOM ===` başlığı altında
-`(bu kanıt alınamadı / bulunmuyor)` yazar. Böylece LLM eksiği bilir.
+DOM yok) blok prompt'tan **başlığıyla birlikte düşer** — boş bir `=== DOM ===` başlığı kalmaz.
+Şablon başlığı kendisi yazmaz; başlık placeholder'ın içinden gelir.
 
-Prompt şablonu bu işaretin **ne demek olduğunu** modele ayrıca anlatır: eksik blok normaldir,
-tek başına `unknown`/`inconclusive` gerekçesi değildir — yalnızca confidence'ı düşürebilir.
-Aksi hâlde model teşhis üretmek yerine "kanıt eksik" raporlamaya başlıyor.
+Eksiğin kaydı prompt'ta değil, `evidence` satırındaki `evidence_report`'tadır: dosya geldi mi,
+hangi sınıfa eşleşti, profil istemediği için mi indirilmedi. Prompt yalnız **eldeki** kanıtı
+taşır; modele anlatılacak bir "eksik işareti" de kalmaz.
 
 **Kanıt ne oldu, nereden bilinir:** her senaryonun `evidence` satırında `evidence_report` var —
 gelen her dosya hangi Evidence sınıfına eşleşti (`""` = eşleşmedi), profil onu LLM'e gönderiyor
 mu, hangi blok dolu hangisi yer tutucu, kural gerçekten kesti mi. "DOM gelmedi mi, geldi de
 eşleşmedi mi" sorusu böylece tek koşumdan cevaplanır.
+
+## Kanıtlar geliyor mu? — tek komut
+
+```bash
+python -m tools.inspect_run --run-id 148918      # ya da --job-id 886
+```
+
+Gerçek zinciri koşturur (koşum çöz → ekleri indir → sınıfa eşle → prompt kur) ve her ek için
+"indi / diskte yok / hiçbir sınıf sahiplenmedi" satırı basar, sonunda `prompt_chars` toplamını
+verir. **Gerçek LLM'e asla gitmez** (servis mock sağlayıcıyla kurulur, bunu değiştiren bayrak
+yoktur) ve **`test_all` profilini zorlar**, yani her ek indirilir. Sorun bulursa çıkış kodu 1
+döner — okunacak bir rapor değil, cevap veren bir komut.
+
+`--run-id`/`--job-id` vermezsen `tools/inspect_run.py` başındaki `DEFAULT_RUN_ID` /
+`DEFAULT_JOB_ID` sabitleri kullanılır.
 
 ## Prompt şablonları — job grubuna göre
 
@@ -176,8 +196,8 @@ Prompt metni kodda değil, `config/prompts/` altındadır:
 
 Şablon içinde her kanıtın kendi alanı vardır: `$test_log`, `$dom`, `$mobile_dom`, `$browser_log`,
 `$build_log`, `$test_properties` (ya da hepsi birden için `$evidence_blocks`).
-`$parameter1`/`$parameter2` çalışır ama **hiçbir şablonda yoktur**: çoğu koşumda ikisi de
-"default" yazıyordu, yani modele bilgi değil gürültü gidiyordu. Tanınmayan bir alan adı ya da olmayan bir şablon
+`$parameter1`/`$parameter2` **yoktur**: bir şablonda kullanılırsa açılışta "tanınmayan
+placeholder" hatası verir. İstekteki bu iki anahtar hiçbir kararı etkilemez (plan.md A4.2). Tanınmayan bir alan adı ya da olmayan bir şablon
 adı **açılışta hata** verir. Hangi şablonun hangi cevabı ürettiği `meta.prompt_template` +
 `meta.prompt_version` ile her teşhiste kayıtlıdır.
 
@@ -257,10 +277,9 @@ dosya **boş listeyle** gelir.
 | Gerçek lokal LLM | `LLM_PROVIDER=openai_compatible`, `LLM_BASE_URL=<url>`, `LLM_ENDPOINT_PATH=/api/v1/extension/send` (auth yok; `model` body'de gönderilmez) |
 | Gerçek VisiumGo | `SOURCE_PROVIDER=visiumgo`, `VISIUMGO_BASE_URL=<url>`, `VISIUMGO_TOKEN=<JWT>` (extractor kaynaktan bağımsız, ayrı ayar yok) |
 | Build log | `VISIUMGO_BUILD_LOG_PATH=/api/runs/{run_id}/logs` — endpoint **ZIP** döndürür, içinden `build.log` çıkarılır (`VISIUMGO_BUILD_LOG_ENTRY`); boş = atla |
-| Kanıt akışı / kırpma | `config/profiles.json` → job bazlı profil + kurallar (**örnek:** `config/profiles.example.json`) |
+| Kanıt akışı / kırpma | `config/profiles.json` → job bazlı profil + kurallar (tek kaynak; `test_all` profili örnek olarak da okunabilir) |
 | Prompt şablonları | `PROMPTS_DIR=config/prompts` (eski `PROMPT_TEMPLATE_PATH` **kalktı**) |
 | Paralellik | `MAX_CONCURRENCY=<n>` |
-| Önbellek | `CACHE_ENABLED=true` → aynı **run_id + parametreler** daha önce analiz edildiyse LLM çağrılmaz, sonuç diskten döner (job bazlı değil: bir job'ın her koşumu ayrı analiz edilir) |
 
 ## Testler ve statik kontroller
 
@@ -298,5 +317,5 @@ Set **boş başlar**: uydurma vaka hiçbir şey ölçmez. Vaka biçimi `evals/ru
 `evals/cases/ornek-vaka.json.example` dosyasında.
 
 Sözleşme-bazlı testler (Findings, çıktı şeması, Repository, parsing, Evidence
-mimarisi/registry, profil çözümü, kırpma kuralları, önbellek, PreCheck, hata
+mimarisi/registry, profil çözümü, kırpma kuralları, PreCheck, hata
 dayanıklılığı) + mock'larla uçtan uca smoke testi.

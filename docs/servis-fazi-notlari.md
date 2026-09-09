@@ -175,14 +175,124 @@ Gözlenen setler: web = 5 ek · mobil = 4 ek · **cihaz düşerse yalnız `test.
 
 ---
 
-## Faz 2 (kapsam dışı — kayıt için)
+## Faz 2 — Plan: profil sözleşmesi, boş blok temizliği, kontrol aracı
 
-1. Eşleştirmenin config'e taşınması (`evidence_map`).
-2. İndirmeyi profile bağlama: profilin istemediği ek **hiç indirilmesin**
-   (kazanç büyük, ama "her şeyi sakla" kuralını deler — konuşulacak).
-3. Profillerin gerçek `job_ids` ile doldurulması, `job_failed` profilinin içeriği.
-4. `properties.failedStep.*` ve cihaz hata metninin (`ERROR: device disconnected`) kullanımı.
-5. Prompt tarafı: boyut (340k karakter → timeout), `strip_tags` + `collapse_whitespace`,
-   `MAX_CONCURRENCY`, mobil DOM ve `test.properties`'in prompt'a girip girmeyeceği.
-6. Build log dilimlemesinin gerçek log ile doğrulanması (marker eşleşmezse tüm log
-   her senaryonun prompt'una giriyor).
+> **Durum: Faz 2 kodlandı** (2026-09-09). Ayrıntı `CHANGELOG.md`'nin son bölümünde; kalıcı hâli
+> `plan.md`'de (A5.2, A5.4, A5.5, A8.3, A20, A17/32-35).
+
+> **Kapsam:** profilin *mekanizması*. Profillerin **içeriği** (gerçek `job_ids`, kurallar,
+> şablon metinleri) **Faz 3**'te doldurulacak — bu fazda hiçbir job grubu tanımlanmaz.
+
+### Kilitli kararlar (Faz 2)
+
+| # | Karar |
+|---|---|
+| F1 | Profil üç şeyi söyler: **hangi kanıt iner ve DB'ye yazılır** (`evidence_to_store`) · **hangisi prompt'a girer** (`evidence_to_llm`) · **nasıl trimlenir** (`rules`). |
+| F2 | Hiçbir listede olmayan ek **indirilmez**. Metadata'sı ve "profil istemedi" notu `evidence_report`'a yazılır — dosya yok ama bilgisi var. |
+| F3 | `evidence_to_llm`'de olup `evidence_to_store`'da olmayan kanıt → **açılışta hata** (config sessizce yalan söylemez). |
+| F4 | Trim **yalnız prompt'u** etkiler; `database/` altındaki ham içerik tam kalır. |
+| F5 | **Gelmeyen kanıt prompt'ta hiç görünmez — başlığıyla birlikte.** `(bu kanıt alınamadı / bulunmuyor)` yer tutucusu kalkar; şablonlardaki "eksik kanıt normaldir" paragrafı silinir. İstisna yok, `=== HATA ===` dahil. |
+| F6 | Fallback profil adı `default` → **`default_web`**. `parameter1`/`parameter2`'ye **dokunulmaz** (ileride kullanılmak üzere duruyorlar). |
+| F7 | Profil seti: **`test_all`** (araç profili) · **`default_web`** (fallback) · **`job_failed`**. `config/profiles.example.json` **silinir**. |
+| F8 | **`tools/inspect_run.py`**: tek komut, her zaman `test_all`, **hiçbir koşulda gerçek LLM'e gitmez**. |
+
+---
+
+### 1. İndirme kapısı — profil kararı, kaynak uygular
+
+Bugün `VisiumGoSource` **her eki** indiriyor; profil ise iki halka sonra çözülüyor. İndirmeyi
+profile bağlamak için kaynağın "bu ek isteniyor mu" sorusunu sorabilmesi lazım — ama kaynak
+Evidence sınıflarını **bilmemeli** (katman ters çevrilmez).
+
+Çözüm: karar dışarıdan enjekte edilir.
+
+```python
+# Halka 1: kaynak yalnız "isteniyor mu?" diye sorar, cevabı bilmez.
+async def fetch_job(self, run: RunSummary, wants: AttachmentFilter = accept_all) -> JobData
+```
+
+- `wants(attachment_metadata) -> bool`. Metadata (`deviceId`, `fileName`, `mimeType`) senaryo
+  detayında **indirmeden önce** geldiği için karar indirmeden verilebilir.
+- Servis bu fonksiyonu profilden üretir (profil zaten orada çözülüyor: `forced_profile` +
+  `profile_job_id`), Evidence eşleşmesini bilen tek katman yine `app/evidence/` kalır.
+- İndirilmeyen ek **kaybolmaz**: `Attachment` metadata'sıyla döner, yeni bir bayrakla
+  (`download_skipped`) işaretlenir, `evidence_report`'ta "profil istemedi" satırı olur.
+- `test_all` her şeye `True` döner → araç tam kapsam görür.
+
+**Bedeli açıkça yazılsın:** "her şeyi sakla" kuralı bilerek deliniyor. İndirilmeyen ek diskte
+**hiç olmaz**; sonradan bakılmak istenirse koşum yeniden analiz edilmeli.
+
+### 2. Boş blok = hiç blok (prompt temizliği)
+
+Bugün şablonda `=== DOM ===` **elle yazılı**, altına `$dom` konuyor; kanıt gelmeyince başlık
+duruyor, altına yer tutucu yazılıyor.
+
+- Başlık **placeholder'ın içine** taşınır: `$dom` ya `=== DOM ===\n<içerik>` olarak açılır ya da
+  **boş string**. Şablon yerleşimi kontrol etmeye devam eder, gelmeyen kanıt başlığını da götürür.
+- `EVIDENCE_UNAVAILABLE` sabiti ve extraction'ın "yer tutucu blok ekleme" adımı **kaldırılır**.
+- Beş şablondaki **"KANIT HAKKINDA (ÖNEMLİ)"** paragrafı silinir: modele artık hiç görmeyeceği
+  bir işaret anlatılmaz.
+- `has_evidence_for_llm` sadeleşir (yer tutucu ayıklaması gereksizleşir).
+- `plan.md` A5.4 + kilitli karar listesi buna göre yeniden yazılır — bu bilinçli bir **geri
+  dönüş**: yer tutucu, modelin "kanıt eksik" diye rapor yazmasını engellemek için konmuştu;
+  blok hiç gitmeyince o risk de ortadan kalkıyor.
+
+### 3. Profil seti + isim değişikliği
+
+| Profil | `job_ids` | Rol |
+|---|---|---|
+| `test_all` | boş | Her kanıt iner + prompt'a girer, trim yok. Yalnız `tools.inspect_run` kullanır. |
+| `default_web` | boş | **Fallback**: hiçbir profile eşleşmeyen job. Web şeklinde. |
+| `job_failed` | — | `runResult.state == FAILED` koşumları (Faz 1'de eklendi). |
+
+- `DEFAULT_PROFILE_NAME` sabiti `"default_web"` olur; `parameter1 == "default"` API sentinel'i
+  **aynen kalır** (o "override yok" demektir, profil adı değildir).
+- `config/profiles.example.json` ve onu doğrulayan test **silinir**; yerine `profiles.json`'ın
+  kendisini doğrulayan test kalır. İki kaynağı bakım etmek bayatlama üretiyordu.
+- **Bilinerek alınan risk:** fallback web şeklinde olduğu için, tanımlanmamış bir **mobil** job
+  zayıf bir prompt'la analiz edilir. Job tanımlanınca düzelir; Faz 3'ün işi.
+
+### 4. `tools/inspect_run.py` — tek komutluk kontrol
+
+```bash
+python -m tools.inspect_run --run-id 148918      # ya da --job-id 886
+```
+
+- `evals/` gibi **geliştirme aracı**: `app/` içinden import edilmez, `mypy` kapsamında.
+- `--run-id` / `--job-id` verilmezse dosyanın başındaki `DEFAULT_RUN_ID` / `DEFAULT_JOB_ID`
+  sabitleri kullanılır (iş bilgisayarında tek komut).
+- **Profil:** her zaman `test_all` (Faz 1'in "zorla profil" mekanizmasıyla; `parameter1`
+  kullanılmaz).
+- **LLM:** servis `.env`'den bağımsız olarak **`mock` sağlayıcıyla** kurulur. Gerçek modele
+  gitmenin yolu yoktur — bayrak da yok.
+- **Basar:**
+  - Koşum: `run_id` · `jobId` · `jobName` · `state` · toplam/başarısız senaryo ·
+    build log karakter sayısı, alınamadıysa sebebi
+  - Senaryo başına her ek: `deviceId+uzantı` · bayt · **diskte var mı** · eşleştiği Evidence
+    sınıfı (eşleşmeyen ayrıca işaretli)
+  - Prompt'a girecek bloklar: etiket · karakter · kural kesti mi
+  - `prompt_chars` toplamı (timeout'un tek gerçek göstergesi)
+- **Çıkış kodu 1:** eşleşmeyen ek · diskte olmayan dosya · profilin istediği hâlde gelmeyen kanıt.
+  "Gözle bak" değil, cevap veren bir komut.
+
+### 5. Doğrulama
+
+`pytest` · `ruff check .` · `ruff format --check` · `mypy` (artık `tools/` de kapsamda).
+Yeni testler: indirilmeyen ekin raporlanması · `evidence_to_llm ⊄ evidence_to_store` açılışta
+hata · boş kanıtın başlığıyla birlikte prompt'tan düşmesi · `default_web` fallback'i ·
+`inspect_run`'ın gerçek LLM'e gitmemesi ve çıkış kodu.
+
+### Kapanan açık nokta
+
+Önbellek anahtarı `run_id + parameter1 + parameter2` idi; parametreler koddan çıkınca yalnız
+`run_id` kaldı, ardından **önbellek sistemi tamamen kaldırıldı** (geliştirme aşamasındayız,
+mekanizma kullanılmıyordu ve `note` alanı yüzünden sağlıklı koşumların çoğunu zaten dışarıda
+bırakıyordu). Artık her istek, adlandırdığı koşumu baştan analiz eder.
+
+---
+
+## Faz 3 (sonraki) — profiller ve prompt'lar
+
+Gerçek `job_ids` ile profillerin doldurulması · `job_failed` içeriği · şablon metinleri ·
+`properties.failedStep.*` kullanımı · prompt boyutu ölçümü (`prompt_chars`) ve gerekiyorsa
+`max_chars` · `MAX_CONCURRENCY` · build log dilimlemesinin gerçek logla doğrulanması.

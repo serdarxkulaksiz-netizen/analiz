@@ -10,7 +10,6 @@ from app.domain.findings import (
     BLOCK_BUILD,
     BLOCK_DOM,
     BLOCK_ERROR,
-    EVIDENCE_UNAVAILABLE,
     EvidenceBlock,
     Findings,
     Step,
@@ -94,11 +93,17 @@ def test_profile_template_decides_which_evidence_fields_appear(settings: Setting
     assert "=== DOM" not in prompt  # not part of this template at all
 
 
-def test_named_evidence_missing_shows_the_marker(settings: Settings) -> None:
-    """A template field whose block did not arrive must not render empty."""
+def test_missing_evidence_takes_its_header_with_it(settings: Settings) -> None:
+    """A block that did not arrive leaves NO trace in the prompt — header included.
+
+    A heading over an empty space is still something the model has to explain
+    to itself, and the template then had to spend a paragraph on the marker.
+    """
     prompt = _builder(settings).build(_sample_findings(prompt_template="web"))
 
-    assert f"=== DOM (hata anındaki sayfa) ===\n{EVIDENCE_UNAVAILABLE}" in prompt
+    assert "=== DOM ===" not in prompt
+    assert "=== BROWSER LOG ===" not in prompt
+    assert "\n\n\n" not in prompt  # the hole is closed, not left gaping
 
 
 def test_evidence_block_reaches_its_own_placeholder(settings: Settings) -> None:

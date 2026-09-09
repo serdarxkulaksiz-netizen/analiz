@@ -36,12 +36,14 @@ _EVIDENCE_CLASSES: tuple[type[Evidence], ...] = (
 )
 
 
-def evidence_class_by_name(name: str) -> type[Evidence] | None:
-    """Evidence class registered under this name, or None if unknown."""
-    for cls in _EVIDENCE_CLASSES:
-        if cls.evidence_name == name:
-            return cls
-    return None
+def known_evidence_names() -> set[str]:
+    """Every registered evidence name — what a profile may legally list.
+
+    The wiring root validates profiles against this: a typo in
+    `evidence_to_llm` would otherwise silently disable an evidence, and the
+    config would read as if it were being sent.
+    """
+    return {cls.evidence_name for cls in _EVIDENCE_CLASSES}
 
 
 def evidence_name_for(attachment: Attachment) -> str:

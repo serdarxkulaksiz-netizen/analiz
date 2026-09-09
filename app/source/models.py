@@ -33,6 +33,10 @@ class Attachment(BaseModel):
     device_id: str
     content: str = ""
     stored_path: str = ""
+    #: True when the active profile did not ask for this evidence, so the file
+    #: was never downloaded. Metadata still travels: a file we deliberately did
+    #: not fetch must not look like one that failed to arrive.
+    download_skipped: bool = False
 
     @property
     def extension(self) -> str:

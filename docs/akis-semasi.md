@@ -17,11 +17,9 @@ flowchart TD
     RJ --> RSV["source.resolve_run()<br/>hangi koşum + job durumu? (ucuz)"]
     RSV --> ST{"runResult.state"}
     ST -->|RUNNING| DR["status=failed<br/>hiçbir şey indirilmez"]
-    ST -->|"FAILED → job_failed profili"| CH
-    ST -->|PASSED| CH
-    CH{"cache açık ve bu koşum<br/>daha önce analiz edilmiş mi?"}
-    CH -->|Evet| DC["status=done<br/>sonuçlar eski koşumdan · indirme YOK"]
-    CH -->|Hayır| SRC["source.fetch_job(koşum)<br/>FAILED senaryolar + attachment'lar<br/>+ /logs ZIP → build.log"]
+    ST -->|"FAILED → job_failed profili"| SRC
+    ST -->|PASSED| SRC
+    SRC["source.fetch_job(koşum, filtre)<br/>FAILED senaryolar + profilin istediği ekler<br/>+ /logs ZIP → build.log"]
     SRC --> LOOP{Başarısız senaryo var mı?}
     LOOP -->|Hayır| D1["status=done<br/>note: analiz edilecek hata yok"]
     LOOP -->|Evet| AS["Her senaryo için: _analyze_scenario()<br/>paralel · asyncio.Semaphore"]

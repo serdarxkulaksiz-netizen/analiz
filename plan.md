@@ -126,15 +126,19 @@ cevabındaki `jobId`. Böylece run_id ile gelen istek de kendi job'ının profil
   hangi yolun hangi hatayla düştüğünü söyler. Yol hiç ayarlanmamışsa bu **kasıtlı atlamadır**,
   alan boş kalır — "bu job'da build log yok" ile "alınamadı" birbirine karışmaz.
 
-### A4.2 `parameter1` / `parameter2` — girdi olarak gelir, tahmin edilmez
-- **`parameter1`** verilirse analiz profilini **doğrudan** seçer. Bilinmeyen ad → koşum `failed`.
-- **`parameter2`** serbest metin; yalnız kaydedilir.
-- İkisi de yoksa `"default"`; profil o zaman **`job_id`** ile bulunur.
-- Hiçbir şey **dosya adlarından tahmin EDİLMEZ.**
-- **Prompt'a YAZILMAZLAR** (kilitli karar 27). `Findings`'te taşınırlar, `$parameter1` /
-  `$parameter2` yer tutucuları çalışır durumda kalır — ama hiçbir şablon kullanmaz: çoğu koşumda
-  ikisi de kelimenin tam anlamıyla `"default"` yazıyordu, yani modele bilgi değil gürültü.
-  Gerçek değeri olan bir job bunları **yalnız config ile** geri koyabilir.
+### A4.2 `parameter1` / `parameter2` — ayrılmış anahtarlar, hiçbir kararı etkilemez
+
+- İstekle gelirler, **`runs` satırına yazılırlar** ve `GET` cevabında görünürler. **Bitti.**
+- **Hiçbir yerde kullanılmazlar:** profil seçmezler · `Findings`'e taşınmazlar · prompt'ta yer tutucuları **yoktur** · teşhis satırında
+  tekrarlanmazlar.
+- Bilinmeyen bir değer **hata değildir**; hiçbir şeyi adlandırmıyorlar.
+- İleride gerçek bir ihtiyaç çıkarsa buradan başlanır; o güne kadar **ölü anahtar** olarak
+  dururlar.
+
+> **Neden bu kadar keskin:** bu iki alan "ileride lazım olur" diye açık bırakıldıkça her fazda
+> bir iş kuralına sızdı — önce profil seçimine, sonra prompt'a, sonra (kaldırılan) önbellek
+> anahtarına.
+> Kullanılabilecek bir kanal bırakmak, kullanılmasını garanti ediyor.
 
 ### A4.3 Dosya tipleri
 
@@ -183,20 +187,35 @@ içinde değildir**: saklanırlar, prompt'a girmezler. İstenirse config satır�
 
 ### A5.2 Profil kararları (`config/profiles.json`)
 
-> Kopyalanabilir örnek: **`config/profiles.example.json`** (dört job grubu, gerçek kural
-> yazımıyla). Bir testle geçerliliği kilitli — bayatlarsa CI değil, `pytest` yakalar.
-- **`evidence_to_llm`** — hangi kanıtlar prompt'a girer.
-- **`evidence_to_store`** — hangilerinin içeriği `database/` satırına gömülür.
-- **`prompt`** — bu job grubunun **prompt şablonu** (A8).
-- **`extra_context`** — prompt'a eklenecek job grubu cümlesi.
-- **`rules`** — her kanıt için içerik kuralları (A5.3).
+Profil bir job grubu için **üç** şeyi söyler:
 
-**Profil seçimi:** job durumu `FAILED` ise **`job_failed`** (A4.0) → `parameter1` →
-`job_ids` eşleşmesi → `default`. Eksik `default` **veya `job_failed`**, yinelenen `job_id`,
-bozuk kural, **olmayan şablon adı** → **açılışta** hata.
+| Alan | Anlamı |
+|---|---|
+| **`evidence_to_store`** | **İnecek** kanıtlar → diske + `database/` satırına ham hâliyle. **Listede olmayan ek hiç indirilmez** (istek de atılmaz). |
+| **`evidence_to_llm`** | Prompt'a girecek kanıtlar. `evidence_to_store`'un **alt kümesi olmak zorunda** — indirilmeyen kanıt prompt'a giremez; ihlal **açılışta hata**. |
+| **`rules`** | Her kanıt için içerik kuralları (A5.3) — **yalnız prompt'a giden kopyayı** kırpar. |
 
-> **`default` profil build log GÖNDERMEZ** (kullanıcı kararı). Build log yalnız açıkça tanımlanmış
-> job gruplarında prompt'a girer.
+Ek olarak **`prompt`** (şablon adı, A8) ve **`extra_context`** (job grubu cümlesi).
+
+**İndirmeyi profil belirler:** kaynak katmanı Evidence sınıflarını bilmez; kendisine
+"bu ek isteniyor mu?" sorusunu soran bir yordam **enjekte edilir** (`fetch_job(run, wants)`).
+Metadata (`deviceId`, `fileName`, `mimeType`) senaryo detayında indirmeden önce geldiği için
+istenmeyen dosya için **hiç istek atılmaz**. İndirilmeyen ek kaybolmaz: satırı
+`download_skipped` bayrağıyla durur, `evidence_report.skipped` içine yazılır.
+
+> **Bedeli bilerek ödeniyor:** "her şeyi sakla" kuralı burada deliniyor. İndirilmeyen ek diskte
+> **hiç olmaz**; sonradan bakılmak istenirse koşum yeniden analiz edilmeli.
+
+**Hiçbir Evidence sınıfının sahiplenmediği dosya her zaman indirilir** — bakmadan yargılayamayız;
+zaten `unmatched` olarak raporlanır ve yeni bir cihaz/dosya tipini ancak böyle fark ederiz.
+
+**Profil seçimi:** çağıranın verdiği profil (job durumu `FAILED` → `job_failed`; araç → A20) →
+`job_ids` eşleşmesi → **`default_web`**. Başka girdi yoktur. Eksik `default_web` **veya
+`job_failed`**, yinelenen `job_id`, bozuk kural, **olmayan şablon adı**, **tanınmayan kanıt adı**,
+**prompt'a istenip indirilmeyen kanıt** → **açılışta** hata.
+
+> **`default_web` build log GÖNDERMEZ.** Build log yalnız açıkça tanımlanmış job gruplarında
+> prompt'a girer.
 
 ### A5.3 İçerik kuralları — 9 tip
 `keep_scenario_section` (job logunu senaryo bazında dilimler) · `keep_first_lines` /
@@ -221,21 +240,28 @@ kendi varsayılanıdır**, config'te tekrarlanmaz. Gerekçe: bunlar bir *job kar
 birindeki bir harf hatası o job'ın logunu sessizce kesilmemiş bırakır. Formatı farklı bir job
 çıkarsa `start`/`end` config'ten **üzerine yazılabilir** (`"end": ""` = dosya sonuna kadar).
 
-> Aynı çizgi projede zaten var: blok etiketleri (`=== DOM ===`) ve "kanıt alınamadı" metni de
-> config'te değil koddadır — onlar da karar değil, formattır. **Config = karar, kod = bilgi.**
+> Aynı çizgi projede zaten var: blok etiketleri (`=== DOM ===`) ve alan başlıkları da config'te
+> değil koddadır — onlar da karar değil, formattır. **Config = karar, kod = bilgi.**
 
 ### A5.4 Eksik kanıt toleransı
-Beklenen kanıt yoksa sistem çökmez, ayrı bir `missing_evidence` alanı **YOKTUR**. Profilin
-istediği (ya da şablonun andığı) kanıt yoksa blok yine yazılır, içeriği
-`(bu kanıt alınamadı / bulunmuyor)` olur. Profilin **istemediği** kanıt için blok hiç oluşmaz.
+Beklenen kanıt yoksa sistem çökmez, ayrı bir `missing_evidence` alanı **YOKTUR**.
+**Gelmeyen kanıt prompt'ta hiç görünmez — başlığıyla birlikte.** Bloğun başlığı şablonda elle
+yazılmaz, placeholder'ın içinden gelir (A8.3); kanıt yoksa placeholder boş string olur ve
+arkasında kalan boşluk kapatılır.
+
+> Bu bilinçli bir **geri dönüş**. Önce `(bu kanıt alınamadı / bulunmuyor)` yer tutucusu vardı;
+> amacı bloğun sessizce kaybolmasını engellemekti. Ama boş bir başlık da modelin kendine
+> açıklaması gereken bir şey ve şablonun bir paragrafını "bu işaret normaldir" demeye harcıyordu.
+> "Gelmedi mi, eşleşmedi mi, profil mi istemedi?" sorusunun yeri prompt değil,
+> `evidence_report`'tur (A5.5).
 
 ### A5.5 Kanıt eşleşme raporu (`evidence_report`) — YENİ
 Her senaryo için `evidence` satırına yazılır:
 - **`attachments`** — gelen her dosya: `file_name`, `mime_type`, `device_id`, eşleştiği Evidence
   sınıfı (**`""` = eşleşmedi**), profil onu LLM'e gönderiyor mu, kaç karakter geldi.
-- **`blocks`** — prompt'a giden her blok: kaç karakter, **dolu mu yer tutucu mu**, kuralları
-  gerçekten kesti mi.
+- **`blocks`** — prompt'a giden her blok: kaç karakter, dolu mu, kuralları gerçekten kesti mi.
 - **`unmatched`** — hiçbir Evidence sınıfının sahiplenmediği dosya adları.
+- **`skipped`** — profilin istemediği, bu yüzden **hiç indirilmemiş** dosya adları.
 
 **Neden:** "DOM gelmedi mi, geldi de eşleşmedi mi?" sorusu sonradan cevaplanamıyordu. Artık tek
 gerçek koşum cevabı kendi yazıyor. `BUILD LOG` bloğu `trimmed=false` + ham log boyutunda ise
@@ -245,7 +271,7 @@ dilimleme kuralı işaretini bulamamış demektir.
 
 ## A6. Findings Sözleşmesi (Halka 2 → 3)
 
-`parameter1` · `parameter2` · `scenario_name` · `failed_step` · `error_message` · `steps` ·
+`scenario_name` · `failed_step` · `error_message` · `steps` ·
 `evidence_blocks` (etiketli ham bloklar: `ADIMLAR`, `HATA`, `DOM`, `BROWSER LOG`, `BUILD LOG`) ·
 `screenshot_paths` · `retry_info` · `profile_name` · **`prompt_template`** · `extra_context` ·
 `excluded_from_store` · `truncated` / `truncated_note` · **`evidence_report`**.
@@ -295,11 +321,15 @@ Ortak: `$scenario_name` `$failed_step` `$error_message` `$steps` `$extra_context
 `$confidence_buckets` · Toplu yerleşim: `$evidence_blocks` ·
 **Kanıt bazlı:** `$test_log` `$dom` `$mobile_dom` `$browser_log` `$build_log` `$test_properties`.
 
-`$parameter1` / `$parameter2` **çalışır ama hiçbir şablonda yoktur** (A4.2): çoğu koşumda
-"default" yazıyorlardı. Yer tutucular duruyor ki gerçek değeri olan bir job onları config ile
-geri koyabilsin.
+`$parameter1` / `$parameter2` **yoktur** (A4.2) — tanınmayan placeholder olarak açılışta hata
+verirler. Kullanılamayacak bir kanal bırakmak, er geç kullanılmasını sağlıyordu.
 
-Şablonun andığı kanıt gelmediyse alan boş kalmaz, yer tutucu yazar (A5.4).
+**Başlık placeholder'ın içindedir.** Şablon `=== DOM ===` yazmaz, yalnız `$dom` koyar; alan ya
+`=== DOM ===` + içerik olarak açılır ya da **tamamen boş** kalır (A5.4). Aynısı sabit alanlar
+için de geçerli: `$failed_step` → `=== PATLAYAN ADIM ===`, `$error_message` → `=== HATA MESAJI ===`,
+`$steps` → `=== ADIM SONUÇLARI ===`. Düşen alanın bıraktığı boşluk kapatılır, yoksa prompt'un
+şekli eksik olanı ilan eder.
+
 **Tanınmayan bir `$placeholder` açılışta hatadır** — yoksa LLM'e ham `$dom_excerpt` giderdi.
 
 ### A8.4 Prompt sürümü
@@ -337,7 +367,7 @@ paralellik `asyncio.Semaphore` ile **config'ten**.
 
 **`confidence` — 5 kova:** `0.1 / 0.25 / 0.5 / 0.75 / 0.99`. LLM ne dönerse o yazılır; map YOK.
 
-**Sistem tarafı meta:** `parameter1` · `parameter2` · `profile_name` · `truncated(_note)` ·
+**Sistem tarafı meta:** `profile_name` · `truncated(_note)` ·
 `screenshot_paths` · `raw_llm_response` · `meta` (`llm_model`, **`prompt_template`**,
 **`prompt_version`**, tokenlar, `duration_ms`, `analyzed_at`) · `status`.
 
@@ -370,17 +400,12 @@ Klasör = veritabanı · alt klasör = tablo · JSON dosyası = satır. `Reposit
 `SqliteRepository` / `OracleRepository` aynı arayüzle takılır, **üst kod değişmez.**
 
 ### Tablolar (5)
-- **`runs`** — koşum durumu, parametreler, senaryo sayıları, `note`, `cached_from`, ham job
-  cevapları, **`build_log`** + **`build_log_error`**
+- **`runs`** — koşum durumu, parametreler, senaryo sayıları, `note`, ham job cevapları,
+  **`build_log`** + **`build_log_error`**
 - **`analysis_results`** — her senaryonun teşhisi (yarın Oracle'a taşınacak asıl tablo)
 - **`evidence`** — ham senaryo dökümü + **`evidence_report`** (A5.5)
 - **`prompts`** — GİDEN: tam prompt + istek + **`prompt_chars`**
 - **`llm_responses`** — GELEN: ham zarf + içerik + çağrı meta'sı
-
-### Önbellek
-Anahtar **`run_id` + `parameter1` + `parameter2`** (job_id değil). İsabette indirme yapılmaz.
-Yalnız tam analiz edilmiş koşumlar yeniden kullanılır. `run_id` boşsa cache devre dışı.
-`CACHE_ENABLED` ile açılır, varsayılan **kapalı**.
 
 ---
 
@@ -429,19 +454,21 @@ adını söyler. `app/main.py` import edilince app kurulmaz (PEP 562) — testle
 
 **Bitti:** Halka 1-6 gerçek gerçeklemeleriyle · **koşum çözümlemesi + job durumu dallanması
 (A4.0)** · **`deviceId`+uzantı ile kanıt eşleşmesi, ayrı `.xml`/`.properties` kanıtları,
-önyüz adıyla senaryo bazlı kayıt** · job bazlı profiller + 9 içerik kuralı ·
+önyüz adıyla senaryo bazlı kayıt** · **profile bağlı indirme + boş bloğun prompt'tan düşmesi +
+`tools/inspect_run` (A20)** · job bazlı profiller + 9 içerik kuralı ·
 **job grubuna göre prompt şablonu (5 şablon + ortak sözleşme)** · PreCheck kural motoru ·
-`run_id` bazlı önbellek · GET sadeleştirmesi · config katılığı · **build log hata sebebi** ·
+GET sadeleştirmesi · config katılığı · **build log hata sebebi** ·
 **kanıt eşleşme raporu** · **kanıtsız senaryoda LLM'e gitmeme** · **prompt sürümü** ·
 **ölçüm iskeleti**.
 
 **Kalan:**
 - Gerçek VisiumGo + gerçek LLM ile uçtan uca doğrulama (iş-pc).
 - **Gerçek profilleri gerçek `job_ids` ile doldurmak** (config işi) — asıl kalan iş bu.
-- **`job_failed` profilinin içeriği** bilerek boştur (Faz 2): gerçek bir FAILED job'ın kanıtı
+- **`job_failed` profilinin içeriği** bilerek boştur: gerçek bir FAILED job'ın kanıtı
   görülmeden doldurulmaz.
-- **Faz 2 başlıkları:** eşleşme tablosunun config'e taşınması · profilin istemediği ekin hiç
-  indirilmemesi · `properties.failedStep.*` kullanımı · prompt boyutu (340k karakter → timeout).
+- **Faz 3 başlıkları:** profillerin gerçek `job_ids` ile doldurulması · `job_failed` içeriği ·
+  şablon metinleri · `properties.failedStep.*` kullanımı · prompt boyutu ölçümü (340k karakter →
+  timeout) · `MAX_CONCURRENCY` · build log dilimlemesinin gerçek logla doğrulanması.
 - **Senaryo adı eşleşmesi:** `/results`'taki ad ile `build.log` içindeki `[...]` birebir aynı mı?
   Değilse dilimleme olmaz; artık `evidence_report` bunu söylüyor.
 - Golden set'i gerçek vakalarla doldurmak (A19).
@@ -457,7 +484,8 @@ adını söyler. `app/main.py` import edilince app kurulmaz (PEP 562) — testle
 2. **HARDCODED YOK.**
 3. **SOLID** her harfine.
 4. **Agentless, tek-atış, parse-minimal, katı prompt.** Üründe LLM loop yok.
-5. `parameter1`/`parameter2` **girdidir**, tahmin edilmez.
+5. `parameter1`/`parameter2` **ayrılmış anahtardır**: kaydedilir, gösterilir, hiçbir kararı
+   etkilemez (A4.2).
 6. Evidence mimarisi: 8 sınıf, profil bayrakları, 9 kural tipi, global trimmer yok.
 7. **Kanıt kimliği `deviceId` + uzantıdır** (önyüzdeki adın aynısı); `mimeType` kimliğin parçası
    değildir. Mobil UI ağacı **ayrı `.xml` dosyası** olarak gelir (eski "test.log içinde gelir"
@@ -485,8 +513,9 @@ adını söyler. `app/main.py` import edilince app kurulmaz (PEP 562) — testle
 25. **Prompt job grubuna göre şablondan gelir; çıktı sözleşmesi tek dosyadan.** Şablon çoğalır,
     sözleşme çoğalmaz.
 26. **Boş prompt sorulmaz:** kanıt yoksa LLM çağrılmaz, sonuç `no_evidence`.
-27. **`default` profil build log göndermez;** build log yalnız tanımlı job gruplarında gider.
-28. **`parameter1`/`parameter2` prompt'a yazılmaz** (yapı korunur, şablonlardan çıkarıldı).
+27. **`default_web` profil build log göndermez;** build log yalnız tanımlı job gruplarında gider.
+28. **`parameter1`/`parameter2` koddan tamamen çıkarıldı:** ne profil seçer, ne `Findings`'e
+    taşınır, ne prompt yer tutucusu vardır. Yalnız `runs` satırında durur ve `GET` ile görünür.
 29. **Job durumu analiz kararıdır (A4.0):** `RUNNING` → hiç indirme yok, koşum `failed`;
     `FAILED` → sabit `job_failed` profili; koşum seçimi `startTime` değil **en büyük `id`**.
 30. **Ekler önyüzdeki adıyla, senaryo klasörü altında saklanır**
@@ -495,6 +524,18 @@ adını söyler. `app/main.py` import edilince app kurulmaz (PEP 562) — testle
     `get_scenario_detail`, `download_attachment`, `fetch_build_log`): sırayı `fetch_job` kurar,
     metotlar sırayı bilmez. Bu, aynı servislerin ileride sırayı kendi kuran bir katmandan
     kullanılabilmesi içindir — bugün böyle bir katman **yoktur** (A2 hâlâ geçerli).
+32. **Profil üç şeyi söyler:** hangi kanıt **iner** (`evidence_to_store`) · hangisi **prompt'a
+    girer** (`evidence_to_llm`, store'un alt kümesi; ihlal açılışta hata) · **nasıl trimlenir**
+    (`rules`, yalnız prompt kopyası). Listede olmayan ek indirilmez; kararı profil verir, kaynak
+    uygular (enjekte edilen yordam).
+33. **Gelmeyen kanıt prompt'ta hiç görünmez — başlığıyla birlikte.** Yer tutucu metin yoktur;
+    "gelmedi mi, eşleşmedi mi, istenmedi mi" sorusunun yeri `evidence_report`'tur.
+34. **Fallback profil `default_web`.** `config/profiles.example.json` **yoktur** — tek kaynak
+    `profiles.json`.
+35. **`tools/inspect_run.py` gerçek LLM'e asla gitmez** ve `test_all` profilini zorlar (A20).
+36. **Önbellek YOKTUR.** Her istek, adlandırdığı koşumu baştan analiz eder; sonuç yeniden
+    kullanılmaz. Kullanılmayan ve `note` alanı yüzünden zaten çoğu koşumu dışarıda bırakan
+    mekanizma kaldırıldı (sadeleştirme).
 
 ---
 
@@ -531,6 +572,37 @@ değerlendirilemez. Ölçüm, hissi sayıya çevirir.
 ---
 
 # BÖLÜM B — ÇALIŞMA TALİMATLARI
+
+
+---
+
+## A20. Kontrol aracı — `tools/inspect_run.py`
+
+```bash
+python -m tools.inspect_run --run-id 148918      # ya da --job-id 886
+```
+
+Gerçek zinciri koşturur (koşum çöz → ekleri indir → sınıfa eşle → prompt kur) ve **ne geldi, ne
+gelmedi, prompt kaç karakter** sorusunu tek komutta cevaplar. `evals/` gibi geliştirme aracıdır;
+`app/` onu import etmez.
+
+İki garanti, ikisi de bilerek:
+
+- **Gerçek LLM'e asla gitmez.** Servis `.env` ne derse desin `mock` sağlayıcıyla kurulur; bunu
+  değiştiren bir bayrak **yoktur**. Bu bir tesisat kontrolüdür, analiz değil — on-prem modeli
+  meşgul etmemeli.
+- **`test_all` profili zorlanır**, yani her ek indirilir. Sorulan soru "her şey inebiliyor mu",
+  "bu job'ın profili neyi tutardı" değil. Zorlama `run_analysis(profile_override=...)` ile
+  yapılır, koşum satırının `note`'una da yazılır.
+
+**Çıkış kodu 1:** hiçbir sınıfın sahiplenmediği ek · indirildiği hâlde **diskte olmayan** dosya.
+Job seviyesindeki build log dosya beklemez, "JOB LOGU" olarak işaretlenir. Böylece araç gözle
+okunan bir rapor değil, cevap veren bir komuttur.
+
+`--run-id`/`--job-id` verilmezse dosyanın başındaki `DEFAULT_RUN_ID` / `DEFAULT_JOB_ID` sabitleri
+kullanılır: iş bilgisayarında tek komut.
+
+---
 
 ## B1. Çalışma Düzeni
 

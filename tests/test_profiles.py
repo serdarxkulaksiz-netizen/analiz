@@ -4,17 +4,17 @@ from pathlib import Path
 
 import pytest
 
-from app.evidence.profiles import ProfileRegistry
-from app.evidence.registry import EvidenceRegistry
+from app.evidence.profiles import JOB_FAILED_PROFILE_NAME, ProfileRegistry
+from app.evidence.registry import EvidenceRegistry, known_evidence_names
 from app.extraction.evidence_extractor import EvidenceExtractor
 from app.prompting.builder import PromptBuilder
 from tests.conftest import write_profiles
 from tests.test_extraction import _scenario  # reuse the sample scenario
 
 _CONFIG = {
-    "default": {
-        "evidence_to_llm": ["TestLogEvidence", "HtmlEvidence", "BrowserLogEvidence"],
-        "evidence_to_store": ["TestLogEvidence", "HtmlEvidence"],
+    "default_web": {
+        "evidence_to_llm": ["TestLogEvidence", "HtmlEvidence"],
+        "evidence_to_store": ["TestLogEvidence", "HtmlEvidence", "WebScreenshotEvidence"],
     },
     "B_sadece_testlog": {
         "job_ids": ["901", "902"],
@@ -48,40 +48,38 @@ def test_job_id_selects_profile(tmp_path: Path) -> None:
 
 
 def test_unknown_job_id_falls_back_to_default(tmp_path: Path) -> None:
-    assert _registry(tmp_path).get(job_id="9999").name == "default"
+    assert _registry(tmp_path).get(job_id="9999").name == "default_web"
 
 
-def test_parameter1_overrides_job_mapping(tmp_path: Path) -> None:
+def test_forced_profile_overrides_job_mapping(tmp_path: Path) -> None:
+    """The only override there is: the caller names the profile outright.
+
+    Used by the job-level FAILED branch and by `tools.inspect_run`. The
+    request's parameters cannot do this — they decide nothing.
+    """
     registry = _registry(tmp_path)
-    chosen = registry.get(job_id="1350", parameter1="B_sadece_testlog")
-    assert chosen.name == "B_sadece_testlog"
+    assert registry.get(job_id="1350", forced="B_sadece_testlog").name == "B_sadece_testlog"
 
 
-def test_default_parameter1_does_not_override(tmp_path: Path) -> None:
-    # "default" is the API's default value => means "no override".
-    registry = _registry(tmp_path)
-    assert registry.get(job_id="1350", parameter1="default").name == "D_dom_temiz"
-
-
-def test_unknown_profile_name_raises(tmp_path: Path) -> None:
+def test_unknown_forced_profile_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Unknown profile"):
-        _registry(tmp_path).get(job_id="1350", parameter1="yok-boyle")
+        _registry(tmp_path).get(job_id="1350", forced="yok-boyle")
 
 
 def test_missing_default_profile_fails_fast(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="default"):
-        _registry(tmp_path, {"onlyone": {"job_ids": ["1"]}})
+    with pytest.raises(ValueError, match="default_web"):
+        _registry(tmp_path, {"onlyone": {"job_ids": ["1"]}}, complete=True)
 
 
 def test_missing_job_failed_profile_fails_fast(tmp_path: Path) -> None:
     """A config without `job_failed` cannot serve a job-level FAILED run."""
     with pytest.raises(ValueError, match="job_failed"):
-        _registry(tmp_path, {"default": {}}, complete=True)
+        _registry(tmp_path, {"default_web": {}}, complete=True)
 
 
 def test_duplicate_job_id_fails_fast(tmp_path: Path) -> None:
     data = {
-        "default": {},
+        "default_web": {},
         "a": {"job_ids": ["7"]},
         "b": {"job_ids": ["7"]},
     }
@@ -90,7 +88,7 @@ def test_duplicate_job_id_fails_fast(tmp_path: Path) -> None:
 
 
 def test_bad_rule_config_fails_fast(tmp_path: Path) -> None:
-    data = {"default": {"rules": {"HtmlEvidence": [{"type": "yok_boyle_kural"}]}}}
+    data = {"default_web": {"rules": {"HtmlEvidence": [{"type": "yok_boyle_kural"}]}}}
     with pytest.raises(ValueError, match="Unknown rule type"):
         _registry(tmp_path, data)
 
@@ -126,7 +124,7 @@ Scenario: Ucuncu senaryo
 def test_job_c_only_build_log_sliced_per_scenario(tmp_path: Path) -> None:
     """Job C: sadece build log, ve yalnız bu senaryonun bölümü."""
     config = {
-        "default": {"evidence_to_llm": ["TestLogEvidence"], "evidence_to_store": []},
+        "default_web": {"evidence_to_llm": [], "evidence_to_store": []},
         "C_build_log_dilim": {
             "job_ids": ["1204"],
             "evidence_to_llm": ["BuildLogEvidence"],
@@ -162,7 +160,7 @@ def test_job_c_only_build_log_sliced_per_scenario(tmp_path: Path) -> None:
 def test_profile_picks_its_prompt_template(tmp_path: Path) -> None:
     """A job group chooses its own prompt; unnamed profiles get `default`."""
     config = {
-        "default": {"evidence_to_llm": ["TestLogEvidence"]},
+        "default_web": {"evidence_to_llm": ["TestLogEvidence"]},
         "mobil_bankacilik": {
             "job_ids": ["223", "234"],
             "prompt": "mobile",
@@ -173,7 +171,7 @@ def test_profile_picks_its_prompt_template(tmp_path: Path) -> None:
     registry = _registry(tmp_path, config)
 
     assert registry.get(job_id="223").prompt == "mobile"
-    assert registry.get(job_id="bilinmeyen").prompt == "default"
+    assert registry.get(job_id="bilinmeyen").prompt == "default"  # şablon adı, profil değil
     # The wiring root asks for this set to validate it against the templates.
     assert registry.prompt_names() == {"default", "mobile"}
 
@@ -181,7 +179,7 @@ def test_profile_picks_its_prompt_template(tmp_path: Path) -> None:
 def test_findings_carry_the_profiles_prompt_template(tmp_path: Path) -> None:
     """Extraction stamps the template on Findings — that is how ring 3 knows."""
     config = {
-        "default": {"evidence_to_llm": ["TestLogEvidence"]},
+        "default_web": {"evidence_to_llm": ["TestLogEvidence"]},
         "sadece_buildlog": {
             "job_ids": ["889", "890"],
             "prompt": "buildlog",
@@ -206,7 +204,7 @@ def test_report_shows_when_scenario_slicing_did_not_match(tmp_path: Path) -> Non
     """
     job_log = "\n".join(f"satır {i}" for i in range(200))
     config = {
-        "default": {"evidence_to_llm": ["TestLogEvidence"]},
+        "default_web": {"evidence_to_llm": ["TestLogEvidence"]},
         "buildlog_jobs": {
             "job_ids": ["889"],
             "prompt": "buildlog",
@@ -243,7 +241,7 @@ def test_report_shows_a_successful_scenario_slice(tmp_path: Path) -> None:
         "ucuncu satır\n"
     )
     config = {
-        "default": {"evidence_to_llm": ["TestLogEvidence"]},
+        "default_web": {"evidence_to_llm": ["TestLogEvidence"]},
         "buildlog_jobs": {
             "job_ids": ["889"],
             "prompt": "buildlog",
@@ -264,21 +262,23 @@ def test_report_shows_a_successful_scenario_slice(tmp_path: Path) -> None:
     assert report.trimmed is True  # slicing actually happened
 
 
-def test_example_profiles_file_stays_valid() -> None:
-    """`config/profiles.example.json` is copy-paste documentation — it must load.
+def test_shipped_profiles_config_stays_valid() -> None:
+    """`config/profiles.json` is what actually ships — it must load and line up.
 
-    An example that has rotted (unknown rule type, unknown prompt template, a
-    job_id claimed twice) is worse than no example: it gets copied verbatim to
-    the work PC and fails there, on a machine where nobody debugs.
+    A config that has rotted (unknown rule type, unknown prompt template, a
+    job_id claimed twice, prompted evidence that is never downloaded) would
+    otherwise only fail on the work PC, on a machine where nobody debugs.
     """
-    path = Path("config/profiles.example.json")
-    registry = ProfileRegistry(path)
+    registry = ProfileRegistry(Path("config/profiles.json"))
     builder = PromptBuilder(Path("config/prompts"), [0.1, 0.25, 0.5, 0.75, 0.99])
 
     builder.ensure_templates_exist(registry.prompt_names())  # raises if a name is wrong
-    assert registry.get(job_id="889").prompt == "buildlog"
-    assert registry.get(job_id="1321").evidence_to_llm == [
-        "TestLogEvidence",
-        "HtmlEvidence",
-        "BrowserLogEvidence",
-    ]
+    assert registry.evidence_names() <= known_evidence_names()
+
+    # The three profiles the system relies on by name.
+    assert registry.get(job_id="bilinmeyen-job").name == "default_web"
+    assert registry.get(forced=JOB_FAILED_PROFILE_NAME).name == JOB_FAILED_PROFILE_NAME
+    test_all = registry.get(forced="test_all")
+    # The inspection profile has to fetch everything, or the tool built on it
+    # would report "missing" for files nobody asked for.
+    assert test_all.wanted_evidence == known_evidence_names()

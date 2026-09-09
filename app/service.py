@@ -23,6 +23,7 @@ from app.config import Settings
 from app.domain.enums import AnalysisStatus, RunState, RunStatus
 from app.domain.findings import Findings
 from app.domain.result import AnalysisMeta, AnalysisResult, LLMAnalysis
+from app.evidence.planner import AttachmentPlanner
 from app.evidence.profiles import JOB_FAILED_PROFILE_NAME
 from app.evidence.registry import evidence_name_for
 from app.extraction.base import Extractor
@@ -40,15 +41,17 @@ from app.source.models import RawScenario
 STATE_PROFILE_OVERRIDE: dict[str, str] = {RunState.FAILED.value: JOB_FAILED_PROFILE_NAME}
 
 
-def _forced_note(profile_name: str) -> str:
-    """Say it out loud when the job-level state changed the profile.
+def _forced_note(profile_name: str, by_caller: bool) -> str:
+    """Say it out loud when the normal profile resolution was bypassed.
 
     Without this the run row would look like an ordinary analysis while every
-    scenario was actually judged with a different profile.
+    scenario was actually judged with a different profile — and "the job failed"
+    would be indistinguishable from "a tool asked for this profile".
     """
     if not profile_name:
         return ""
-    return f"job durumu nedeniyle '{profile_name}' profili kullanıldı"
+    reason = "çağıran istedi" if by_caller else "job durumu FAILED"
+    return f"'{profile_name}' profili kullanıldı ({reason})"
 
 
 def _utcnow_iso() -> str:
@@ -67,11 +70,13 @@ class AnalyzerService:
         prompt_builder: PromptBuilder,
         llm_provider: LLMProvider,
         precheck: PreCheck,
+        planner: AttachmentPlanner,
     ) -> None:
         self._settings = settings
         self._repo = repository
         self._source = source
         self._extractor = extractor
+        self._planner = planner
         self._builder = prompt_builder
         self._llm = llm_provider
         self._precheck = precheck
@@ -87,7 +92,13 @@ class AnalyzerService:
         parameter2: str,
         run_id: str = "",
     ) -> str:
-        """Persist a pending run row and return its analyzer_run_id."""
+        """Persist a pending run row and return its analyzer_run_id.
+
+        `parameter1`/`parameter2` are written down and never read again: they
+        are reserved request keys, visible through the API, and they take no
+        part in profile selection, caching, extraction or the prompt
+        (plan.md A4.2). This is the ONLY place they are touched.
+        """
         analyzer_run_id = str(uuid4())
         now = _utcnow_iso()
         self._repo.save(
@@ -110,7 +121,6 @@ class AnalyzerService:
                 "build_log": "",
                 "build_log_error": "",
                 "note": "",
-                "cached_from": "",
                 "created_at": now,
                 "updated_at": now,
             },
@@ -122,11 +132,10 @@ class AnalyzerService:
         run = self._repo.get(self._settings.table_runs, analyzer_run_id)
         if run is None:
             return None
-        results_run_id = run.get("cached_from") or analyzer_run_id
         results = [
             row
             for row in self._repo.list(self._settings.table_analysis_results)
-            if row.get("analyzer_run_id") == results_run_id
+            if row.get("analyzer_run_id") == analyzer_run_id
         ]
         run["results"] = sorted(results, key=lambda row: row.get("scenario_name", ""))
         return run
@@ -144,13 +153,20 @@ class AnalyzerService:
 
     # -------------------------------------------------------------- analysis
 
-    async def run_analysis(self, analyzer_run_id: str) -> None:
-        """THE single trigger entry point (queue-swap boundary, plan.md A13)."""
+    async def run_analysis(self, analyzer_run_id: str, profile_override: str = "") -> None:
+        """THE single trigger entry point (queue-swap boundary, plan.md A13).
+
+        `profile_override` names a profile to analyze this run with, whatever
+        job it belongs to and whatever its state is. The API never passes it;
+        it exists for `tools.inspect_run`, which has to fetch EVERY attachment
+        to answer "is the evidence arriving at all?". It wins over the
+        state-derived profile, and the run row records which profile ran.
+        """
         run = self._repo.get(self._settings.table_runs, analyzer_run_id)
         if run is None:
             return
         try:
-            await self._run_job(run)
+            await self._run_job(run, profile_override)
         except Exception as exc:
             # Job-level failure (e.g. source unreachable): the run ends as
             # `failed` with an explanatory note instead of hanging in `running`.
@@ -160,14 +176,14 @@ class AnalyzerService:
                 note=f"job failed: {type(exc).__name__}: {exc}",
             )
 
-    async def _run_job(self, run: dict[str, Any]) -> None:
+    async def _run_job(self, run: dict[str, Any], profile_override: str = "") -> None:
         settings = self._settings
         self._update_run(run, status=RunStatus.RUNNING.value)
 
-        # Resolve which run this is BEFORE fetching anything: the cache keys on
-        # run_id, a hit must not pay for the (expensive) evidence download, and
-        # the job-level state decides whether there is anything to analyze at
-        # all. One lookup serves all three — the summary is not fetched twice.
+        # Resolve which run this is BEFORE fetching anything: the job-level
+        # state decides whether there is anything to analyze at all, and the
+        # resolved id is what every later call is made against. One lookup,
+        # never repeated.
         job_id = run.get("job_id", "")
         requested_run_id = run.get("run_id", "")  # what the caller asked for
         summary = await self._source.resolve_run(job_id, requested_run_id)
@@ -184,34 +200,17 @@ class AnalyzerService:
 
         # A job-level failure means the job's own profile describes a run that
         # never happened, so every scenario goes to one fixed profile instead.
-        forced_profile = STATE_PROFILE_OVERRIDE.get(summary.state, "")
+        # An explicit caller override outranks that (see `run_analysis`).
+        forced_profile = profile_override or STATE_PROFILE_OVERRIDE.get(summary.state, "")
         # The profile follows the job the CALLER named; with only a run_id it
         # is the job that run belongs to (from the run response).
         profile_job_id = job_id or summary.job_id
 
-        if settings.cache_enabled:
-            cached = self._find_cached_run(run)
-            if cached is not None:
-                self._update_run(
-                    run,
-                    status=RunStatus.DONE.value,
-                    scenario_count=cached.get("scenario_count", 0),
-                    completed_count=cached.get("completed_count", 0),
-                    total_scenario_count=cached.get("total_scenario_count", 0),
-                    cached_from=cached["analyzer_run_id"],
-                    note=" · ".join(
-                        note
-                        for note in (
-                            summary.note,
-                            "cache: aynı run_id + parametreler daha önce analiz "
-                            "edildi, sonuçlar diskten",
-                        )
-                        if note
-                    ),
-                )
-                return
-
-        job = await self._source.fetch_job(summary)
+        # The profile decides what is worth downloading, so it is resolved
+        # BEFORE the evidence is fetched — not after, when the bytes are
+        # already paid for.
+        wants = self._planner.wants_for(job_id=profile_job_id, forced=forced_profile)
+        job = await self._source.fetch_job(summary, wants)
         self._update_run(
             run,
             run_id=job.run_id,  # resolved run id (real source may derive it)
@@ -242,8 +241,6 @@ class AnalyzerService:
                 self._analyze_scenario(
                     run["analyzer_run_id"],
                     scenario,
-                    parameter1=run.get("parameter1", "default"),
-                    parameter2=run.get("parameter2", "default"),
                     job_id=profile_job_id,
                     forced_profile=forced_profile,
                     build_log=job.build_log,
@@ -262,7 +259,11 @@ class AnalyzerService:
         escaped = [o for o in outcomes if isinstance(o, BaseException)]
 
         run = self._repo.get(settings.table_runs, run["analyzer_run_id"]) or run
-        notes = [note for note in (summary.note, _forced_note(forced_profile)) if note]
+        notes = [
+            note
+            for note in (summary.note, _forced_note(forced_profile, bool(profile_override)))
+            if note
+        ]
         if escaped:
             kinds = ", ".join(sorted({f"{type(e).__name__}: {e}" for e in escaped}))
             notes.append(
@@ -270,30 +271,6 @@ class AnalyzerService:
                 f"({kinds}) — bu senaryoların sonucu diskte yok"
             )
         self._update_run(run, status=RunStatus.DONE.value, note=" · ".join(notes))
-
-    def _find_cached_run(self, run: dict[str, Any]) -> dict[str, Any] | None:
-        """Find a previously finished analysis of the same run + parameters.
-
-        Keyed on `run_id`, NOT `job_id`: a job runs many times and each run has
-        its own failures — matching on job_id would serve an older run's
-        results. Without a resolved run_id the cache is skipped entirely
-        (better no hit than a wrong one).
-        """
-        run_id = run.get("run_id", "")
-        if not run_id:
-            return None
-        for row in self._repo.list(self._settings.table_runs):
-            if (
-                row.get("analyzer_run_id") != run["analyzer_run_id"]
-                and row.get("run_id") == run_id
-                and row.get("parameter1") == run["parameter1"]
-                and row.get("parameter2") == run["parameter2"]
-                and row.get("status") == RunStatus.DONE.value
-                and not row.get("cached_from")
-                and not row.get("note")  # only fully analyzed runs are reusable
-            ):
-                return row
-        return None
 
     def _screenshot_paths(self, scenario: RawScenario) -> list[str]:
         """Every screenshot the source delivered — "what arrived".
@@ -306,6 +283,7 @@ class AnalyzerService:
             attachment.stored_path or attachment.file_name
             for attachment in scenario.attachments
             if attachment.mime_type.startswith("image/")
+            and not attachment.download_skipped
             and (attachment.stored_path or attachment.file_name)
         ]
 
@@ -330,8 +308,6 @@ class AnalyzerService:
         analyzer_run_id: str,
         scenario: RawScenario,
         *,
-        parameter1: str,
-        parameter2: str,
         job_id: str,
         forced_profile: str,
         build_log: str,
@@ -355,8 +331,6 @@ class AnalyzerService:
             try:
                 findings = self._extractor.extract(
                     scenario,
-                    parameter1=parameter1,
-                    parameter2=parameter2,
                     job_id=job_id,
                     forced_profile=forced_profile,
                     build_log=build_log,
@@ -478,8 +452,6 @@ class AnalyzerService:
                     result_id=result_id,
                     analyzer_run_id=analyzer_run_id,
                     **analysis.model_dump(),
-                    parameter1=parameter1,
-                    parameter2=parameter2,
                     profile_name=profile_name,
                     screenshot_paths=result_screenshots,
                     truncated=truncated,
@@ -495,8 +467,6 @@ class AnalyzerService:
                     result_id=result_id,
                     analyzer_run_id=analyzer_run_id,
                     scenario_name=scenario.scenario_name,
-                    parameter1=parameter1,
-                    parameter2=parameter2,
                     profile_name=profile_name,
                     screenshot_paths=result_screenshots,
                     truncated=truncated,

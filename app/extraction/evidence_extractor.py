@@ -4,8 +4,8 @@ Because MockSource and VisiumGoSource produce the SAME `RawScenario` shape,
 extraction is identical regardless of origin — so there is ONE extractor (the
 mock/real difference lives entirely in the Source).
 
-The run's job_id / `parameter1` select an analysis Profile, which decides which
-evidence types become prompt blocks and how each one's content is shaped
+The run's job_id selects an analysis Profile, which decides which evidence
+types become prompt blocks and how each one's content is shaped
 (content rules). The `=== HATA ===` block is `error_text`. The job-level build
 log is injected as a synthetic `build` attachment so it flows through the same
 profile + rule machinery as every other evidence. No field-extracting parsing
@@ -15,7 +15,6 @@ profile + rule machinery as every other evidence. No field-extracting parsing
 from app.domain.enums import StepStatus
 from app.domain.findings import (
     BLOCK_ERROR,
-    EVIDENCE_UNAVAILABLE,
     AttachmentReport,
     BlockReport,
     EvidenceBlock,
@@ -23,11 +22,7 @@ from app.domain.findings import (
     Findings,
 )
 from app.evidence.profiles import Profile, ProfileRegistry
-from app.evidence.registry import (
-    EvidenceRegistry,
-    evidence_class_by_name,
-    evidence_name_for,
-)
+from app.evidence.registry import EvidenceRegistry, evidence_name_for
 from app.evidence.rules import RuleContext
 from app.extraction.base import Extractor
 from app.source.models import Attachment, RawScenario
@@ -47,13 +42,11 @@ class EvidenceExtractor(Extractor):
         self,
         scenario: RawScenario,
         *,
-        parameter1: str = "default",
-        parameter2: str = "default",
         job_id: str = "",
         forced_profile: str = "",
         build_log: str = "",
     ) -> Findings:
-        profile = self._profiles.get(job_id=job_id, parameter1=parameter1, forced=forced_profile)
+        profile = self._profiles.get(job_id=job_id, forced=forced_profile)
 
         # The job-level build log becomes a normal attachment, so the profile
         # can include/exclude it and its rules can slice it per scenario.
@@ -93,16 +86,10 @@ class EvidenceExtractor(Extractor):
             if not evidence.goes_to_store:
                 excluded_from_store.append(type(evidence).evidence_name)
 
-        # An evidence the profile asked for but that never arrived (or arrived
-        # empty) still gets its block — with a "not available" placeholder — so
-        # the LLM sees the gap instead of the block vanishing silently.
-        present_labels = {block.label for block in evidence_blocks}
-        for name in profile.evidence_to_llm:
-            cls = evidence_class_by_name(name)
-            label = getattr(cls, "block_label", "")  # screenshots have none
-            if label and label not in present_labels:
-                evidence_blocks.append(EvidenceBlock(label=label, content=EVIDENCE_UNAVAILABLE))
-                present_labels.add(label)
+        # An evidence the profile asked for but that never arrived produces NO
+        # block: it leaves the prompt with its header (plan.md A5.4). What was
+        # asked for and what actually arrived is recorded in `evidence_report`,
+        # which is where that question belongs — not in the prompt.
 
         # Findings fields taken straight from the scenario (no parsing).
         error_message = scenario.error_text
@@ -118,8 +105,6 @@ class EvidenceExtractor(Extractor):
         report = _build_report(scenario_for_evidence, profile, evidence_blocks, trimmed_labels)
 
         return Findings(
-            parameter1=parameter1,
-            parameter2=parameter2,
             scenario_name=scenario.scenario_name,
             failed_step=failed_step,
             error_message=error_message,
@@ -161,6 +146,7 @@ def _build_report(
             device_id=attachment.device_id,
             evidence_name=evidence_name_for(attachment),
             goes_to_llm=evidence_name_for(attachment) in profile.evidence_to_llm,
+            download_skipped=attachment.download_skipped,
             chars=len(attachment.content),
         )
         for attachment in scenario.attachments
@@ -171,10 +157,11 @@ def _build_report(
             BlockReport(
                 label=block.label,
                 chars=len(block.content),
-                available=bool(block.content) and block.content != EVIDENCE_UNAVAILABLE,
+                available=bool(block.content),
                 trimmed=block.label in trimmed_labels,
             )
             for block in blocks
         ],
         unmatched=[row.file_name for row in attachments if not row.evidence_name],
+        skipped=[row.file_name for row in attachments if row.download_skipped],
     )
