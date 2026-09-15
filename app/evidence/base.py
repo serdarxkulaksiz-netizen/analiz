@@ -34,9 +34,8 @@ class Evidence(ABC):
     device_id: ClassVar[str]
     extension: ClassVar[str]
 
-    def __init__(self, *, goes_to_llm: bool, goes_to_store: bool) -> None:
+    def __init__(self, *, goes_to_llm: bool) -> None:
         self.goes_to_llm = goes_to_llm
-        self.goes_to_store = goes_to_store
 
     @classmethod
     def matches(cls, attachment: Attachment) -> bool:
@@ -57,19 +56,9 @@ class Evidence(ABC):
             cls.device_id + "."
         )
 
-    @property
-    @abstractmethod
-    def is_present(self) -> bool:
-        """True if this evidence actually arrived (A5.4)."""
-
     def to_block(self) -> EvidenceBlock | None:
-        """LLM-facing labeled block, or None (not present / not for LLM / no label)."""
+        """LLM-facing labeled block, or None when this evidence has none."""
         return None
-
-    @property
-    def screenshot_path(self) -> str:
-        """Stored screenshot reference, or "" for non-screenshot evidence."""
-        return ""
 
     @property
     def was_trimmed(self) -> bool:
@@ -83,7 +72,6 @@ class Evidence(ABC):
         attachment: Attachment,
         *,
         goes_to_llm: bool,
-        goes_to_store: bool,
         rules: list[Rule] | None = None,
         ctx: RuleContext | None = None,
     ) -> "Evidence":
@@ -109,12 +97,11 @@ class TextEvidence(Evidence):
         content: str,
         *,
         goes_to_llm: bool,
-        goes_to_store: bool,
         file_label: str = "",
         rules: list[Rule] | None = None,
         ctx: RuleContext | None = None,
     ) -> None:
-        super().__init__(goes_to_llm=goes_to_llm, goes_to_store=goes_to_store)
+        super().__init__(goes_to_llm=goes_to_llm)
         self._content = content or ""
         self._file_label = file_label
         self._rules = rules or []
@@ -127,7 +114,8 @@ class TextEvidence(Evidence):
         return f"{name} · {type(self).description}" if type(self).description else name
 
     @property
-    def is_present(self) -> bool:
+    def _is_present(self) -> bool:
+        """Did any text actually arrive? (Read only by `to_block`.)"""
         return bool(self._content.strip())
 
     def select_content(self) -> str:
@@ -146,7 +134,7 @@ class TextEvidence(Evidence):
         return bool(self._rules) and self.select_content() != self._content
 
     def to_block(self) -> EvidenceBlock | None:
-        if self.goes_to_llm and self.is_present:
+        if self.goes_to_llm and self._is_present:
             return EvidenceBlock(
                 label=self.block_label,
                 content=self.select_content(),
@@ -160,14 +148,12 @@ class TextEvidence(Evidence):
         attachment: Attachment,
         *,
         goes_to_llm: bool,
-        goes_to_store: bool,
         rules: list[Rule] | None = None,
         ctx: RuleContext | None = None,
     ) -> "TextEvidence":
         return cls(
             attachment.content,
             goes_to_llm=goes_to_llm,
-            goes_to_store=goes_to_store,
             file_label=attachment.label,
             rules=rules,
             ctx=ctx,
@@ -175,19 +161,17 @@ class TextEvidence(Evidence):
 
 
 class ScreenshotEvidence(Evidence):
-    """Screenshot evidence: a stored path only; never sent to the text LLM."""
+    """Image evidence: recognised so it never enters the text prompt.
 
-    def __init__(self, path: str, *, goes_to_llm: bool, goes_to_store: bool) -> None:
-        super().__init__(goes_to_llm=goes_to_llm, goes_to_store=goes_to_store)
-        self._path = path or ""
+    Carries nothing. It used to carry the stored path, which the extractor
+    collected into `Findings.screenshot_paths`, which the service wrote onto
+    two different rows — three copies of a fact the attachment report already
+    states once, per file, with its path.
 
-    @property
-    def is_present(self) -> bool:
-        return bool(self._path)
-
-    @property
-    def screenshot_path(self) -> str:
-        return self._path
+    The class still earns its place: without it a `.png` would match no evidence
+    at all, and an unmatched file is always downloaded and reported as "no class
+    claimed this". Being recognised is the whole job.
+    """
 
     @classmethod
     def from_attachment(
@@ -195,13 +179,7 @@ class ScreenshotEvidence(Evidence):
         attachment: Attachment,
         *,
         goes_to_llm: bool,
-        goes_to_store: bool,
         rules: list[Rule] | None = None,  # not applicable to binary evidence
         ctx: RuleContext | None = None,
     ) -> "ScreenshotEvidence":
-        # A screenshot's reference is WHERE IT WAS WRITTEN, nothing else. No
-        # file on disk -> no reference: the API's `fileName` is not a path, and
-        # putting it in a field whose whole purpose is "open this" produced a
-        # string that opens nothing. Covers both reasons for having no file —
-        # the profile did not ask for it, and the download failed.
-        return cls(attachment.stored_path, goes_to_llm=goes_to_llm, goes_to_store=goes_to_store)
+        return cls(goes_to_llm=goes_to_llm)

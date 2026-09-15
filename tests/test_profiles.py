@@ -150,8 +150,8 @@ def test_job_c_only_build_log_sliced_per_scenario(tmp_path: Path) -> None:
     assert "baska adım" not in console.content
     assert "ucuncu adım" not in console.content
     # Trimming is visible, never silent.
-    assert findings.truncated is True
-    assert "BuildLogEvidence" in findings.truncated_note
+    report = next(r for r in findings.evidence_report.blocks if r.label.startswith("build.log"))
+    assert report.trimmed is True  # the cut is recorded once, on the block
 
 
 def test_profile_picks_its_prompt_template(tmp_path: Path) -> None:

@@ -33,5 +33,6 @@ class Extractor(ABC):
         forced_profile: str = "",
         build_log: str = "",
         build_log_error: str = "",
+        build_log_path: str = "",
     ) -> Findings:
         """Build Findings (labeled blocks + minimal fields) from raw evidence."""

@@ -90,7 +90,6 @@ class EvidenceRegistry:
         return BuildLogEvidence(
             build_log,
             goes_to_llm=name in profile.evidence_to_llm,
-            goes_to_store=name in profile.evidence_to_store,
             # The name VisiumGo's own UI shows for this file, so the prompt
             # header reads the same as every attachment-backed block.
             file_label=f"{BuildLogEvidence.device_id}{BuildLogEvidence.extension}",
@@ -115,7 +114,6 @@ class EvidenceRegistry:
                 cls.from_attachment(
                     attachment,
                     goes_to_llm=cls.evidence_name in profile.evidence_to_llm,
-                    goes_to_store=cls.evidence_name in profile.evidence_to_store,
                     rules=profile.rules_for(cls.evidence_name),
                     ctx=context,
                 )

@@ -1,10 +1,7 @@
 """Evidence architecture tests: attachment mapping + profile flags."""
 
-from functools import partial
-
 from app.evidence.profiles import Profile, ProfileConfig
 from app.evidence.registry import EvidenceRegistry
-from app.evidence.types import WebScreenshotEvidence
 from app.source.models import Attachment, RawScenario
 
 _ALL = [
@@ -132,7 +129,7 @@ def test_mobile_png_prefix_matches_mobile_screenshot() -> None:
         _FULL_PROFILE,
     )
     by_name = {type(e).evidence_name: e for e in evidences}
-    assert by_name["MobileScreenshotEvidence"].screenshot_path == "m.png"
+    assert by_name["MobileScreenshotEvidence"].to_block() is None  # never in the prompt
     assert by_name["MobileScreenshotEvidence"].to_block() is None  # png not to LLM
 
 
@@ -198,25 +195,3 @@ def test_profile_rules_are_applied_to_content() -> None:
     # test.log has no rules -> untouched
     assert by_name["TestLogEvidence"].was_trimmed is False
     assert by_name["TestLogEvidence"].to_block().content == "steps"
-
-
-def test_screenshot_path_is_only_ever_a_real_path() -> None:
-    """A screenshot reference must open something, or not exist at all.
-
-    `stored_path` empty has two causes — the profile skipped the file, and the
-    download failed — and both used to fall back to the API's `fileName`, which
-    is not a path on any disk. The field is read as "open this".
-    """
-    meta = {
-        "file_name": "-125/browser.default_1.png",
-        "mime_type": "image/png",
-        "device_id": "browser.default",
-    }
-    failed = Attachment(**meta, stored_path="", download_skipped=False)
-    skipped = Attachment(**meta, stored_path="", download_skipped=True)
-    landed = Attachment(**meta, stored_path="/db/attachments/1/browser.default.png")
-
-    build = partial(WebScreenshotEvidence.from_attachment, goes_to_llm=False, goes_to_store=True)
-    assert build(failed).screenshot_path == ""
-    assert build(skipped).screenshot_path == ""
-    assert build(landed).screenshot_path == "/db/attachments/1/browser.default.png"

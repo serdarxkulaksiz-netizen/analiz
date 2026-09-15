@@ -147,9 +147,10 @@ async def _job(
 @pytest.mark.asyncio
 async def test_fetch_job_resolves_latest_run_and_filters_failed(tmp_path: Path) -> None:
     source = _source(tmp_path / "attachments")
-    job = await _job(source)
+    run = await source.resolve_run("job-42")
+    job = await source.fetch_job(run)
 
-    assert job.run_id == "149132"  # largest id among PASSED/FAILED runs
+    assert run.run_id == "149132"  # largest id among PASSED/FAILED runs
     assert job.total_scenario_count == 100
     assert len(job.failed_scenarios) == 1  # PASSED and UNSTABLE filtered out
 
@@ -212,9 +213,12 @@ async def test_job_level_raw_responses_are_kept(tmp_path: Path) -> None:
     the error text PreCheck will read.
     """
     source = _source(tmp_path / "attachments")
-    job = await _job(source)
+    run = await source.resolve_run("job-42")
+    job = await source.fetch_job(run)
 
-    assert job.raw_run_response["jobName"] == "nightly"
+    # The run response stays on the summary that read it, not copied onto the
+    # evidence bundle as well.
+    assert run.raw["jobName"] == "nightly"
     assert job.raw_results_response == _RESULTS
 
     scenario = job.failed_scenarios[0]
@@ -396,9 +400,10 @@ async def test_missing_entry_or_non_zip_is_tolerated(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_run_id_wins_over_job_id_and_no_runs_query(tmp_path: Path) -> None:
     source = _source(tmp_path / "attachments")
-    job = await _job(source, "job-42", run_id="RUN_DIRECT")
+    run = await source.resolve_run("job-42", "RUN_DIRECT")
+    await source.fetch_job(run)
 
-    assert job.run_id == "149132"  # the id the run detail reports
+    assert run.run_id == "149132"  # the id the run detail reports
     # The /api/runs listing must NOT be queried when run_id is given.
     assert not any(r.url.path == "/api/runs" for r in _CAPTURED)
 

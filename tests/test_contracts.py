@@ -15,13 +15,9 @@ def test_findings_contract_fields_are_frozen() -> None:
     assert set(Findings.model_fields) == {
         "scenario_name",
         "evidence_blocks",
-        "screenshot_paths",
-        "retry_info",
         "profile_name",
         "prompt_template",
         "extra_context",
-        "truncated",
-        "truncated_note",
         "evidence_report",
     }
 
@@ -49,9 +45,6 @@ def test_analysis_result_adds_only_system_meta() -> None:
         "analyzer_run_id",
         "failure_reason",
         "profile_name",
-        "truncated",
-        "truncated_note",
-        "screenshot_paths",
         "raw_llm_response",
         "status",
         "meta",

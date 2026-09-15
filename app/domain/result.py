@@ -88,9 +88,6 @@ class AnalysisResult(BaseModel):
     #: without anyone opening the trace files to find out.
     failure_reason: str = ""
     profile_name: str = ""  # which analysis profile actually ran
-    truncated: bool = False
-    truncated_note: str = ""
-    screenshot_paths: list[str] = []
     raw_llm_response: str = ""
     status: AnalysisStatus = AnalysisStatus.OK
     meta: AnalysisMeta = AnalysisMeta()

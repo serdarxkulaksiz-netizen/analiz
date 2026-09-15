@@ -93,7 +93,12 @@ class JobLogReport(BaseModel):
     #: Size as received (before content rules).
     chars: int = 0
     goes_to_llm: bool = False
-    goes_to_store: bool = False
+    #: Where the log was written (`database/build_logs/<run_id>.log`). Empty
+    #: when there was nothing to write. This used to say whether the profile
+    #: listed the log in `evidence_to_store` — a list that no longer decides
+    #: anything about storage, so the field was describing a rule that had
+    #: stopped existing.
+    stored_path: str = ""
     #: Why it is missing although the profile wanted it (network, 404, not a
     #: ZIP, entry missing). Empty when it was not wanted or it arrived.
     error: str = ""
@@ -121,10 +126,6 @@ class EvidenceReport(BaseModel):
     #: behaviour this replaces.
     rule_errors: list[str] = []
     blocks: list[BlockReport] = []
-    #: File names VisiumGo sent that no Evidence class claimed.
-    unmatched: list[str] = []
-    #: File names the active profile did not ask for (never downloaded).
-    skipped: list[str] = []
 
 
 class Findings(BaseModel):
@@ -146,16 +147,12 @@ class Findings(BaseModel):
 
     scenario_name: str
     evidence_blocks: list[EvidenceBlock] = []
-    screenshot_paths: list[str] = []
-    retry_info: str = ""
     # Profile-driven extras: which profile ran, its extra prompt context, and
     # whether content rules actually cut anything (visible, never silent).
     profile_name: str = ""
     #: Which prompt template this scenario is asked with (profile decision).
     prompt_template: str = DEFAULT_PROMPT_TEMPLATE
     extra_context: str = ""
-    truncated: bool = False
-    truncated_note: str = ""
     #: What extraction saw and did (observability, never sent to the LLM).
     evidence_report: EvidenceReport = EvidenceReport()
 

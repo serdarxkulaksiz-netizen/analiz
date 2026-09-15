@@ -49,7 +49,11 @@ def test_default_profile_full_findings(extractor: EvidenceExtractor) -> None:
     labels = [b.label for b in findings.evidence_blocks]
     assert labels[0].startswith("test.log · ")
     assert labels[1].startswith("browser.default.html · ")
-    assert findings.screenshot_paths == ["web.png"]
+    # The screenshot is recognised, so it is not reported as an unclaimed file —
+    # and it produces no prompt block.
+    png = next(r for r in findings.evidence_report.attachments if r.file_name.endswith(".png"))
+    assert png.evidence_name == "WebScreenshotEvidence"
+    assert png.stored_path == "web.png"
 
 
 def test_request_parameters_never_reach_extraction(extractor: EvidenceExtractor) -> None:
@@ -128,7 +132,8 @@ def test_evidence_report_shows_what_arrived_and_what_matched(
 
     report = extractor.extract(scenario).evidence_report
 
-    assert "beklenmeyen.pdf" in report.unmatched
+    unmatched = [row.file_name for row in report.attachments if not row.evidence_name]
+    assert "beklenmeyen.pdf" in unmatched
     by_name = {row.file_name: row for row in report.attachments}
     assert by_name["beklenmeyen.pdf"].evidence_name == ""  # nothing claimed it
     test_log = "220807234/test_12345.log"
@@ -139,3 +144,20 @@ def test_evidence_report_shows_what_arrived_and_what_matched(
     blocks = {row.label.split(" · ")[0]: row for row in report.blocks}
     assert blocks["test.log"].available is True
     assert blocks["test.log"].chars > 0
+
+
+def test_report_never_invents_a_file_path(extractor: EvidenceExtractor) -> None:
+    """`stored_path` is where the file landed, or nothing at all.
+
+    Two different pieces of code used to fall back to the API's `fileName` when
+    a download had not landed. `fileName` is not a path on any disk, and this
+    field is read as "open this".
+    """
+    landed = _att("browser.default", ".png", mime="image/png", path="/db/web.png")
+    failed = _att("mobile.android.s", ".png", mime="image/png", path="")
+
+    report = extractor.extract(_scenario(attachments=[landed, failed])).evidence_report
+    by_class = {row.evidence_name: row for row in report.attachments}
+
+    assert by_class["WebScreenshotEvidence"].stored_path == "/db/web.png"
+    assert by_class["MobileScreenshotEvidence"].stored_path == ""

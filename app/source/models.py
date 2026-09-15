@@ -4,9 +4,9 @@ Attachment-based, source-agnostic shape: the Source layer is the only place
 that knows VisiumGo's response shape, so everything downstream works from
 `RawScenario` alone.
 
-Everything the source received is kept (user rule: save everything for now):
-`raw_detail` carries the scenario-detail response untouched, and
-`raw_results_response` / `raw_run_response` carry the job-level responses.
+The job-level responses are kept verbatim (`RunSummary.raw` for the run,
+`JobData.raw_results_response` for the scenario list). Each attachment's bytes
+live on disk; nothing is copied a second time into a model.
 """
 
 from pathlib import PurePosixPath
@@ -78,7 +78,6 @@ class RawScenario(BaseModel):
     scenario_id: str = ""
     error_text: str = ""
     attachments: list[Attachment] = []
-    retry_info: str = ""
     #: Why this scenario's DETAIL could not be read (no id in the `/results`
     #: row, 404, timeout). The scenario still travels — with the name the
     #: results row gave and no attachments — so one unreadable scenario costs
@@ -109,12 +108,15 @@ class RunSummary(BaseModel):
 
 
 class JobData(BaseModel):
-    """A finished job run's report: which scenarios failed, with raw evidence."""
+    """One run's evidence: which scenarios failed, and what came with them.
 
-    job_id: str = ""
-    run_id: str = ""
-    job_name: str = ""
-    run_result: dict = {}  # state / totals summary (raw, from VisiumGo)
+    Carries only what FETCHING produced. Who the run is — its id, its job, its
+    name, its `runResult` — was already answered by `RunSummary` before any of
+    this was fetched, and the caller is holding it. Repeating those five fields
+    here meant the same five facts existed twice in memory, with nothing saying
+    which copy to trust if they ever disagreed.
+    """
+
     total_scenario_count: int = 0
     failed_scenarios: list[RawScenario] = []
     # Job-level build log (VisiumGo `/logs` -> `build.log`); empty when the
@@ -128,6 +130,6 @@ class JobData(BaseModel):
     # timeout, not a ZIP, entry missing) records its reason here. The job
     # continues either way — the reason is carried, never raised.
     build_log_error: str = ""
-    # Raw job-level responses for observability.
-    raw_run_response: dict = {}
+    #: The `/results` array, verbatim (save-everything). The run response is
+    #: on the summary, where it was read.
     raw_results_response: list = []

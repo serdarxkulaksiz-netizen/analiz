@@ -42,6 +42,7 @@ class EvidenceExtractor(Extractor):
         forced_profile: str = "",
         build_log: str = "",
         build_log_error: str = "",
+        build_log_path: str = "",
     ) -> Findings:
         profile = self._profiles.get(job_id=job_id, forced=forced_profile)
 
@@ -55,8 +56,6 @@ class EvidenceExtractor(Extractor):
             evidences.append(job_log)
 
         evidence_blocks: list[EvidenceBlock] = []
-        screenshot_paths: list[str] = []
-        trimmed: list[str] = []
         trimmed_labels: set[str] = set()
         rule_errors: list[str] = []
         for evidence in evidences:
@@ -73,10 +72,7 @@ class EvidenceExtractor(Extractor):
             if block is not None:
                 evidence_blocks.append(block)
                 if was_trimmed:
-                    trimmed.append(name)
                     trimmed_labels.add(block.label)
-            if evidence.screenshot_path:
-                screenshot_paths.append(evidence.screenshot_path)
 
         # An evidence the profile asked for but that never arrived produces NO
         # block: it leaves the prompt with its header. What was
@@ -96,25 +92,17 @@ class EvidenceExtractor(Extractor):
             trimmed_labels,
             build_log=build_log,
             build_log_error=build_log_error,
+            build_log_path=build_log_path,
             rule_errors=rule_errors,
         )
 
         return Findings(
             scenario_name=scenario.scenario_name,
             evidence_blocks=evidence_blocks,
-            screenshot_paths=screenshot_paths,
-            retry_info=scenario.retry_info,
             profile_name=profile.name,
             prompt_template=profile.prompt,
             extra_context=profile.extra_context,
             evidence_report=report,
-            truncated=bool(trimmed),
-            truncated_note=(
-                f"profil '{profile.name}' kuralları uygulandı: {', '.join(trimmed)} "
-                "(ham içerik database/ altında tam duruyor)"
-                if trimmed
-                else ""
-            ),
         )
 
 
@@ -126,6 +114,7 @@ def _build_report(
     *,
     build_log: str = "",
     build_log_error: str = "",
+    build_log_path: str = "",
     rule_errors: list[str] | None = None,
 ) -> EvidenceReport:
     """Record what arrived and what reached the prompt.
@@ -160,7 +149,7 @@ def _build_report(
             wanted=build_log_name in profile.wanted_evidence,
             chars=len(build_log),
             goes_to_llm=build_log_name in profile.evidence_to_llm,
-            goes_to_store=build_log_name in profile.evidence_to_store,
+            stored_path=build_log_path,
             error=build_log_error,
         ),
         blocks=[
@@ -172,6 +161,4 @@ def _build_report(
             )
             for block in blocks
         ],
-        unmatched=[row.file_name for row in attachments if not row.evidence_name],
-        skipped=[row.file_name for row in attachments if row.download_skipped],
     )

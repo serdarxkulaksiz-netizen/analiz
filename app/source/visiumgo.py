@@ -302,16 +302,11 @@ class VisiumGoSource(Source):
         # service records that in the run note; `run_result` is stored raw.
         total = run.run_result.get("totalScenarios", 0)
         return JobData(
-            job_id=run.job_id,
-            run_id=run.run_id,
-            job_name=run.job_name,
-            run_result=run.run_result,
             total_scenario_count=total,
             failed_scenarios=scenarios,
             build_log=build_log,
             build_log_path=build_log_path,
             build_log_error=build_log_error,
-            raw_run_response=run.raw,
             raw_results_response=results,
         )
 
@@ -371,7 +366,6 @@ class VisiumGoSource(Source):
             scenario_id=scenario_id,
             error_text=str(detail.get("errorText", "")),
             attachments=attachments,
-            retry_info=str(record.get("retryNumber", "")),
             fetch_error=fetch_error,
         )
 

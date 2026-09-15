@@ -189,7 +189,6 @@ class AnalyzerService:
                 "completed_count": 0,
                 "total_scenario_count": 0,
                 "job_name": "",
-                "run_result": {},
                 "raw_run_response": {},
                 "raw_results_response": [],
                 "build_log_path": "",
@@ -294,11 +293,12 @@ class AnalyzerService:
         job = await self._source.fetch_job(summary, wants, want_build_log=want_build_log)
         self._update_run(
             run,
-            run_id=job.run_id,  # resolved run id (real source may derive it)
-            job_name=job.job_name,
-            run_result=job.run_result,
-            # Full raw traces (save-everything rule).
-            raw_run_response=job.raw_run_response,
+            run_id=summary.run_id,
+            job_name=summary.job_name,
+            # Full raw traces (save-everything rule). `runResult` is inside the
+            # run response; storing it again as its own column put the same
+            # numbers in the row twice.
+            raw_run_response=summary.raw,
             raw_results_response=job.raw_results_response,
             # The build log itself is a FILE under `database/build_logs/`, not a
             # column: it covers a whole run and would dwarf the row that is read
@@ -328,6 +328,7 @@ class AnalyzerService:
                     forced_profile=forced_profile,
                     build_log=job.build_log,
                     build_log_error=job.build_log_error,
+                    build_log_path=job.build_log_path,
                     semaphore=semaphore,
                 )
                 for scenario in job.failed_scenarios
@@ -349,7 +350,7 @@ class AnalyzerService:
                 summary.note,
                 running_note,
                 _forced_note(forced_profile),
-                _total_scenarios_note(job.run_result),
+                _total_scenarios_note(summary.run_result),
             )
             if note
         ]
@@ -361,22 +362,6 @@ class AnalyzerService:
             )
         self._update_run(run, status=RunStatus.DONE.value, note=" · ".join(notes))
 
-    def _screenshot_paths(self, scenario: RawScenario) -> list[str]:
-        """Every screenshot the source delivered — "what arrived".
-
-        Deliberately different from `Findings.screenshot_paths`, which is
-        "what the analysis used" (profile-filtered). The evidence row records
-        the former; the diagnosis row the latter.
-        """
-        # Only a real path. It used to fall back to the API's `fileName` when
-        # the download never landed, which put a string that opens nothing into
-        # a field called `screenshot_paths`.
-        return [
-            attachment.stored_path
-            for attachment in scenario.attachments
-            if attachment.mime_type.startswith("image/") and attachment.stored_path
-        ]
-
     async def _analyze_scenario(
         self,
         analyzer_run_id: str,
@@ -386,6 +371,7 @@ class AnalyzerService:
         forced_profile: str,
         build_log: str,
         build_log_error: str,
+        build_log_path: str,
         semaphore: asyncio.Semaphore,
     ) -> None:
         """Analyze one failed scenario; never raises."""
@@ -413,6 +399,7 @@ class AnalyzerService:
                     forced_profile=forced_profile,
                     build_log=build_log,
                     build_log_error=build_log_error,
+                    build_log_path=build_log_path,
                 )
 
                 # A content rule that could not do its job stops this
@@ -492,9 +479,6 @@ class AnalyzerService:
                 failure_reason = "LLM cevabı alınamadı ya da ayrıştırılamadı — ham cevap saklandı"
 
             # Profile-driven flags (empty when extraction itself failed).
-            result_screenshots = findings.screenshot_paths if findings else []
-            truncated = findings.truncated if findings else False
-            truncated_note = findings.truncated_note if findings else ""
             profile_name = findings.profile_name if findings else ""
 
             # Part 1: what extraction saw — which attachments arrived, which
@@ -515,7 +499,6 @@ class AnalyzerService:
                     "result_id": result_id,
                     "analyzer_run_id": analyzer_run_id,
                     "scenario_name": scenario.scenario_name,
-                    "screenshot_paths": self._screenshot_paths(scenario),
                     "evidence_report": (findings.evidence_report.model_dump() if findings else {}),
                 },
             )
@@ -569,9 +552,6 @@ class AnalyzerService:
                     analyzer_run_id=analyzer_run_id,
                     **analysis.model_dump(),
                     profile_name=profile_name,
-                    screenshot_paths=result_screenshots,
-                    truncated=truncated,
-                    truncated_note=truncated_note,
                     raw_llm_response=raw_response,
                     status=AnalysisStatus.OK,
                     meta=meta,
@@ -585,9 +565,6 @@ class AnalyzerService:
                     scenario_name=scenario.scenario_name,
                     failure_reason=failure_reason,
                     profile_name=profile_name,
-                    screenshot_paths=result_screenshots,
-                    truncated=truncated,
-                    truncated_note=truncated_note,
                     raw_llm_response=raw_response,
                     status=(
                         AnalysisStatus.NO_EVIDENCE
