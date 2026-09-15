@@ -331,13 +331,13 @@ async def test_build_log_extracted_from_zip(tmp_path: Path) -> None:
     # /logs returns a ZIP; build.log is pulled out of it (raw zip not kept).
     source = _source(tmp_path / "attachments", tmp_path / "build_logs")
     job = await _job(source, want_build_log=True)
-    assert job.build_log == "MOCK build log"  # not the other entry
+    assert job.job_log.text == "MOCK build log"  # not the other entry
     # The working path stays exactly as it was: a successful fetch reports no
     # error at all (this assertion is the regression lock for that).
-    assert job.build_log_error == ""
+    assert job.job_log.error == ""
     # It lands on disk as a file of its own, not inline in a row.
-    assert Path(job.build_log_path).read_text(encoding="utf-8") == "MOCK build log"
-    assert Path(job.build_log_path).parent == tmp_path / "build_logs"
+    assert Path(job.job_log.stored_path).read_text(encoding="utf-8") == "MOCK build log"
+    assert Path(job.job_log.stored_path).parent == tmp_path / "build_logs"
 
 
 @pytest.mark.asyncio
@@ -345,7 +345,7 @@ async def test_build_log_matches_nested_entry(tmp_path: Path) -> None:
     # Entry matched on its ending, so `logs/build.log` works too.
     source = _zip_source(tmp_path, {"logs/build.log": "iç içe"}, "/api/runs/{run_id}/logs")
     job = await _job(source, want_build_log=True)
-    assert job.build_log == "iç içe"
+    assert job.job_log.text == "iç içe"
 
 
 @pytest.mark.asyncio
@@ -354,9 +354,9 @@ async def test_logs_endpoint_is_not_called_unless_the_profile_wants_it(tmp_path:
     # a run that reads no build log pays for no ZIP.
     source = _source(tmp_path / "attachments", tmp_path / "build_logs")
     skipped = await _job(source)
-    assert skipped.build_log == ""
-    assert skipped.build_log_error == ""
-    assert skipped.build_log_path == ""
+    assert skipped.job_log.text == ""
+    assert skipped.job_log.error == ""
+    assert skipped.job_log.stored_path == ""
     assert not [r for r in _CAPTURED if r.url.path.endswith("/logs")]
 
     # Wanted -> exactly one call.
@@ -382,11 +382,11 @@ async def test_build_log_failure_is_recorded_not_swallowed(tmp_path: Path) -> No
     )
     broken = VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")
     job = await _job(broken, want_build_log=True)
-    assert job.build_log == ""
-    assert job.build_log_path == ""
+    assert job.job_log.text == ""
+    assert job.job_log.stored_path == ""
     assert len(job.failed_scenarios) == 1  # analysis still happened
-    assert "/logs" in job.build_log_error
-    assert "404" in job.build_log_error
+    assert "/logs" in job.job_log.error
+    assert "404" in job.job_log.error
 
 
 @pytest.mark.asyncio
@@ -395,9 +395,9 @@ async def test_missing_entry_or_non_zip_is_tolerated(tmp_path: Path) -> None:
     # entry AND what the archive actually held (that is what makes it fixable).
     source = _zip_source(tmp_path, {"baska.txt": "x"}, "/api/runs/{run_id}/logs")
     job = await _job(source, want_build_log=True)
-    assert job.build_log == ""
-    assert "build.log" in job.build_log_error
-    assert "baska.txt" in job.build_log_error
+    assert job.job_log.text == ""
+    assert "build.log" in job.job_log.error
+    assert "baska.txt" in job.job_log.error
 
     # Not a ZIP at all -> empty, no crash.
     def handler(request: httpx.Request) -> httpx.Response:
@@ -413,8 +413,8 @@ async def test_missing_entry_or_non_zip_is_tolerated(tmp_path: Path) -> None:
     )
     bad = VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")
     not_zip = await _job(bad, want_build_log=True)
-    assert not_zip.build_log == ""
-    assert "BadZipFile" in not_zip.build_log_error
+    assert not_zip.job_log.text == ""
+    assert "BadZipFile" in not_zip.job_log.error
 
 
 @pytest.mark.asyncio

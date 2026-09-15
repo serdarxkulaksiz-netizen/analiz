@@ -9,18 +9,18 @@ look a profile up — the run resolved it once, before any evidence was fetched,
 and hands the same object to every scenario. The request's
 `parameter1`/`parameter2` never reach here: they decide nothing.
 
-`build_log` is job-level context (VisiumGo `/api/runs/{run_id}/logs` ->
+`job_log` is job-level context (VisiumGo `/api/runs/{run_id}/logs` ->
 `build.log`): it covers the whole run, not one scenario, and becomes a prompt
-block when the profile includes `BuildLogEvidence`. `build_log_error` says why
-it is missing although the profile asked for it — carried so the evidence row
-can answer that on its own, without anyone opening the run row.
+block when the profile includes `BuildLogEvidence`. It arrives whole — text,
+where it was stored, and why it is missing — so the evidence row can answer
+all three on its own, without anyone opening the run row.
 """
 
 from abc import ABC, abstractmethod
 
 from app.domain.findings import Findings
 from app.evidence.profiles import Profile
-from app.source.models import RawScenario
+from app.source.models import JobLog, RawScenario
 
 
 class Extractor(ABC):
@@ -32,8 +32,6 @@ class Extractor(ABC):
         scenario: RawScenario,
         *,
         profile: Profile,
-        build_log: str = "",
-        build_log_error: str = "",
-        build_log_path: str = "",
+        job_log: JobLog | None = None,
     ) -> Findings:
         """Build Findings (labeled blocks + minimal fields) from raw evidence."""

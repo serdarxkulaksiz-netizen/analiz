@@ -33,7 +33,7 @@ from typing import Any
 
 from app.domain.enums import ANALYZABLE_RUN_STATES, RunState
 from app.source.base import DownloadPlan, Source
-from app.source.models import Attachment, JobData, RawScenario, RunSummary
+from app.source.models import Attachment, JobData, JobLog, RawScenario, RunSummary
 from app.source.storage import save_attachment, save_build_log
 from app.source.visiumgo_client import VisiumGoClient, encode_segment
 
@@ -277,11 +277,13 @@ class VisiumGoSource(Source):
         # nobody uses is bytes paid for nothing. `want_build_log=False` means
         # "not wanted", never "could not be fetched" — the two are told apart
         # by `evidence_report.job_log.wanted`.
-        build_log, build_log_error, build_log_path = "", "", ""
+        job_log = JobLog()
         if plan.wants_build_log:
-            build_log, build_log_error = await self.fetch_build_log(run.run_id)
-            if build_log and self._build_logs_dir is not None:
-                build_log_path = str(save_build_log(self._build_logs_dir, run.run_id, build_log))
+            text, error = await self.fetch_build_log(run.run_id)
+            stored = ""
+            if text and self._build_logs_dir is not None:
+                stored = str(save_build_log(self._build_logs_dir, run.run_id, text))
+            job_log = JobLog(text=text, stored_path=stored, error=error)
 
         results = await self.get_results(run.run_id)
         failed = [r for r in results if r.get("resultType") == "FAILED"]
@@ -298,9 +300,7 @@ class VisiumGoSource(Source):
         return JobData(
             total_scenario_count=total,
             failed_scenarios=scenarios,
-            build_log=build_log,
-            build_log_path=build_log_path,
-            build_log_error=build_log_error,
+            job_log=job_log,
             raw_results_response=results,
         )
 

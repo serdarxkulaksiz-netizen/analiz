@@ -3,7 +3,7 @@
 from collections.abc import Callable
 
 from app.domain.findings import Findings
-from app.source.models import Attachment, RawScenario
+from app.source.models import Attachment, JobLog, RawScenario
 
 
 def _att(
@@ -101,7 +101,7 @@ def test_empty_evidence_also_produces_no_block(extract: Callable[..., Findings])
 def test_build_log_is_profile_controlled(extract: Callable[..., Findings]) -> None:
     # The default profile does NOT send the job-level build log (it holds all
     # scenarios and would bloat every prompt); a profile must opt in.
-    findings = extract(_scenario(), build_log="build out")
+    findings = extract(_scenario(), job_log=JobLog(text="build out"))
     assert not [b for b in findings.evidence_blocks if b.evidence_name == "BuildLogEvidence"]
 
 

@@ -107,6 +107,22 @@ class RunSummary(BaseModel):
     note: str = ""
 
 
+class JobLog(BaseModel):
+    """The job-level build log: one log for the whole run, own endpoint.
+
+    Three facts that only make sense together — the text, where it was written,
+    and why it is missing. They used to travel as three loose strings through
+    four signatures; adding `stored_path` meant editing all four.
+    """
+
+    text: str = ""
+    #: `database/build_logs/<run_id>.log`. Empty when there was nothing to write.
+    stored_path: str = ""
+    #: Why it is missing although the profile asked for it (network, 404, not a
+    #: ZIP, entry missing). Empty when it was not wanted, or it arrived.
+    error: str = ""
+
+
 class JobData(BaseModel):
     """One run's evidence: which scenarios failed, and what came with them.
 
@@ -119,17 +135,9 @@ class JobData(BaseModel):
 
     total_scenario_count: int = 0
     failed_scenarios: list[RawScenario] = []
-    # Job-level build log (VisiumGo `/logs` -> `build.log`); empty when the
-    # active profile did not ask for it, or when the fetch failed.
-    build_log: str = ""
-    # Where that log was written (`database/build_logs/<run_id>.log`). Empty
-    # when there was no log to write.
-    build_log_path: str = ""
-    # Why `build_log` is empty when it should NOT be. An unset endpoint is a
-    # deliberate skip and leaves this empty as well; a failed fetch (404,
-    # timeout, not a ZIP, entry missing) records its reason here. The job
-    # continues either way — the reason is carried, never raised.
-    build_log_error: str = ""
+    #: The run's build log — empty text when the profile did not ask for it, or
+    #: when the fetch failed (and then `error` says which).
+    job_log: JobLog = JobLog()
     #: The `/results` array, verbatim (save-everything). The run response is
     #: on the summary, where it was read.
     raw_results_response: list = []

@@ -32,7 +32,7 @@ from app.persistence.repository import Repository
 from app.precheck.base import PreCheck
 from app.prompting.builder import PromptBuilder
 from app.source.base import Source
-from app.source.models import RawScenario
+from app.source.models import JobLog, RawScenario
 
 #: Job-level run state -> the profile every scenario of that run is analyzed
 #: with, bypassing the job_ids mapping (a state absent here resolves normally).
@@ -300,12 +300,12 @@ class AnalyzerService:
             # The build log itself is a FILE under `database/build_logs/`, not a
             # column: it covers a whole run and would dwarf the row that is read
             # for status. The row keeps the pointer and the size.
-            build_log_path=job.build_log_path,
-            build_log_chars=len(job.build_log),
+            build_log_path=job.job_log.stored_path,
+            build_log_chars=len(job.job_log.text),
             # Empty unless the build log SHOULD have arrived and did not: the
             # reason is recorded so a misconfigured/failing endpoint cannot hide
             # as "this job simply had no build log". Does not fail the run.
-            build_log_error=job.build_log_error,
+            build_log_error=job.job_log.error,
             scenario_count=len(job.failed_scenarios),
             total_scenario_count=job.total_scenario_count,
         )
@@ -322,9 +322,7 @@ class AnalyzerService:
                     run["analyzer_run_id"],
                     scenario,
                     profile=plan.profile,
-                    build_log=job.build_log,
-                    build_log_error=job.build_log_error,
-                    build_log_path=job.build_log_path,
+                    job_log=job.job_log,
                     semaphore=semaphore,
                 )
                 for scenario in job.failed_scenarios
@@ -364,9 +362,7 @@ class AnalyzerService:
         scenario: RawScenario,
         *,
         profile: Profile,
-        build_log: str,
-        build_log_error: str,
-        build_log_path: str,
+        job_log: JobLog,
         semaphore: asyncio.Semaphore,
     ) -> None:
         """Analyze one failed scenario; never raises."""
@@ -391,9 +387,7 @@ class AnalyzerService:
                 findings = self._extractor.extract(
                     scenario,
                     profile=profile,
-                    build_log=build_log,
-                    build_log_error=build_log_error,
-                    build_log_path=build_log_path,
+                    job_log=job_log,
                 )
 
                 # A content rule that could not do its job stops this

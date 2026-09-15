@@ -8,6 +8,7 @@ from app.evidence.profiles import JOB_FAILED_PROFILE_NAME, ProfileRegistry
 from app.evidence.registry import EvidenceRegistry, known_evidence_names
 from app.extraction.evidence_extractor import EvidenceExtractor
 from app.prompting.builder import PromptBuilder
+from app.source.models import JobLog
 from tests.conftest import write_profiles
 from tests.test_extraction import _scenario  # reuse the sample scenario
 
@@ -144,7 +145,7 @@ def test_job_c_only_build_log_sliced_per_scenario(tmp_path: Path) -> None:
     extractor = EvidenceExtractor(EvidenceRegistry())
 
     findings = extractor.extract(
-        _scenario(), profile=profiles.get(job_id="1204"), build_log=_JOB_LOG
+        _scenario(), profile=profiles.get(job_id="1204"), job_log=JobLog(text=_JOB_LOG)
     )
 
     # Only the build log reaches the prompt; the scenario's own files do not.
@@ -192,7 +193,7 @@ def test_findings_carry_the_profiles_prompt_template(tmp_path: Path) -> None:
     extractor = EvidenceExtractor(EvidenceRegistry())
 
     findings = extractor.extract(
-        _scenario(), profile=profiles.get(job_id="889"), build_log="BUILD FAILED"
+        _scenario(), profile=profiles.get(job_id="889"), job_log=JobLog(text="BUILD FAILED")
     )
 
     assert findings.prompt_template == "buildlog"
@@ -230,7 +231,9 @@ def test_slicing_that_cannot_match_fails_the_scenario_instead_of_flooding_it(
     profiles = _registry(tmp_path, config)
     extractor = EvidenceExtractor(EvidenceRegistry())
 
-    findings = extractor.extract(_scenario(), profile=profiles.get(job_id="889"), build_log=job_log)
+    findings = extractor.extract(
+        _scenario(), profile=profiles.get(job_id="889"), job_log=JobLog(text=job_log)
+    )
 
     assert findings.evidence_blocks == []  # nothing reached the prompt
     (error,) = findings.evidence_report.rule_errors
@@ -262,7 +265,9 @@ def test_report_shows_a_successful_scenario_slice(tmp_path: Path) -> None:
     profiles = _registry(tmp_path, config)
     extractor = EvidenceExtractor(EvidenceRegistry())
 
-    findings = extractor.extract(_scenario(), profile=profiles.get(job_id="889"), build_log=job_log)
+    findings = extractor.extract(
+        _scenario(), profile=profiles.get(job_id="889"), job_log=JobLog(text=job_log)
+    )
 
     block = next(b for b in findings.evidence_blocks if b.evidence_name == "BuildLogEvidence")
     assert "bizim satır FAILED" in block.content
@@ -315,7 +320,7 @@ def test_profile_alone_decides_what_reaches_the_prompt(tmp_path: Path) -> None:
     extractor = EvidenceExtractor(EvidenceRegistry())
     builder = PromptBuilder(Path("config/prompts"), [0.1, 0.25, 0.5, 0.75, 0.99])
 
-    findings = extractor.extract(_scenario(), profile=profiles.get(), build_log=_JOB_LOG)
+    findings = extractor.extract(_scenario(), profile=profiles.get(), job_log=JobLog(text=_JOB_LOG))
     prompt = builder.build(findings)
 
     assert "=== test.log · " in prompt
@@ -343,7 +348,7 @@ def test_build_log_is_reported_as_a_job_log_not_an_attachment(tmp_path: Path) ->
     extractor = EvidenceExtractor(EvidenceRegistry())
 
     report = extractor.extract(
-        _scenario(), profile=profiles.get(), build_log=_JOB_LOG
+        _scenario(), profile=profiles.get(), job_log=JobLog(text=_JOB_LOG)
     ).evidence_report
 
     listed = {row.file_name for row in report.attachments}
@@ -377,7 +382,10 @@ def test_job_log_report_tells_wanted_from_broken(tmp_path: Path) -> None:
     extractor = EvidenceExtractor(EvidenceRegistry())
 
     broken = extractor.extract(
-        _scenario(), profile=profiles.get(), build_log="", build_log_error="404"
+        _scenario(),
+        profile=profiles.get(),
+        # The object carries both halves: nothing arrived, and why.
+        job_log=JobLog(text="", error="404"),
     ).evidence_report
     assert broken.job_log.wanted is True
     assert broken.job_log.chars == 0

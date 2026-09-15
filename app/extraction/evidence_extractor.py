@@ -25,7 +25,7 @@ from app.evidence.registry import EvidenceRegistry, evidence_name_for
 from app.evidence.rules import RuleContext, RuleError
 from app.evidence.types import BuildLogEvidence
 from app.extraction.base import Extractor
-from app.source.models import RawScenario
+from app.source.models import JobLog, RawScenario
 
 
 class EvidenceExtractor(Extractor):
@@ -39,18 +39,17 @@ class EvidenceExtractor(Extractor):
         scenario: RawScenario,
         *,
         profile: Profile,
-        build_log: str = "",
-        build_log_error: str = "",
-        build_log_path: str = "",
+        job_log: JobLog | None = None,
     ) -> Findings:
+        job_log = job_log or JobLog()
         ctx = RuleContext(scenario_name=scenario.scenario_name)
         evidences = self._registry.build_for(scenario, profile, ctx)
 
         # The job log is a peer of the attachment-backed evidences, not one of
         # them: same profile flags, same content rules, different origin.
-        job_log = self._registry.build_job_log(build_log, profile, ctx)
-        if job_log is not None:
-            evidences.append(job_log)
+        log_evidence = self._registry.build_job_log(job_log.text, profile, ctx)
+        if log_evidence is not None:
+            evidences.append(log_evidence)
 
         evidence_blocks: list[EvidenceBlock] = []
         trimmed_labels: set[str] = set()
@@ -87,9 +86,7 @@ class EvidenceExtractor(Extractor):
             profile,
             evidence_blocks,
             trimmed_labels,
-            build_log=build_log,
-            build_log_error=build_log_error,
-            build_log_path=build_log_path,
+            job_log=job_log,
             rule_errors=rule_errors,
         )
 
@@ -109,9 +106,7 @@ def _build_report(
     blocks: list[EvidenceBlock],
     trimmed_labels: set[str],
     *,
-    build_log: str = "",
-    build_log_error: str = "",
-    build_log_path: str = "",
+    job_log: JobLog,
     rule_errors: list[str] | None = None,
 ) -> EvidenceReport:
     """Record what arrived and what reached the prompt.
@@ -144,10 +139,10 @@ def _build_report(
         rule_errors=rule_errors or [],
         job_log=JobLogReport(
             wanted=build_log_name in profile.wanted_evidence,
-            chars=len(build_log),
+            chars=len(job_log.text),
             goes_to_llm=build_log_name in profile.evidence_to_llm,
-            stored_path=build_log_path,
-            error=build_log_error,
+            stored_path=job_log.stored_path,
+            error=job_log.error,
         ),
         blocks=[
             BlockReport(
