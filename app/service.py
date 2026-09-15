@@ -84,17 +84,15 @@ def _total_scenarios_note(run_result: dict[str, Any]) -> str:
     return "runResult.totalScenarios gelmedi — toplam senaryo sayısı bilinmiyor (0 yazıldı)"
 
 
-def _forced_note(profile_name: str, by_caller: bool) -> str:
+def _forced_note(profile_name: str) -> str:
     """Say it out loud when the normal profile resolution was bypassed.
 
     Without this the run row would look like an ordinary analysis while every
-    scenario was actually judged with a different profile — and "the job failed"
-    would be indistinguishable from "a tool asked for this profile".
+    scenario was actually judged with a different profile.
     """
     if not profile_name:
         return ""
-    reason = "çağıran istedi" if by_caller else "job durumu FAILED"
-    return f"'{profile_name}' profili kullanıldı ({reason})"
+    return f"'{profile_name}' profili kullanıldı (job durumu FAILED)"
 
 
 def _utcnow_iso() -> str:
@@ -137,10 +135,10 @@ class AnalyzerService:
     ) -> str:
         """Persist a pending run row and return its analyzer_run_id.
 
-                `parameter1`/`parameter2` are written down and never read again: they
-                are reserved request keys, visible through the API, and they take no
-                part in profile selection, caching, extraction or the prompt
-        . This is the ONLY place they are touched.
+        `parameter1`/`parameter2` are written down and never read again: they are
+        reserved request keys, visible through the API, and they take no part in
+        profile selection, extraction or the prompt. This is the ONLY place they
+        are touched.
         """
         analyzer_run_id = str(uuid4())
         now = _utcnow_iso()
@@ -197,20 +195,19 @@ class AnalyzerService:
 
     # -------------------------------------------------------------- analysis
 
-    async def run_analysis(self, analyzer_run_id: str, profile_override: str = "") -> None:
+    async def run_analysis(self, analyzer_run_id: str) -> None:
         """THE single trigger entry point (queue-swap boundary).
 
-        `profile_override` names a profile to analyze this run with, whatever
-        job it belongs to and whatever its state is. The API never passes it;
-        it exists for `tools.inspect_run`, which has to fetch EVERY attachment
-        to answer "is the evidence arriving at all?". It wins over the
-        state-derived profile, and the run row records which profile ran.
+        Which profile runs is decided from the job and the run's state — there
+        is no caller-supplied override. One existed for a tool that forced a
+        fetch-everything profile; the tool is gone, and a parameter nobody
+        passes is a branch nobody tests.
         """
         run = self._repo.get(self._settings.table_runs, analyzer_run_id)
         if run is None:
             return
         try:
-            await self._run_job(run, profile_override)
+            await self._run_job(run)
         except Exception as exc:
             # Job-level failure (e.g. source unreachable): the run ends as
             # `failed` with an explanatory note instead of hanging in `running`.
@@ -220,7 +217,7 @@ class AnalyzerService:
                 note=f"job failed: {type(exc).__name__}: {exc}",
             )
 
-    async def _run_job(self, run: dict[str, Any], profile_override: str = "") -> None:
+    async def _run_job(self, run: dict[str, Any]) -> None:
         settings = self._settings
         self._update_run(run, status=RunStatus.RUNNING.value)
 
@@ -244,8 +241,7 @@ class AnalyzerService:
 
         # A job-level failure means the job's own profile describes a run that
         # never happened, so every scenario goes to one fixed profile instead.
-        # An explicit caller override outranks that (see `run_analysis`).
-        forced_profile = profile_override or STATE_PROFILE_OVERRIDE.get(summary.state, "")
+        forced_profile = STATE_PROFILE_OVERRIDE.get(summary.state, "")
         # The profile follows the job the CALLER named; with only a run_id it
         # is the job that run belongs to (from the run response).
         profile_job_id = job_id or summary.job_id
@@ -264,9 +260,7 @@ class AnalyzerService:
             run_id=job.run_id,  # resolved run id (real source may derive it)
             job_name=job.job_name,
             run_result=job.run_result,
-            # Full raw traces (save-everything rule). The build log
-            # is job-level (it covers the whole run), so it belongs to the run
-            # row — note this can make the row large.
+            # Full raw traces (save-everything rule).
             raw_run_response=job.raw_run_response,
             raw_results_response=job.raw_results_response,
             # The build log itself is a FILE under `database/build_logs/`, not a
@@ -316,7 +310,7 @@ class AnalyzerService:
             note
             for note in (
                 summary.note,
-                _forced_note(forced_profile, bool(profile_override)),
+                _forced_note(forced_profile),
                 _total_scenarios_note(job.run_result),
             )
             if note
@@ -351,6 +345,11 @@ class AnalyzerService:
         Excluded evidence keeps its metadata (file name, type, stored path) so
         the gap stays visible — only the inline content is dropped. The
         downloaded file itself still lives under `database/attachments/`.
+
+        WHICH rows were emptied is answered by this row's own
+        `excluded_from_store` list, not by a marker on the attachment: a flag
+        written only onto dropped rows made its own absence mean something, and
+        an absent key is the worst place to keep a fact.
         """
         dump = scenario.model_dump(mode="json")
         if not excluded:
@@ -358,7 +357,6 @@ class AnalyzerService:
         for attachment, row in zip(scenario.attachments, dump.get("attachments", []), strict=True):
             if evidence_name_for(attachment) in excluded:
                 row["content"] = ""
-                row["content_stored"] = False
         return dump
 
     async def _analyze_scenario(

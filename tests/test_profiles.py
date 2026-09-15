@@ -52,10 +52,11 @@ def test_unknown_job_id_falls_back_to_default(tmp_path: Path) -> None:
 
 
 def test_forced_profile_overrides_job_mapping(tmp_path: Path) -> None:
-    """The only override there is: the caller names the profile outright.
+    """The only override there is: the job-level FAILED branch.
 
-    Used by the job-level FAILED branch and by `tools.inspect_run`. The
-    request's parameters cannot do this — they decide nothing.
+    `ProfileRegistry` still takes a name from its caller, but inside the
+    service that caller is the run's own state — nothing the request says can
+    reach it.
     """
     registry = _registry(tmp_path)
     assert registry.get(job_id="1350", forced="B_sadece_testlog").name == "B_sadece_testlog"
