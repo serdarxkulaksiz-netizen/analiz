@@ -82,6 +82,22 @@ def _skipped_reason(
     )
 
 
+def _running_note(state: str) -> str:
+    """Say it when the analyzed run had not finished yet ("" when it had).
+
+    Only a caller who names a `run_id` can get here, and only deliberately.
+    What they get back is a diagnosis of whatever evidence existed at that
+    moment — fewer scenarios, half-written logs, screenshots not taken yet — so
+    the row has to carry that, or the answer reads like a complete one.
+    """
+    if state != RunState.RUNNING.value:
+        return ""
+    return (
+        "koşum hâlâ sürüyordu (state=RUNNING) — kanıtlar eksik olabilir, "
+        "teşhis o ana kadar yazılanlara dayanıyor"
+    )
+
+
 def _total_scenarios_note(run_result: dict[str, Any]) -> str:
     """Say it when VisiumGo did not report the run's scenario total.
 
@@ -237,16 +253,20 @@ class AnalyzerService:
         job_id = run.get("job_id", "")
         requested_run_id = run.get("run_id", "")  # what the caller asked for
         summary = await self._source.resolve_run(job_id, requested_run_id)
-        self._update_run(run, run_id=summary.run_id, note=summary.note)
-
-        if summary.state == RunState.RUNNING.value:
-            # Still running: its evidence is half-written, so nothing is
-            # fetched at all (not even the build log) and the run ends `failed`
-            # with the reason instead of producing a diagnosis of half a run.
-            raise ValueError(
-                f"run_id={summary.run_id!r} hâlâ koşuyor (state=RUNNING); "
-                "koşum bitmeden analiz edilmez."
-            )
+        # A run the caller named BY ID is analyzed whatever its state, RUNNING
+        # included: naming one run is an explicit instruction to look at THAT
+        # run, and refusing it left the caller no way to ask. The state is not
+        # ignored — it is written on the row, because a diagnosis built from a
+        # half-written run must not read like one built from a finished run.
+        # The job_id path never reaches this: `_select_run` only ever returns
+        # a finished run, since "the newest run" is a choice we make and a
+        # running one is the wrong choice.
+        running_note = _running_note(summary.state)
+        self._update_run(
+            run,
+            run_id=summary.run_id,
+            note=" · ".join(note for note in (summary.note, running_note) if note),
+        )
 
         # A job-level failure means the job's own profile describes a run that
         # never happened, so every scenario goes to one fixed profile instead.
@@ -319,6 +339,7 @@ class AnalyzerService:
             note
             for note in (
                 summary.note,
+                running_note,
                 _forced_note(forced_profile),
                 _total_scenarios_note(job.run_result),
             )

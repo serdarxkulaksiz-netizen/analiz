@@ -6,7 +6,7 @@ what is missing.
 """
 
 from app.domain.findings import AttachmentReport, EvidenceReport, Findings, JobLogReport
-from app.service import _skipped_reason, _total_scenarios_note
+from app.service import _running_note, _skipped_reason, _total_scenarios_note
 
 
 def _findings(**overrides: object) -> Findings:
@@ -67,3 +67,18 @@ def test_missing_evidence_names_the_files_and_why() -> None:
 def test_absent_scenario_total_is_reported_not_substituted() -> None:
     assert _total_scenarios_note({"totalScenarios": 100}) == ""
     assert "bilinmiyor" in _total_scenarios_note({"state": "PASSED"})
+
+
+def test_an_unfinished_run_says_so_on_the_row() -> None:
+    """A diagnosis from a half-written run must not read like a complete one.
+
+    Only a caller naming a `run_id` can get here, and only deliberately — but
+    what they get back is whatever evidence existed at that moment: fewer
+    scenarios, half-written logs, screenshots not taken yet.
+    """
+    note = _running_note("RUNNING")
+    assert "RUNNING" in note and "eksik olabilir" in note
+
+    assert _running_note("PASSED") == ""
+    assert _running_note("FAILED") == ""
+    assert _running_note("") == ""

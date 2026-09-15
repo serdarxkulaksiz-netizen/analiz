@@ -29,9 +29,13 @@ class Source(ABC):
         """Resolve WHICH run to analyze — cheap, no evidence fetched.
 
         Separate from `fetch_job` so the caller can read the job-level `state`
-        — and decide whether there is anything to analyze — before paying for
-        the (expensive) evidence download. `run_id` wins over `job_id`; raises
-        if neither is given.
+        — and decide how to treat the run — before paying for the (expensive)
+        evidence download. `run_id` wins over `job_id`; raises if neither is
+        given.
+
+        A named `run_id` resolves to THAT run whatever its state; a `job_id`
+        picks the newest FINISHED run, because choosing one on the caller's
+        behalf is a judgement and an unfinished run is the wrong answer to it.
         """
 
     @abstractmethod

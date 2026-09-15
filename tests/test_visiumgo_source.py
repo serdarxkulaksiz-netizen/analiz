@@ -181,7 +181,9 @@ async def test_run_selection_skips_running_and_reports_unknown_states(tmp_path: 
 
 
 @pytest.mark.asyncio
-async def test_no_analyzable_run_is_an_error(tmp_path: Path) -> None:
+async def test_job_id_path_refuses_to_choose_an_unfinished_run(tmp_path: Path) -> None:
+    """...and the error points at the way that DOES work: name the run_id."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/runs":
             return httpx.Response(200, json=[_run(1, "RUNNING")])
@@ -195,7 +197,7 @@ async def test_no_analyzable_run_is_an_error(tmp_path: Path) -> None:
     )
     source = VisiumGoSource(client, tmp_path / "attachments")
 
-    with pytest.raises(ValueError, match="RUNNING"):
+    with pytest.raises(ValueError, match="run_id'sini doğrudan ver"):
         await source.resolve_run("job-42")
 
 
@@ -538,3 +540,32 @@ async def test_text_is_read_by_extension_not_only_by_mime(tmp_path: Path) -> Non
 
     assert dom.content == "<hierarchy><node/></hierarchy>"  # inline, so it can be prompted
     assert Path(dom.stored_path).is_file()  # and still on disk
+
+
+@pytest.mark.asyncio
+async def test_a_named_run_resolves_even_while_it_is_still_running(tmp_path: Path) -> None:
+    """Naming a run_id is an instruction, not a guess — so state cannot veto it.
+
+    The job_id path skips RUNNING runs because "the newest run" is a choice WE
+    make, and an unfinished run is the wrong choice. Naming one run is the
+    caller's choice, and refusing it left them no way to ask at all.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/runs/149140":
+            return httpx.Response(200, json=_run(149140, "RUNNING"))
+        return _handler(request)
+
+    client = VisiumGoClient(
+        base_url="https://visiumgo.test.local",
+        token="eyJmock",
+        timeout_seconds=5.0,
+        transport=httpx.MockTransport(handler),
+    )
+    source = VisiumGoSource(client, tmp_path / "attachments")
+
+    summary = await source.resolve_run("", "149140")
+
+    assert summary.run_id == "149140"
+    assert summary.state == "RUNNING"  # reported, not refused
+    assert summary.job_id == "886"  # taken from the run's own response

@@ -1,8 +1,9 @@
 """VisiumGoSource — real VisiumGo API client.
 
 Chain (real-spec Bölüm 2):
-  A. resolve the run: `run_id` -> `GET /api/runs/{run_id}`;
-     `job_id` -> `GET /api/runs?jobId=` and pick the newest analyzable run
+  A. resolve the run: `run_id` -> `GET /api/runs/{run_id}` (that run, whatever
+     its state); `job_id` -> `GET /api/runs?jobId=` and pick the newest
+     FINISHED run
   B. list results, keep resultType == "FAILED"
   C. per failed scenario: fetch detail (errorText, stepResults, attachments)
   D. download each attachment (URL-encoded name), save to disk for observability
@@ -254,8 +255,9 @@ class VisiumGoSource(Source):
         if not analyzable:
             states = ", ".join(sorted({_state_of(r) or "<boş>" for r in runs})) or "<yok>"
             raise ValueError(
-                f"job_id={job_id!r} için analiz edilebilir koşum yok "
-                f"(görülen durumlar: {states}; RUNNING koşumlar analiz edilmez)."
+                f"job_id={job_id!r} için seçilebilecek bitmiş koşum yok "
+                f"(görülen durumlar: {states}). Sürmekte olan bir koşumu analiz "
+                f"etmek istiyorsan run_id'sini doğrudan ver."
             )
 
         unknown = sorted(

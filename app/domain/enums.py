@@ -47,10 +47,15 @@ class RunState(str, Enum):
     RUNNING = "RUNNING"
 
 
-#: States whose run may be analyzed. A `RUNNING` run is deliberately absent:
-#: it is still producing evidence, so analyzing it would judge half a run.
-#: Any other value (a state VisiumGo adds later) is unknown to us and is
+#: States a run may be CHOSEN in when we pick "the newest run of this job".
+#: `RUNNING` is deliberately absent: it is still producing evidence, and
+#: picking it on the caller's behalf would judge half a run without being
+#: asked. Any other value (a state VisiumGo adds later) is unknown to us and is
 #: skipped as well — but never silently: the skip is recorded on the run row.
+#:
+#: This governs the job_id path only. A caller who names a `run_id` gets THAT
+#: run analyzed whatever its state — that is an instruction, not a guess — and
+#: the run row says the run was unfinished.
 ANALYZABLE_RUN_STATES = frozenset({RunState.PASSED.value, RunState.FAILED.value})
 
 
