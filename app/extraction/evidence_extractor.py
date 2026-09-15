@@ -137,6 +137,7 @@ def _build_report(
             evidence_name=evidence_name_for(attachment),
             goes_to_llm=evidence_name_for(attachment) in profile.evidence_to_llm,
             download_skipped=attachment.download_skipped,
+            download_error=attachment.download_error,
             chars=len(attachment.content),
         )
         for attachment in scenario.attachments
@@ -144,6 +145,7 @@ def _build_report(
     build_log_name = BuildLogEvidence.evidence_name
     return EvidenceReport(
         attachments=attachments,
+        scenario_error=scenario.fetch_error,
         job_log=JobLogReport(
             wanted=build_log_name in profile.wanted_evidence,
             chars=len(build_log),

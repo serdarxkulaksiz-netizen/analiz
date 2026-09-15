@@ -199,10 +199,9 @@ class ScreenshotEvidence(Evidence):
         rules: list[Rule] | None = None,  # not applicable to binary evidence
         ctx: RuleContext | None = None,
     ) -> "ScreenshotEvidence":
-        # A screenshot's reference is where it was actually written. A file the
-        # profile never asked for has no path at all: pointing at a name that
-        # was never downloaded would be worse than admitting it is not there.
-        path = (
-            "" if attachment.download_skipped else (attachment.stored_path or attachment.file_name)
-        )
-        return cls(path, goes_to_llm=goes_to_llm, goes_to_store=goes_to_store)
+        # A screenshot's reference is WHERE IT WAS WRITTEN, nothing else. No
+        # file on disk -> no reference: the API's `fileName` is not a path, and
+        # putting it in a field whose whole purpose is "open this" produced a
+        # string that opens nothing. Covers both reasons for having no file —
+        # the profile did not ask for it, and the download failed.
+        return cls(attachment.stored_path, goes_to_llm=goes_to_llm, goes_to_store=goes_to_store)

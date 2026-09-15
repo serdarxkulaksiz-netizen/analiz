@@ -51,6 +51,9 @@ class AttachmentReport(BaseModel):
     #: so it was never fetched. Distinguishes "we chose not to" from "it did
     #: not arrive" — both leave `chars` at 0.
     download_skipped: bool = False
+    #: Why the download failed, when it did. The third reason `chars` can be 0,
+    #: and the only one that is a fault.
+    download_error: str = ""
     #: Size as received (before content rules).
     chars: int = 0
 
@@ -103,6 +106,10 @@ class EvidenceReport(BaseModel):
     attachments: list[AttachmentReport] = []
     #: The job-level build log — a separate endpoint, so a separate field.
     job_log: JobLogReport = JobLogReport()
+    #: Why this scenario's detail call never happened or failed. When it is
+    #: set, `attachments` is empty for a reason that has nothing to do with the
+    #: run producing no files.
+    scenario_error: str = ""
     blocks: list[BlockReport] = []
     #: File names VisiumGo sent that no Evidence class claimed.
     unmatched: list[str] = []

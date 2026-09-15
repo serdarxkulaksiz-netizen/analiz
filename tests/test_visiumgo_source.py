@@ -415,3 +415,126 @@ async def test_auth_header_and_segment_encoding(tmp_path: Path) -> None:
     assert detail_reqs
     raw = str(detail_reqs[0].url)
     assert "%2F" in raw and "%3A" in raw  # '/' and ':' encoded, not path separators
+
+
+@pytest.mark.asyncio
+async def test_one_unreadable_scenario_does_not_end_the_run(tmp_path: Path) -> None:
+    """A broken `/results` row costs its own analysis, not every other one.
+
+    The detail call used to raise straight out of `fetch_job`, so a single row
+    without an `id` — or a single 404 — ended the whole run as `failed` with
+    every healthy scenario in it never analyzed.
+    """
+    rows = [
+        {"id": "", "name": "id'siz senaryo", "resultType": "FAILED"},
+        {"id": "yok-boyle-senaryo", "name": "404 veren senaryo", "resultType": "FAILED"},
+        {
+            "id": "1:Bireysel/DovizAlis.feature:250_1278616082:0",
+            "name": "sağlam",
+            "resultType": "FAILED",
+        },
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/results"):
+            return httpx.Response(200, json=rows)
+        if request.url.path.endswith("/results/yok-boyle-senaryo"):
+            return httpx.Response(404)
+        return _handler(request)
+
+    client = VisiumGoClient(
+        base_url="https://visiumgo.test.local",
+        token="eyJmock",
+        timeout_seconds=5.0,
+        transport=httpx.MockTransport(handler),
+    )
+    source = VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")
+
+    job = await source.fetch_job(await source.resolve_run("job-42"))
+
+    assert [s.scenario_name for s in job.failed_scenarios] == [
+        "id'siz senaryo",
+        "404 veren senaryo",
+        "sağlam",
+    ]
+    no_id, not_found, healthy = job.failed_scenarios
+    # Each broken one says WHY, and carries no attachments.
+    assert "'id' alanı yok" in no_id.fetch_error and no_id.attachments == []
+    assert "404" in not_found.fetch_error and not_found.attachments == []
+    # The healthy one is untouched.
+    assert healthy.fetch_error == "" and len(healthy.attachments) == 5
+
+
+@pytest.mark.asyncio
+async def test_failed_download_records_its_reason(tmp_path: Path) -> None:
+    """VisiumGo listed the file, we asked for it, it did not come — say so.
+
+    An empty `content` has three causes: the profile skipped the file, the file
+    really is empty, and the download failed. Only the third is a fault, and it
+    used to be the one that left no trace at all.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(".html"):
+            return httpx.Response(500)
+        return _handler(request)
+
+    client = VisiumGoClient(
+        base_url="https://visiumgo.test.local",
+        token="eyJmock",
+        timeout_seconds=5.0,
+        transport=httpx.MockTransport(handler),
+    )
+    source = VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")
+
+    job = await source.fetch_job(await source.resolve_run("job-42"))
+    by_name = {a.label: a for a in job.failed_scenarios[0].attachments}
+
+    broken = by_name["browser.default.html"]
+    assert broken.content == "" and broken.stored_path == ""
+    assert broken.download_skipped is False  # we DID ask for it
+    assert "500" in broken.download_error
+    assert "browser.default_1.html" in broken.download_error  # which file
+
+    # An untouched file carries no reason at all.
+    assert by_name["test.log"].download_error == ""
+
+
+@pytest.mark.asyncio
+async def test_text_is_read_by_extension_not_only_by_mime(tmp_path: Path) -> None:
+    """An `.xml` served as `application/xml` must still arrive as text.
+
+    The mime type used to be the only test, so any text file VisiumGo did not
+    label `text/*` was read as binary: the file landed on disk, `content` stayed
+    empty, and its evidence produced no prompt block — silently.
+    """
+    detail = {
+        "attachments": [
+            {
+                "fileName": "-125/mobile.ios.iPhone 14_9.xml",
+                "mimeType": "application/xml",  # NOT text/*
+                "deviceId": "mobile.ios.iPhone 14",
+            }
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/attachments/" in request.url.path:
+            return httpx.Response(200, text="<hierarchy><node/></hierarchy>")
+        if "/results/" in request.url.path:
+            return httpx.Response(200, json=detail)
+        return _handler(request)
+
+    client = VisiumGoClient(
+        base_url="https://visiumgo.test.local",
+        token="eyJmock",
+        timeout_seconds=5.0,
+        transport=httpx.MockTransport(handler),
+    )
+    source = VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")
+
+    job = await source.fetch_job(await source.resolve_run("job-42"))
+    (dom,) = job.failed_scenarios[0].attachments
+
+    assert dom.content == "<hierarchy><node/></hierarchy>"  # inline, so it can be prompted
+    assert Path(dom.stored_path).is_file()  # and still on disk

@@ -90,6 +90,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             content=content,
             raw_response=raw_response,
             request=request,
+            http_status=response.status_code,
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -99,7 +100,14 @@ class OpenAICompatibleLLMProvider(LLMProvider):
     def _extract(
         self, response: httpx.Response, raw_response: str
     ) -> tuple[str, str, int | None, int | None]:
-        """Best-effort extraction; on failure return empty content (raw is kept)."""
+        """Best-effort extraction; on failure return empty content (raw is kept).
+
+        A non-2xx answer is not parsed at all: its body is an error, not a
+        completion. Naming a model there would record that a model answered
+        when the request never reached one.
+        """
+        if not response.is_success:
+            return "", "", None, None
         try:
             data: Any = response.json()
             # The intermediary may double-encode (a JSON string of JSON).
@@ -109,11 +117,14 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             usage = data.get("usage") or {}
             return (
                 content or "",
-                data.get("model", self._model),
+                # Only what the service reported. Falling back to the
+                # configured name meant the row claimed a model had answered
+                # whenever the envelope did not say so.
+                str(data.get("model") or ""),
                 usage.get("prompt_tokens"),
                 usage.get("completion_tokens"),
             )
         except Exception:
             # Malformed / unexpected envelope: leave content empty; the caller
             # marks the scenario analysis_failed but the raw envelope is saved.
-            return "", self._model, None, None
+            return "", "", None, None

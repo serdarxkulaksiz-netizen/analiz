@@ -29,6 +29,12 @@ class LLMResponse(BaseModel):
     content: str
     raw_response: str = ""
     request: dict = {}
+    #: HTTP status of the answer (0 = the call never reached a response).
+    #: Without it, "the model returned nonsense" and "the server returned 500"
+    #: both look like an empty `content`.
+    http_status: int = 0
+    #: The model the SERVICE said answered. Empty when it did not say, or when
+    #: nothing answered at all — the model we asked for is in `request`.
     model: str = ""
     input_tokens: int | None = None
     output_tokens: int | None = None

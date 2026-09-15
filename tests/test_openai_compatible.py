@@ -174,3 +174,37 @@ def test_empty_base_url_fails_fast() -> None:
             timeout_seconds=5.0,
             max_tokens=8000,
         )
+
+
+@pytest.mark.asyncio
+async def test_http_error_names_no_model_and_reports_its_status() -> None:
+    """A 500 body is an error, not a completion — nothing answered it.
+
+    The status used to be dropped and the model name fell back to the
+    configured one, so the stored row said `qwen3-coder-next` had answered a
+    request that never reached a model.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="boom")
+
+    result = await _provider(handler).complete("x")
+
+    assert result.content == ""
+    assert result.model == ""  # no model is named
+    assert result.http_status == 500  # and the reason is on the row
+    assert result.raw_response == "boom"
+    # What we ASKED for is still recorded, separately from what answered.
+    assert result.request["model"] == "qwen3-coder-next"
+
+
+@pytest.mark.asyncio
+async def test_envelope_without_a_model_field_names_no_model() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": "DIAG"}}]})
+
+    result = await _provider(handler).complete("x")
+
+    assert result.content == "DIAG"
+    assert result.model == ""  # the service did not say; we do not guess
+    assert result.http_status == 200

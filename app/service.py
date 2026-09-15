@@ -56,8 +56,11 @@ def _skipped_reason(prompt: str, findings: Findings | None, no_evidence: bool) -
         return "precheck kuralı cevapladı — LLM çağrılmadı"
 
     report = findings.evidence_report
+    if report.scenario_error:
+        return f"senaryo detayı okunamadı — {report.scenario_error}"
     missing = [
-        row.file_name or row.evidence_name
+        f"{row.file_name or row.evidence_name}"
+        + (f" ({row.download_error})" if row.download_error else "")
         for row in report.attachments
         if row.goes_to_llm and not row.chars
     ]
@@ -378,6 +381,7 @@ class AnalyzerService:
             raw_response = ""  # full LLM envelope (kept even if parsing fails)
             llm_request: dict = {}
             llm_content = ""  # extracted message content (may be empty)
+            http_status = 0  # 0 = no response at all (transport failure)
             meta = AnalysisMeta()
             analysis: LLMAnalysis | None = None
             findings: Findings | None = None
@@ -420,6 +424,7 @@ class AnalyzerService:
                     response = await self._llm.complete(prompt)
                     llm_request = response.request
                     llm_content = response.content
+                    http_status = response.http_status
                     # Save the FULL envelope (fallback to content for simple
                     # providers that don't populate it); parse the diagnosis
                     # from the message content only.
@@ -503,7 +508,11 @@ class AnalyzerService:
                     "scenario_name": scenario.scenario_name,
                     "raw_response": raw_response,
                     "content": llm_content,
+                    # Who answered and how it went. `model` is what the
+                    # service reported; empty means it reported none.
+                    "answered_by": meta.answered_by,
                     "model": meta.llm_model,
+                    "http_status": http_status,
                     "input_tokens": meta.input_tokens,
                     "output_tokens": meta.output_tokens,
                     "duration_ms": meta.duration_ms,

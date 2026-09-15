@@ -48,6 +48,23 @@ _BUILD_LOG_ERROR_MAX_CHARS = 500
 #: is now a PROFILE decision (`BuildLogEvidence`), which is where it belongs.
 PATH_LOGS = "/api/runs/{run_id}/logs"
 
+#: Named in a scenario's `fetch_error`, so the reason says which call failed.
+PATH_SCENARIO_DETAIL = "/api/runs/{run_id}/results/{scenario_id}"
+
+#: Upper bound for a recorded scenario-detail failure reason (same rule as the
+#: build log's): a long exception text must not bloat the stored row.
+_FETCH_ERROR_MAX_CHARS = 500
+
+#: Extensions whose content is text and therefore belongs inline on the
+#: attachment, whatever mime type VisiumGo labels them with. The mime type
+#: alone is not a safe test: it is the SECOND half of an attachment's identity
+#: precisely because it is unreliable (`test.log` and `test.properties` share
+#: `text/plain`), and an `.xml` served as `application/xml` would be read as
+#: binary — the file lands on disk, `content` stays empty, and the evidence
+#: silently produces no block. These four are exactly the extensions the text
+#: evidences are built on.
+_TEXT_EXTENSIONS = frozenset({".log", ".properties", ".html", ".xml"})
+
 
 def _state_of(record: dict[str, Any]) -> str:
     """Job-level state of a run record (`runResult.state`), "" if absent."""
@@ -180,23 +197,27 @@ class VisiumGoSource(Source):
 
         `meta` is one `attachments[]` row: `{deviceId, mimeType, fileName,
         startTime, duration}`. A failed download returns the attachment with
-        empty content — the scenario continues (real-spec Bölüm 5).
+        empty content AND the reason on `download_error` — the scenario
+        continues (real-spec Bölüm 5), but the gap is never silent.
         """
         attachment = self.describe_attachment(meta)
         file_name = attachment.file_name
-        mime_type = attachment.mime_type
         path = f"/api/runs/{encode_segment(run_id)}/attachments/{encode_segment(file_name)}"
+        is_text = (
+            attachment.mime_type.startswith("text/") or attachment.extension in _TEXT_EXTENSIONS
+        )
 
         try:
-            if mime_type.startswith("text/"):
+            if is_text:
                 text = await self._client.get_text(path)
                 stored = self._save(run_id, scenario_id, attachment, text.encode("utf-8"))
                 return attachment.model_copy(update={"content": text, "stored_path": str(stored)})
             data = await self._client.get_bytes(path)
             stored = self._save(run_id, scenario_id, attachment, data)
             return attachment.model_copy(update={"stored_path": str(stored)})
-        except Exception:
-            return attachment
+        except Exception as exc:
+            reason = f"{path}: {type(exc).__name__}: {exc}"
+            return attachment.model_copy(update={"download_error": reason[:_FETCH_ERROR_MAX_CHARS]})
 
     # ----------------------------------------------------------- orchestration
 
@@ -310,9 +331,28 @@ class VisiumGoSource(Source):
     async def _build_scenario(
         self, run_id: str, record: dict[str, Any], wants: AttachmentFilter = accept_all
     ) -> RawScenario:
-        """Adım C: fetch scenario detail and its attachments."""
+        """Adım C: fetch scenario detail and its attachments.
+
+        A detail call that cannot be made, or that fails, does NOT raise: the
+        reason is carried on the scenario and the run goes on. It used to
+        propagate out of `fetch_job`, so one malformed `/results` row (or one
+        404) ended the whole run as `failed` — with every healthy scenario in
+        it never analyzed.
+        """
         scenario_id = str(record.get("id", ""))
-        detail = await self.get_scenario_detail(run_id, scenario_id)
+        detail: dict[str, Any] = {}
+        fetch_error = ""
+        if not scenario_id:
+            # No id, no detail endpoint to call: asking for `/results/` with an
+            # empty segment would 404 for a reason that has nothing to do with
+            # this run.
+            fetch_error = f"/results satırında 'id' alanı yok: {record}"
+        else:
+            try:
+                detail = await self.get_scenario_detail(run_id, scenario_id)
+            except Exception as exc:
+                fetch_error = f"{PATH_SCENARIO_DETAIL}: {type(exc).__name__}: {exc}"
+        fetch_error = fetch_error[:_FETCH_ERROR_MAX_CHARS]
 
         attachments: list[Attachment] = []
         for meta in detail.get("attachments", []):
@@ -331,6 +371,7 @@ class VisiumGoSource(Source):
             attachments=attachments,
             retry_info=str(record.get("retryNumber", "")),
             raw_detail=detail,  # full raw response, persisted (save everything)
+            fetch_error=fetch_error,
         )
 
     def _save(self, run_id: str, scenario_id: str, attachment: Attachment, data: bytes) -> Path:

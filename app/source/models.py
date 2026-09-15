@@ -35,6 +35,11 @@ class Attachment(BaseModel):
     #: was never downloaded. Metadata still travels: a file we deliberately did
     #: not fetch must not look like one that failed to arrive.
     download_skipped: bool = False
+    #: Why the download failed. VisiumGo listed the file, we asked for it, and
+    #: it did not come. Without this, a failed download is indistinguishable
+    #: from a file that arrived empty — both leave `content` and `stored_path`
+    #: empty, and neither says anything.
+    download_error: str = ""
 
     @property
     def extension(self) -> str:
@@ -77,6 +82,11 @@ class RawScenario(BaseModel):
     attachments: list[Attachment] = []
     retry_info: str = ""
     raw_detail: dict = {}
+    #: Why this scenario's DETAIL could not be read (no id in the `/results`
+    #: row, 404, timeout). The scenario still travels — with the name the
+    #: results row gave and no attachments — so one unreadable scenario costs
+    #: its own analysis, not the whole run's.
+    fetch_error: str = ""
 
 
 class RunSummary(BaseModel):
