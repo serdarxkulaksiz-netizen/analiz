@@ -142,12 +142,25 @@ class KeepScenarioSection(Rule):
 
 
 class CollapseWhitespace(Rule):
-    """Squeeze runs of whitespace (markup dumps are mostly indentation)."""
+    """Squeeze runs of whitespace (markup dumps are mostly indentation).
+
+    Three passes, and the order is the point:
+
+    1. A line holding nothing but spaces becomes empty. This is what the rule
+       used to miss: `strip_tags` removes a tag and leaves its indentation
+       behind ("    \n    \n"), and those lines are not consecutive newlines,
+       so the blank-run pass below could not see them. They survived as lines
+       containing one space — holes that still cost tokens.
+    2. Three or more newlines become one blank line.
+    3. Runs of spaces/tabs become one space.
+    """
 
     rule_type = "collapse_whitespace"
 
     def apply(self, text: str, ctx: RuleContext) -> str:
-        return re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", text)).strip()
+        text = re.sub(r"(?m)^[ \t]+$", "", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return re.sub(r"[ \t]{2,}", " ", text).strip()
 
 
 # --- markup rules (stdlib html.parser, no dependency) ------------------------
