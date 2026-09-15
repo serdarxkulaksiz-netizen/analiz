@@ -132,6 +132,26 @@ def _source(attachments_dir: Path, build_logs_dir: Path | None = None) -> Visium
     return VisiumGoSource(client, attachments_dir, build_logs_dir)
 
 
+class _Plan:
+    """A stand-in for the run's `AnalysisPlan`, shaped by the source's protocol.
+
+    Structural, not inherited: the source declares what it needs and anything
+    with those two members satisfies it — which is the whole point of declaring
+    it there instead of importing the evidence layer.
+    """
+
+    def __init__(self, *, build_log: bool = False, wants: bool = True) -> None:
+        self._build_log = build_log
+        self._wants = wants
+
+    def wants(self, attachment) -> bool:  # noqa: ANN001 — test double
+        return self._wants
+
+    @property
+    def wants_build_log(self) -> bool:
+        return self._build_log
+
+
 async def _job(
     source: VisiumGoSource,
     job_id: str = "job-42",
@@ -141,14 +161,14 @@ async def _job(
 ):
     """Resolve then fetch — the two steps the service performs in order."""
     run = await source.resolve_run(job_id, run_id)
-    return await source.fetch_job(run, want_build_log=want_build_log)
+    return await source.fetch_job(run, _Plan(build_log=want_build_log))
 
 
 @pytest.mark.asyncio
 async def test_fetch_job_resolves_latest_run_and_filters_failed(tmp_path: Path) -> None:
     source = _source(tmp_path / "attachments")
     run = await source.resolve_run("job-42")
-    job = await source.fetch_job(run)
+    job = await source.fetch_job(run, _Plan())
 
     assert run.run_id == "149132"  # largest id among PASSED/FAILED runs
     assert job.total_scenario_count == 100
@@ -214,7 +234,7 @@ async def test_job_level_raw_responses_are_kept(tmp_path: Path) -> None:
     """
     source = _source(tmp_path / "attachments")
     run = await source.resolve_run("job-42")
-    job = await source.fetch_job(run)
+    job = await source.fetch_job(run, _Plan())
 
     # The run response stays on the summary that read it, not copied onto the
     # evidence bundle as well.
@@ -401,7 +421,7 @@ async def test_missing_entry_or_non_zip_is_tolerated(tmp_path: Path) -> None:
 async def test_run_id_wins_over_job_id_and_no_runs_query(tmp_path: Path) -> None:
     source = _source(tmp_path / "attachments")
     run = await source.resolve_run("job-42", "RUN_DIRECT")
-    await source.fetch_job(run)
+    await source.fetch_job(run, _Plan())
 
     assert run.run_id == "149132"  # the id the run detail reports
     # The /api/runs listing must NOT be queried when run_id is given.
@@ -412,7 +432,7 @@ async def test_run_id_wins_over_job_id_and_no_runs_query(tmp_path: Path) -> None
 async def test_fetch_job_does_not_resolve_again(tmp_path: Path) -> None:
     """Resolution happens once: fetching must not ask for the run summary again."""
     source = _source(tmp_path / "attachments")
-    await source.fetch_job(RunSummary(run_id="149132", job_id="job-42", state="PASSED"))
+    await source.fetch_job(RunSummary(run_id="149132", job_id="job-42", state="PASSED"), _Plan())
 
     paths = [r.url.path for r in _CAPTURED]
     assert "/api/runs" not in paths
@@ -466,7 +486,7 @@ async def test_one_unreadable_scenario_does_not_end_the_run(tmp_path: Path) -> N
     )
     source = VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")
 
-    job = await source.fetch_job(await source.resolve_run("job-42"))
+    job = await source.fetch_job(await source.resolve_run("job-42"), _Plan())
 
     assert [s.scenario_name for s in job.failed_scenarios] == [
         "id'siz senaryo",
@@ -503,7 +523,7 @@ async def test_failed_download_records_its_reason(tmp_path: Path) -> None:
     )
     source = VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")
 
-    job = await source.fetch_job(await source.resolve_run("job-42"))
+    job = await source.fetch_job(await source.resolve_run("job-42"), _Plan())
     by_name = {a.label: a for a in job.failed_scenarios[0].attachments}
 
     broken = by_name["browser.default.html"]
@@ -549,7 +569,7 @@ async def test_text_is_read_by_extension_not_only_by_mime(tmp_path: Path) -> Non
     )
     source = VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")
 
-    job = await source.fetch_job(await source.resolve_run("job-42"))
+    job = await source.fetch_job(await source.resolve_run("job-42"), _Plan())
     (dom,) = job.failed_scenarios[0].attachments
 
     assert dom.content == "<hierarchy><node/></hierarchy>"  # inline, so it can be prompted

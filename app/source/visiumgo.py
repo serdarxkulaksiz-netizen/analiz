@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from app.domain.enums import ANALYZABLE_RUN_STATES, RunState
-from app.source.base import AttachmentFilter, Source, accept_all
+from app.source.base import DownloadPlan, Source
 from app.source.models import Attachment, JobData, RawScenario, RunSummary
 from app.source.storage import save_attachment, save_build_log
 from app.source.visiumgo_client import VisiumGoClient, encode_segment
@@ -271,20 +271,14 @@ class VisiumGoSource(Source):
         note = f"bilinmeyen koşum durumu atlandı: {', '.join(unknown)}" if unknown else ""
         return _summary_from(max(analyzable, key=_run_order_key), job_id=job_id, note=note)
 
-    async def fetch_job(
-        self,
-        run: RunSummary,
-        wants: AttachmentFilter = accept_all,
-        *,
-        want_build_log: bool = False,
-    ) -> JobData:
+    async def fetch_job(self, run: RunSummary, plan: DownloadPlan) -> JobData:
         """Adım B-D: evidence for an already-resolved run."""
         # Not fetched unless the active profile asked for it: a ZIP download
         # nobody uses is bytes paid for nothing. `want_build_log=False` means
         # "not wanted", never "could not be fetched" — the two are told apart
         # by `evidence_report.job_log.wanted`.
         build_log, build_log_error, build_log_path = "", "", ""
-        if want_build_log:
+        if plan.wants_build_log:
             build_log, build_log_error = await self.fetch_build_log(run.run_id)
             if build_log and self._build_logs_dir is not None:
                 build_log_path = str(save_build_log(self._build_logs_dir, run.run_id, build_log))
@@ -294,7 +288,7 @@ class VisiumGoSource(Source):
 
         scenarios: list[RawScenario] = []
         for record in failed:
-            scenarios.append(await self._build_scenario(run.run_id, record, wants))
+            scenarios.append(await self._build_scenario(run.run_id, record, plan))
 
         # Only what VisiumGo reported. This used to fall back to our own count
         # of `/results` rows, which put two different numbers in one field with
@@ -326,7 +320,7 @@ class VisiumGoSource(Source):
             return bundle.read(wanted).decode("utf-8", errors="replace")
 
     async def _build_scenario(
-        self, run_id: str, record: dict[str, Any], wants: AttachmentFilter = accept_all
+        self, run_id: str, record: dict[str, Any], plan: DownloadPlan
     ) -> RawScenario:
         """Adım C: fetch scenario detail and its attachments.
 
@@ -354,7 +348,7 @@ class VisiumGoSource(Source):
         attachments: list[Attachment] = []
         for meta in detail.get("attachments", []):
             described = self.describe_attachment(meta)
-            if not wants(described):
+            if not plan.wants(described):
                 # Not wanted by this profile: no request, no bytes, no file —
                 # but the row stays, flagged, so the gap is explained later.
                 attachments.append(described.model_copy(update={"download_skipped": True}))

@@ -39,11 +39,10 @@ def test_filter_follows_the_profile(tmp_path: Path) -> None:
             }
         },
     )
-    wants = plan.wants
 
-    assert wants(_att("test", ".log")) is True  # prompted
-    assert wants(_att("browser.default", ".png", "image/png")) is True  # stored only
-    assert wants(_att("browser.default", ".html", "text/html")) is False  # neither list
+    assert plan.wants(_att("test", ".log")) is True  # prompted
+    assert plan.wants(_att("browser.default", ".png", "image/png")) is True  # stored only
+    assert plan.wants(_att("browser.default", ".html", "text/html")) is False  # neither list
 
 
 def test_unknown_file_is_always_fetched(tmp_path: Path) -> None:
@@ -123,11 +122,10 @@ async def test_unwanted_attachment_is_not_requested_but_is_reported(tmp_path: Pa
         tmp_path / "attachments",
     )
     plan = _plan(tmp_path, {"default_web": {"evidence_to_llm": ["TestLogEvidence"]}})
-    wants = plan.wants
 
     from app.source.models import RunSummary
 
-    job = await source.fetch_job(RunSummary(run_id="1", job_id="j", state="PASSED"), wants)
+    job = await source.fetch_job(RunSummary(run_id="1", job_id="j", state="PASSED"), plan)
 
     by_label = {a.label: a for a in job.failed_scenarios[0].attachments}
     assert by_label["test.log"].content == "içerik"

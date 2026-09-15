@@ -287,7 +287,7 @@ class AnalyzerService:
         # already paid for. Resolved ONCE: this object is what every later step
         # reads, so "which profile ran" has one answer for the whole run.
         plan = plan_for(self._profiles, job_id=profile_job_id, forced=forced_profile)
-        job = await self._source.fetch_job(summary, plan.wants, want_build_log=plan.wants_build_log)
+        job = await self._source.fetch_job(summary, plan)
         self._update_run(
             run,
             run_id=summary.run_id,
