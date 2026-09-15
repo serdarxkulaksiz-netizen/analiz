@@ -42,7 +42,7 @@ class LLMResponse(BaseModel):
 
 
 class LLMProvider(ABC):
-    """Pluggable LLM boundary (Halka 4)."""
+    """Pluggable LLM boundary: one prompt in, one completion out."""
 
     @abstractmethod
     async def complete(self, prompt: str) -> LLMResponse:

@@ -7,9 +7,9 @@ one-way (evidence -> source models, never the reverse) and keeps the rule in
 the one place that already owns profiles.
 
 An attachment no Evidence class claims is ALWAYS fetched: it is the one file we
-cannot judge without looking at it, and `inspect_run` / `evidence_report` exist
-precisely to surface those. Skipping it would hide the thing we most want to
-see (a new device or file type VisiumGo started producing).
+cannot judge without looking at it, and the evidence report lists it as
+unclaimed so it can be looked at. Skipping it would hide the thing we most want
+to see — a new device or file type VisiumGo started producing.
 """
 
 from app.evidence.profiles import ProfileRegistry

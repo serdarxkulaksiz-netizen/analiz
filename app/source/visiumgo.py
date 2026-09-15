@@ -1,6 +1,6 @@
 """VisiumGoSource — real VisiumGo API client.
 
-Chain (real-spec Bölüm 2):
+Chain:
   A. resolve the run: `run_id` -> `GET /api/runs/{run_id}` (that run, whatever
      its state); `job_id` -> `GET /api/runs?jobId=` and pick the newest
      FINISHED run
@@ -21,7 +21,7 @@ Save-everything rule: the raw run response, the raw /results array and each
 scenario's raw detail response are kept verbatim on the models and persisted
 by the service — nothing from the API is discarded.
 
-Robustness (real-spec Bölüm 5): a failed attachment download leaves that
+Robustness: a failed attachment download leaves that
 evidence empty but the scenario continues; the service marks a fully-failing
 scenario `analysis_failed` and the job goes on.
 """
@@ -199,7 +199,7 @@ class VisiumGoSource(Source):
         `meta` is one `attachments[]` row: `{deviceId, mimeType, fileName,
         startTime, duration}`. A failed download returns the attachment with
         empty content AND the reason on `download_error` — the scenario
-        continues (real-spec Bölüm 5), but the gap is never silent.
+        continues, but the gap is never silent.
         """
         attachment = self.describe_attachment(meta)
         file_name = attachment.file_name

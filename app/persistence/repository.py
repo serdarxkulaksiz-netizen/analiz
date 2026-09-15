@@ -11,7 +11,7 @@ from typing import Any
 
 
 class Repository(ABC):
-    """Pluggable persistence boundary (Halka 6)."""
+    """Pluggable persistence boundary: rows in named tables, by id."""
 
     @abstractmethod
     def save(self, table: str, row_id: str, data: dict[str, Any]) -> None:

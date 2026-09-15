@@ -129,7 +129,7 @@ class EvidenceReport(BaseModel):
 
 
 class Findings(BaseModel):
-    """Fixed contract between Halka 2 (Extraction) and Halka 3 (Prompt Building).
+    """Fixed contract between Extraction and Prompt Building.
 
     UI/DOM content is NOT a separate field — it travels inside
     `evidence_blocks` (e.g. the `=== DOM ===` block), so the contract stays

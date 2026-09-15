@@ -10,9 +10,9 @@ Plus the prompt template and any extra prompt context. Adding a job's
 behaviour = a config row in `config/profiles.json`, no code.
 
 Resolution order (no `if job_id ==` anywhere — dict/registry lookups):
-    1. a `forced` profile name from the caller — the job-level state of a run
-       (a `FAILED` job is analyzed with `job_failed`, whatever job it is) or a
-       tool that must run with a specific profile (`tools.inspect_run`)
+    1. a `forced` profile name — set when the run's own job-level state
+       overrules its job (a `FAILED` job is analyzed with `job_failed`,
+       whatever job it is). Nothing in the request can set it.
     2. the job_id appears in some profile's `job_ids`
     3. the mandatory `default_web` profile
 

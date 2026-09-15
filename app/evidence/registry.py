@@ -1,4 +1,4 @@
-"""Evidence registry / real-spec Bölüm 3).
+"""Evidence registry.
 
 Maps attachments to Evidence classes by `(device_id, extension)` — no file-name
 `if`s. The active Profile decides which evidence goes to the LLM / to the store

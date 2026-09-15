@@ -19,12 +19,11 @@ The mime type is deliberately NOT part of the identity: `test.log` and
 `test.properties` are both `text/plain` on device `test`, so a mime-based
 match cannot separate them.
 
-The build log is job-level (one log for the whole run); the extractor injects
-it as a synthetic `build` attachment so it flows through the same profile and
-rule machinery as everything else (e.g. "keep only this scenario's section").
-
-`=== HATA ===` is not an evidence class: it is the scenario's `error_text`
-(an A6 field), assembled by the extractor.
+The build log is job-level (one log for the whole run) and arrives from its
+own endpoint, not from a scenario's `attachments[]`. `BuildLogEvidence` is
+therefore built straight from that text, with the same profile flags and
+content rules as every attachment-backed evidence (e.g. "keep only this
+scenario's section").
 """
 
 from app.evidence.base import ScreenshotEvidence, TextEvidence

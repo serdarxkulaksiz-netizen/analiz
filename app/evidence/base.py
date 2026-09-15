@@ -2,11 +2,11 @@
 
 This is the project's flexibility backbone. Each evidence:
   - declares what it matches: a `device_id` + file extension,
-  - knows whether it goes to the LLM / to the store (flags from config, A5.2),
-  - carries its own content selector — passthrough today (A5.3),
-  - reports presence so missing evidence is tolerated, not fatal (A5.4),
+  - knows whether it goes to the LLM (a flag from the active profile),
+  - carries its own content selector (the profile's rules, in order),
+  - tolerates being absent: missing evidence produces no block, not an error,
   - builds itself from an Attachment (`from_attachment`) so no `if type ==`
-    branching is needed anywhere (A0.1 / SOLID).
+    branching is needed anywhere.
 
 Two families avoid type-branching (SRP/OCP): text evidence produces a labeled
 LLM block; screenshot evidence produces only a stored path (never sent to the
@@ -119,7 +119,7 @@ class TextEvidence(Evidence):
         return bool(self._content.strip())
 
     def select_content(self) -> str:
-        """Content selector (A5.3): applies the profile's rules, in order.
+        """Content selector: applies the profile's rules, in order.
 
         With no rules this is passthrough. The raw content is untouched — only
         what reaches the LLM is shaped here.

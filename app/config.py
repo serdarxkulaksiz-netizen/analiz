@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     table_prompts: str = "prompts"
     table_llm_responses: str = "llm_responses"  # raw LLM answer per scenario
 
-    # --- source / Halka 1 — value = registry key ---
+    # --- source (registry key) ---
     source_provider: str = "visiumgo"  # the only source there is
 
     # --- VisiumGo connection ; real source) — from.env, never code ---
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     # so `logs/build.log` matches too). This one IS a choice, so it stays.
     visiumgo_build_log_entry: str = "build.log"
 
-    # --- extraction / Halka 2 ---
+    # --- extraction ---
     # Analysis profiles: job_id -> which evidence goes to the
     # LLM / to the store, plus the content rules that trim each one.
     # New job behaviour = a row in this file, not code.
@@ -67,13 +67,13 @@ class Settings(BaseSettings):
     precheck_provider: str = "noop"  # noop | rules
     precheck_rules_path: Path = Path("config") / "precheck_rules.json"
 
-    # --- prompt / Halka 3 ---
+    # --- prompt ---
     # One template per job group (profile picks it by name) + the shared
     # `_contract.txt` that every template ends with.
     prompts_dir: Path = Path("config") / "prompts"
     confidence_buckets: list[float] = [0.1, 0.25, 0.5, 0.75, 0.99]
 
-    # --- LLM / Halka 4 — value = registry key ---
+    # --- LLM (registry key) ---
     llm_provider: str = "openai_compatible"  # the only provider there is
     # Base URL + path are separate so switching to a direct LLM server later is
     # a single config change (no code). Full URL = base_url + endpoint_path.
