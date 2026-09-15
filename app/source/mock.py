@@ -27,7 +27,7 @@ from pathlib import Path
 from app.domain.enums import RunState
 from app.source.base import AttachmentFilter, Source, accept_all
 from app.source.models import Attachment, JobData, RawScenario, RunSummary
-from app.source.storage import save_attachment
+from app.source.storage import save_attachment, save_build_log
 
 CLEAN_JOB_SUFFIX = "-clean"
 JOB_FAILED_SUFFIX = "-jobfail"
@@ -144,10 +144,16 @@ def _state_for(job_id: str) -> str:
 class MockSource(Source):
     """Returns a canned job with two failed scenarios (out of 100)."""
 
-    def __init__(self, attachments_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        attachments_dir: Path | None = None,
+        build_logs_dir: Path | None = None,
+    ) -> None:
         #: When set, mock attachments are really written here (same layout as
         #: the real source), so "is it on disk?" is answerable in mock mode.
         self._attachments_dir = attachments_dir
+        #: Same for the job-level build log (`<build_logs>/<run_id>.log`).
+        self._build_logs_dir = build_logs_dir
 
     async def resolve_run(self, job_id: str, run_id: str = "") -> RunSummary:
         if not job_id and not run_id:
@@ -172,7 +178,13 @@ class MockSource(Source):
             raw={"jobName": "MOCK_nightly-test", "id": resolved, "jobId": job_id},
         )
 
-    async def fetch_job(self, run: RunSummary, wants: AttachmentFilter = accept_all) -> JobData:
+    async def fetch_job(
+        self,
+        run: RunSummary,
+        wants: AttachmentFilter = accept_all,
+        *,
+        want_build_log: bool = False,
+    ) -> JobData:
         failed: list[RawScenario] = []
         if not run.job_id.endswith(CLEAN_JOB_SUFFIX):
             failed = [
@@ -190,6 +202,13 @@ class MockSource(Source):
                     attachments_dir=self._attachments_dir,
                 ),
             ]
+        # Mirrors the real source: fetched only when the profile wants it, and
+        # written to disk when there is somewhere to write it.
+        build_log = _BUILD_LOG if (failed and want_build_log) else ""
+        build_log_path = ""
+        if build_log and self._build_logs_dir is not None:
+            build_log_path = str(save_build_log(self._build_logs_dir, run.run_id, build_log))
+
         return JobData(
             job_id=run.job_id,
             run_id=run.run_id,
@@ -197,7 +216,8 @@ class MockSource(Source):
             run_result=run.run_result,
             total_scenario_count=100,
             failed_scenarios=failed,
-            build_log=_BUILD_LOG if failed else "",
+            build_log=build_log,
+            build_log_path=build_log_path,
             raw_run_response=run.raw,
             raw_results_response=[
                 {"id": s.scenario_id, "name": s.scenario_name, "resultType": "FAILED"}

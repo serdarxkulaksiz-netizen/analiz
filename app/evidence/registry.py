@@ -67,6 +67,37 @@ class EvidenceRegistry:
                 return cls
         return None
 
+    def build_job_log(
+        self,
+        build_log: str,
+        profile: Profile,
+        ctx: RuleContext | None = None,
+    ) -> Evidence | None:
+        """Build the job-level build log evidence — WITHOUT faking an attachment.
+
+        The build log comes from `/api/runs/{run_id}/logs`, not from a
+        scenario's `attachments[]`. It used to be wrapped in a synthetic
+        `Attachment` so it could ride the normal mapping; that made the
+        evidence report claim VisiumGo had sent a file it never sent. The
+        evidence is built straight from the text instead: profile flags and
+        content rules apply exactly as they do for every other evidence.
+
+        Returns None when there is no log — the caller has nothing to add.
+        """
+        if not build_log:
+            return None
+        name = BuildLogEvidence.evidence_name
+        return BuildLogEvidence(
+            build_log,
+            goes_to_llm=name in profile.evidence_to_llm,
+            goes_to_store=name in profile.evidence_to_store,
+            # The name VisiumGo's own UI shows for this file, so the prompt
+            # header reads the same as every attachment-backed block.
+            file_label=f"{BuildLogEvidence.device_id}{BuildLogEvidence.extension}",
+            rules=profile.rules_for(name),
+            ctx=ctx,
+        )
+
     def build_for(
         self,
         scenario: RawScenario,

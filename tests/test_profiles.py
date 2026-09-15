@@ -280,3 +280,86 @@ def test_shipped_profiles_config_stays_valid() -> None:
     # The inspection profile has to fetch everything, or the tool built on it
     # would report "missing" for files nobody asked for.
     assert test_all.wanted_evidence == known_evidence_names()
+
+
+def test_profile_alone_decides_what_reaches_the_prompt(tmp_path: Path) -> None:
+    """The bug this locks out: a profile asked for build.log and it vanished.
+
+    `web.txt` had placeholders for test.log / DOM / browser log and none for the
+    build log, so a profile that listed `BuildLogEvidence` produced a prompt
+    with the template's instructions and no evidence in it — silently, with the
+    config reading as if the log were being sent. Templates name no evidence
+    now, so adding one is a single line in `profiles.json`.
+    """
+    config = {
+        "default_web": {
+            # A web job that ALSO wants the job log — the exact combination the
+            # template could not express before.
+            "prompt": "web",
+            "evidence_to_llm": ["TestLogEvidence", "BuildLogEvidence"],
+            "evidence_to_store": ["TestLogEvidence", "BuildLogEvidence"],
+        },
+    }
+    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+    builder = PromptBuilder(Path("config/prompts"), [0.1, 0.25, 0.5, 0.75, 0.99])
+
+    findings = extractor.extract(_scenario(), build_log=_JOB_LOG)
+    prompt = builder.build(findings)
+
+    assert "=== test.log · " in prompt
+    assert "=== build.log · " in prompt  # reached the prompt with no template edit
+    assert "bizim adım FAILED" in prompt
+    # And the profile's order is the prompt's order.
+    assert prompt.index("=== test.log · ") < prompt.index("=== build.log · ")
+
+
+def test_build_log_is_reported_as_a_job_log_not_an_attachment(tmp_path: Path) -> None:
+    """`evidence_report.attachments` answers "what did VisiumGo send?".
+
+    The build log arrives from `/api/runs/{run_id}/logs`, never from a
+    scenario's `attachments[]`. It used to be wrapped in a synthetic
+    `Attachment` and listed there anyway, so the report claimed a file the API
+    had never sent.
+    """
+    config = {
+        "default_web": {
+            "evidence_to_llm": ["BuildLogEvidence"],
+            "evidence_to_store": ["BuildLogEvidence"],
+        },
+    }
+    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+
+    report = extractor.extract(_scenario(), build_log=_JOB_LOG).evidence_report
+
+    listed = {row.file_name for row in report.attachments}
+    assert not [name for name in listed if "build" in name]
+    assert all("/" in name for name in listed)  # every row is a real VisiumGo fileName
+
+    assert report.job_log.wanted is True
+    assert report.job_log.goes_to_llm is True
+    assert report.job_log.chars == len(_JOB_LOG)
+    assert report.job_log.source == "/api/runs/{run_id}/logs"
+    assert report.job_log.error == ""
+
+
+def test_job_log_report_tells_wanted_from_broken(tmp_path: Path) -> None:
+    """ "Profile did not ask" and "the fetch failed" must never look alike."""
+    config = {
+        "default_web": {
+            "evidence_to_llm": ["TestLogEvidence"],
+            "evidence_to_store": ["TestLogEvidence"],
+        },
+    }
+    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+
+    not_wanted = extractor.extract(_scenario()).evidence_report.job_log
+    assert not_wanted.wanted is False and not_wanted.error == ""
+
+    config["default_web"]["evidence_to_llm"] = ["TestLogEvidence", "BuildLogEvidence"]
+    config["default_web"]["evidence_to_store"] = ["TestLogEvidence", "BuildLogEvidence"]
+    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+
+    broken = extractor.extract(_scenario(), build_log="", build_log_error="404").evidence_report
+    assert broken.job_log.wanted is True
+    assert broken.job_log.chars == 0
+    assert broken.job_log.error == "404"

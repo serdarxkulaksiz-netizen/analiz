@@ -6,9 +6,7 @@ hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa 
 
 Senaryo: $scenario_name
 
-$test_log
-
-$mobile_dom
+$evidence_blocks
 
 MOBİL BAĞLAMI: Hata anındaki arayüz ağacı, geldiyse MOBIL DOM bloğundadır; gelmediyse adım
 akışını kullan. Cihaza bağlanılamaması, uygulamanın açılmaması ya da izin/ortam sorunları

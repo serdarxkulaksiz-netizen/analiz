@@ -41,6 +41,46 @@ from app.source.models import RawScenario
 STATE_PROFILE_OVERRIDE: dict[str, str] = {RunState.FAILED.value: JOB_FAILED_PROFILE_NAME}
 
 
+def _skipped_reason(prompt: str, findings: Findings | None, no_evidence: bool) -> str:
+    """Why no prompt was built for this scenario ("" when one was).
+
+    A `prompts` row whose `prompt` is empty used to say nothing about why, so
+    "the profile sends nothing", "the evidence never arrived" and "extraction
+    crashed" all looked the same: an empty file.
+    """
+    if prompt:
+        return ""
+    if findings is None:
+        return "kanıt çıkarımı hata verdi — prompt kurulamadı"
+    if not no_evidence:
+        return "precheck kuralı cevapladı — LLM çağrılmadı"
+
+    report = findings.evidence_report
+    missing = [
+        row.file_name or row.evidence_name
+        for row in report.attachments
+        if row.goes_to_llm and not row.chars
+    ]
+    if report.job_log.goes_to_llm and not report.job_log.chars:
+        missing.append(f"build.log ({report.job_log.error or 'gelmedi'})")
+    detail = f"; eksik: {', '.join(missing)}" if missing else ""
+    return (
+        f"prompt'a girecek kanıt yok — profil {findings.profile_name!r} "
+        f"{len(findings.evidence_blocks)} blok üretti{detail}"
+    )
+
+
+def _total_scenarios_note(run_result: dict[str, Any]) -> str:
+    """Say it when VisiumGo did not report the run's scenario total.
+
+    `total_scenario_count` is then 0 — which must not read as "this run had no
+    scenarios". The count is never substituted with one of our own.
+    """
+    if "totalScenarios" in run_result:
+        return ""
+    return "runResult.totalScenarios gelmedi — toplam senaryo sayısı bilinmiyor (0 yazıldı)"
+
+
 def _forced_note(profile_name: str, by_caller: bool) -> str:
     """Say it out loud when the normal profile resolution was bypassed.
 
@@ -118,7 +158,8 @@ class AnalyzerService:
                 "run_result": {},
                 "raw_run_response": {},
                 "raw_results_response": [],
-                "build_log": "",
+                "build_log_path": "",
+                "build_log_chars": 0,
                 "build_log_error": "",
                 "note": "",
                 "created_at": now,
@@ -210,7 +251,11 @@ class AnalyzerService:
         # BEFORE the evidence is fetched — not after, when the bytes are
         # already paid for.
         wants = self._planner.wants_for(job_id=profile_job_id, forced=forced_profile)
-        job = await self._source.fetch_job(summary, wants)
+        # The job-level log has its own endpoint, so it needs its own yes/no —
+        # same profile, same question. A profile that does not list
+        # `BuildLogEvidence` no longer pays for the ZIP download.
+        want_build_log = self._planner.wants_build_log(job_id=profile_job_id, forced=forced_profile)
+        job = await self._source.fetch_job(summary, wants, want_build_log=want_build_log)
         self._update_run(
             run,
             run_id=job.run_id,  # resolved run id (real source may derive it)
@@ -221,7 +266,11 @@ class AnalyzerService:
             # row — note this can make the row large.
             raw_run_response=job.raw_run_response,
             raw_results_response=job.raw_results_response,
-            build_log=job.build_log,
+            # The build log itself is a FILE under `database/build_logs/`, not a
+            # column: it covers a whole run and would dwarf the row that is read
+            # for status. The row keeps the pointer and the size.
+            build_log_path=job.build_log_path,
+            build_log_chars=len(job.build_log),
             # Empty unless the build log SHOULD have arrived and did not: the
             # reason is recorded so a misconfigured/failing endpoint cannot hide
             # as "this job simply had no build log". Does not fail the run.
@@ -244,6 +293,7 @@ class AnalyzerService:
                     job_id=profile_job_id,
                     forced_profile=forced_profile,
                     build_log=job.build_log,
+                    build_log_error=job.build_log_error,
                     semaphore=semaphore,
                 )
                 for scenario in job.failed_scenarios
@@ -261,7 +311,11 @@ class AnalyzerService:
         run = self._repo.get(settings.table_runs, run["analyzer_run_id"]) or run
         notes = [
             note
-            for note in (summary.note, _forced_note(forced_profile, bool(profile_override)))
+            for note in (
+                summary.note,
+                _forced_note(forced_profile, bool(profile_override)),
+                _total_scenarios_note(job.run_result),
+            )
             if note
         ]
         if escaped:
@@ -279,12 +333,13 @@ class AnalyzerService:
         "what the analysis used" (profile-filtered). The evidence row records
         the former; the diagnosis row the latter.
         """
+        # Only a real path. It used to fall back to the API's `fileName` when
+        # the download never landed, which put a string that opens nothing into
+        # a field called `screenshot_paths`.
         return [
-            attachment.stored_path or attachment.file_name
+            attachment.stored_path
             for attachment in scenario.attachments
-            if attachment.mime_type.startswith("image/")
-            and not attachment.download_skipped
-            and (attachment.stored_path or attachment.file_name)
+            if attachment.mime_type.startswith("image/") and attachment.stored_path
         ]
 
     def _storable_scenario(self, scenario: RawScenario, excluded: list[str]) -> dict[str, Any]:
@@ -311,6 +366,7 @@ class AnalyzerService:
         job_id: str,
         forced_profile: str,
         build_log: str,
+        build_log_error: str,
         semaphore: asyncio.Semaphore,
     ) -> None:
         """Analyze one failed scenario; never raises."""
@@ -334,6 +390,7 @@ class AnalyzerService:
                     job_id=job_id,
                     forced_profile=forced_profile,
                     build_log=build_log,
+                    build_log_error=build_log_error,
                 )
 
                 # PreCheck: may short-circuit before the LLM.
@@ -341,7 +398,9 @@ class AnalyzerService:
                 if precheck_result is not None:
                     analysis = precheck_result
                     raw_response = ""
-                    meta = AnalysisMeta(llm_model="precheck", analyzed_at=_utcnow_iso())
+                    # `llm_model` names a MODEL; no model ran, so it stays
+                    # empty and `answered_by` says who did answer.
+                    meta = AnalysisMeta(answered_by="precheck", analyzed_at=_utcnow_iso())
                 elif not findings.has_evidence_for_llm:
                     # Every block is empty and there is no error text: the
                     # model could only answer "kanıt yok",
@@ -366,6 +425,7 @@ class AnalyzerService:
                     # from the message content only.
                     raw_response = response.raw_response or response.content
                     meta = AnalysisMeta(
+                        answered_by="llm",
                         llm_model=response.model,
                         prompt_template=prompt_template,
                         prompt_version=prompt_version,
@@ -424,6 +484,10 @@ class AnalyzerService:
                     # Prompt size, so an oversized prompt is measurable instead
                     # of guessed (measure before setting limits).
                     "prompt_chars": len(prompt),
+                    # Why there is no prompt, when there is none. An empty
+                    # `prompt` with no reason next to it is the one thing this
+                    # row must never be: unreadable.
+                    "skipped_reason": _skipped_reason(prompt, findings, skipped_no_evidence),
                     "request": llm_request,
                 },
             )

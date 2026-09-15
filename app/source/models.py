@@ -111,8 +111,11 @@ class JobData(BaseModel):
     total_scenario_count: int = 0
     failed_scenarios: list[RawScenario] = []
     # Job-level build log (VisiumGo `/logs` -> `build.log`); empty when the
-    # endpoint is not configured.
+    # active profile did not ask for it, or when the fetch failed.
     build_log: str = ""
+    # Where that log was written (`database/build_logs/<run_id>.log`). Empty
+    # when there was no log to write.
+    build_log_path: str = ""
     # Why `build_log` is empty when it should NOT be. An unset endpoint is a
     # deliberate skip and leaves this empty as well; a failed fetch (404,
     # timeout, not a ZIP, entry missing) records its reason here. The job

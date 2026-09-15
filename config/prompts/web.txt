@@ -6,11 +6,7 @@ hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa 
 
 Senaryo: $scenario_name
 
-$test_log
-
-$dom
-
-$browser_log
+$evidence_blocks
 
 WEB BAĞLAMI: "element bulunamadı" tipi bir hata web'de genelde iki şeyden birine işaret eder:
 locator eskimiştir (test bakımı) ya da sayfa beklenen hâle hiç gelmemiştir (uygulama/ortam).

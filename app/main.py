@@ -48,8 +48,10 @@ class AnalyzeRequest(BaseModel):
     wins if both are present).
     """
 
-    parameter1: str = "default"
-    parameter2: str = "default"
+    # No invented default: an absent key stays absent instead of being
+    # recorded (and returned by GET) as the literal string "default".
+    parameter1: str = ""
+    parameter2: str = ""
     job_id: str = ""
     run_id: str = ""
 
@@ -64,10 +66,15 @@ def _attachments_dir(settings: Settings):
     return settings.database_dir / "attachments"
 
 
+def _build_logs_dir(settings: Settings):
+    """Where the job-level build log is written — one file per run."""
+    return settings.database_dir / "build_logs"
+
+
 # --- Registries: name -> factory. A new variant = one row. -----
 
 SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
-    "mock": lambda s: MockSource(_attachments_dir(s)),
+    "mock": lambda s: MockSource(_attachments_dir(s), _build_logs_dir(s)),
     "visiumgo": lambda s: VisiumGoSource(
         VisiumGoClient(
             s.visiumgo_base_url,
@@ -76,7 +83,7 @@ SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
             verify_ssl=s.visiumgo_verify_ssl,
         ),
         _attachments_dir(s),
-        build_log_path=s.visiumgo_build_log_path,
+        _build_logs_dir(s),
         build_log_entry=s.visiumgo_build_log_entry,
     ),
 }

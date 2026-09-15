@@ -121,7 +121,7 @@ def _handler(request: httpx.Request) -> httpx.Response:
     return httpx.Response(404)
 
 
-def _source(attachments_dir: Path, build_log_path: str = "") -> VisiumGoSource:
+def _source(attachments_dir: Path, build_logs_dir: Path | None = None) -> VisiumGoSource:
     _CAPTURED.clear()
     client = VisiumGoClient(
         base_url="https://visiumgo.test.local",
@@ -129,12 +129,19 @@ def _source(attachments_dir: Path, build_log_path: str = "") -> VisiumGoSource:
         timeout_seconds=5.0,
         transport=httpx.MockTransport(_handler),
     )
-    return VisiumGoSource(client, attachments_dir, build_log_path=build_log_path)
+    return VisiumGoSource(client, attachments_dir, build_logs_dir)
 
 
-async def _job(source: VisiumGoSource, job_id: str = "job-42", run_id: str = ""):
+async def _job(
+    source: VisiumGoSource,
+    job_id: str = "job-42",
+    run_id: str = "",
+    *,
+    want_build_log: bool = False,
+):
     """Resolve then fetch — the two steps the service performs in order."""
-    return await source.fetch_job(await source.resolve_run(job_id, run_id))
+    run = await source.resolve_run(job_id, run_id)
+    return await source.fetch_job(run, want_build_log=want_build_log)
 
 
 @pytest.mark.asyncio
@@ -281,43 +288,69 @@ def _zip_source(tmp_path: Path, entries: dict[str, str], path: str) -> VisiumGoS
         timeout_seconds=5.0,
         transport=httpx.MockTransport(handler),
     )
-    return VisiumGoSource(client, tmp_path / "attachments", build_log_path=path)
+    return VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")
 
 
 @pytest.mark.asyncio
 async def test_build_log_extracted_from_zip(tmp_path: Path) -> None:
     # /logs returns a ZIP; build.log is pulled out of it (raw zip not kept).
-    source = _source(tmp_path / "attachments", build_log_path="/api/runs/{run_id}/logs")
-    job = await _job(source)
+    source = _source(tmp_path / "attachments", tmp_path / "build_logs")
+    job = await _job(source, want_build_log=True)
     assert job.build_log == "MOCK build log"  # not the other entry
     # The working path stays exactly as it was: a successful fetch reports no
     # error at all (this assertion is the regression lock for that).
     assert job.build_log_error == ""
+    # It lands on disk as a file of its own, not inline in a row.
+    assert Path(job.build_log_path).read_text(encoding="utf-8") == "MOCK build log"
+    assert Path(job.build_log_path).parent == tmp_path / "build_logs"
 
 
 @pytest.mark.asyncio
 async def test_build_log_matches_nested_entry(tmp_path: Path) -> None:
     # Entry matched on its ending, so `logs/build.log` works too.
     source = _zip_source(tmp_path, {"logs/build.log": "iç içe"}, "/api/runs/{run_id}/logs")
-    job = await _job(source)
+    job = await _job(source, want_build_log=True)
     assert job.build_log == "iç içe"
 
 
 @pytest.mark.asyncio
-async def test_build_log_skipped_when_unset_or_endpoint_fails(tmp_path: Path) -> None:
-    # Unset path -> step skipped entirely, and a skip is NOT an error.
-    source = _source(tmp_path / "attachments")
+async def test_logs_endpoint_is_not_called_unless_the_profile_wants_it(tmp_path: Path) -> None:
+    # The profile decides. Not wanted -> the request is never made at all, so
+    # a run that reads no build log pays for no ZIP.
+    source = _source(tmp_path / "attachments", tmp_path / "build_logs")
     skipped = await _job(source)
     assert skipped.build_log == ""
     assert skipped.build_log_error == ""
+    assert skipped.build_log_path == ""
+    assert not [r for r in _CAPTURED if r.url.path.endswith("/logs")]
 
+    # Wanted -> exactly one call.
+    wanted = _source(tmp_path / "attachments", tmp_path / "build_logs")
+    await _job(wanted, want_build_log=True)
+    assert len([r for r in _CAPTURED if r.url.path.endswith("/logs")]) == 1
+
+
+@pytest.mark.asyncio
+async def test_build_log_failure_is_recorded_not_swallowed(tmp_path: Path) -> None:
     # Endpoint errors -> empty log, job continues, but the reason is recorded:
     # a broken endpoint can no longer look like "this job had no build log".
-    broken = _source(tmp_path / "attachments", build_log_path="/api/does-not-exist")
-    job = await _job(broken)
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/logs"):
+            return httpx.Response(404)
+        return _handler(request)
+
+    client = VisiumGoClient(
+        base_url="https://visiumgo.test.local",
+        token="eyJmock",
+        timeout_seconds=5.0,
+        transport=httpx.MockTransport(handler),
+    )
+    broken = VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")
+    job = await _job(broken, want_build_log=True)
     assert job.build_log == ""
+    assert job.build_log_path == ""
     assert len(job.failed_scenarios) == 1  # analysis still happened
-    assert "/api/does-not-exist" in job.build_log_error
+    assert "/logs" in job.build_log_error
     assert "404" in job.build_log_error
 
 
@@ -326,7 +359,7 @@ async def test_missing_entry_or_non_zip_is_tolerated(tmp_path: Path) -> None:
     # A ZIP without build.log -> empty, no crash; the reason names the wanted
     # entry AND what the archive actually held (that is what makes it fixable).
     source = _zip_source(tmp_path, {"baska.txt": "x"}, "/api/runs/{run_id}/logs")
-    job = await _job(source)
+    job = await _job(source, want_build_log=True)
     assert job.build_log == ""
     assert "build.log" in job.build_log_error
     assert "baska.txt" in job.build_log_error
@@ -343,8 +376,8 @@ async def test_missing_entry_or_non_zip_is_tolerated(tmp_path: Path) -> None:
         timeout_seconds=5.0,
         transport=httpx.MockTransport(handler),
     )
-    bad = VisiumGoSource(client, tmp_path / "attachments", build_log_path="/api/runs/{run_id}/logs")
-    not_zip = await _job(bad)
+    bad = VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")
+    not_zip = await _job(bad, want_build_log=True)
     assert not_zip.build_log == ""
     assert "BadZipFile" in not_zip.build_log_error
 

@@ -79,8 +79,9 @@ def test_missing_file_on_disk_is_a_problem(
     assert inspect_run._attachment_status({"evidence_name": "TestLogEvidence"}, "") == "EKSİK"
     assert inspect_run._attachment_status({"evidence_name": ""}, "x") == "EŞLEŞMEDİ"
     assert inspect_run._attachment_status({"download_skipped": True}, "") == "ATLANDI"
-    # The job-level build log has no file of its own — that is not a problem.
-    assert inspect_run._attachment_status({"device_id": "build"}, "") == "JOB LOGU"
+    # Every row judged here is a real `attachments[]` entry. The build log used
+    # to sneak into this table as a synthetic row and needed its own exception;
+    # it is reported from `evidence_report.job_log` now.
 
 
 def test_needs_a_run_or_a_job(monkeypatch: pytest.MonkeyPatch) -> None:

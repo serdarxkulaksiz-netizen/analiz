@@ -46,11 +46,13 @@ class Settings(BaseSettings):
     visiumgo_timeout_seconds: float = 60.0
     # SSL verification off (internal self-signed certs); true to enable via .env.
     visiumgo_verify_ssl: bool = False
-    # VisiumGo endpoint serving the run's logs; `{run_id}` is substituted.
-    # The response is a ZIP archive, not plain text. Empty = skip the step.
-    visiumgo_build_log_path: str = ""
+    # The `/logs` endpoint's PATH is not a setting — it is VisiumGo's own
+    # contract and lives in `app/source/visiumgo.py`. Whether it is called at
+    # all is a PROFILE decision (`BuildLogEvidence`). It used to be this
+    # setting, which meant an unset key silently disabled the whole step and
+    # recorded no reason for it.
     # Which file to read from inside that ZIP (matched on the entry's ending,
-    # so `logs/build.log` matches too).
+    # so `logs/build.log` matches too). This one IS a choice, so it stays.
     visiumgo_build_log_entry: str = "build.log"
 
     # --- extraction / Halka 2 ---
@@ -109,7 +111,8 @@ def get_settings() -> Settings:
         names = ", ".join(sorted(k.upper() for k in unknown))
         raise ValueError(
             f".env dosyasında tanınmayan ayar(lar): {names}. "
-            "Yazım hatası olabilir ya da anahtar yeniden adlandırılmış olabilir "
-            "(ör. VISIUMGO_JENKINS_LOG_PATH -> VISIUMGO_BUILD_LOG_PATH). "
+            "Yazım hatası olabilir, ya da anahtar kaldırılmış olabilir "
+            "(ör. VISIUMGO_BUILD_LOG_PATH artık yok: /logs yolu kodda, çağrılıp "
+            "çağrılmayacağına profil karar veriyor — satırı .env'den silin). "
             "Geçerli anahtarların tam listesi: .env.example"
         ) from None

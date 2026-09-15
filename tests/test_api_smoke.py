@@ -31,8 +31,9 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
 
     result = client.get(f"/analyze/visiumgo/{analyzer_run_id}").json()
     assert result["status"] == "done"
-    assert result["parameter1"] == "default"
-    assert result["parameter2"] == "default"
+    # Not sent -> not invented. These used to default to the literal "default".
+    assert result["parameter1"] == ""
+    assert result["parameter2"] == ""
     assert result["scenario_count"] == 2
     assert result["completed_count"] == 2
     assert result["total_scenario_count"] == 100
@@ -56,7 +57,11 @@ def test_end_to_end_with_mocks(settings: Settings) -> None:
     )
     assert run_row["raw_run_response"]["jobName"] == "MOCK_nightly-test"
     assert len(run_row["raw_results_response"]) == 2
-    assert "Scenario:" in run_row["build_log"]  # job-level build log
+    # The job-level build log is a FILE, and the row points at it.
+    assert run_row["build_log_chars"] > 0
+    build_log_file = Path(run_row["build_log_path"])
+    assert build_log_file.parent == settings.database_dir / "build_logs"
+    assert "Scenario:" in build_log_file.read_text("utf-8")
     # A build log that arrived reports no failure reason — anywhere.
     assert run_row["build_log_error"] == ""
     assert result["build_log_error"] == ""
@@ -166,7 +171,8 @@ def test_precheck_rule_answers_without_calling_llm(settings: Settings, tmp_path)
     row = result["results"][0]
     assert row["suggestion"] == "Lütfen selector'ı güncelleyin."  # canned answer
     assert row["error_signature"] == "hazir-cevap"  # which rule answered
-    assert row["meta"]["llm_model"] == "precheck"  # LLM was not called
+    assert row["meta"]["answered_by"] == "precheck"  # who answered
+    assert row["meta"]["llm_model"] == ""  # no model ran, so none is named
     assert row["status"] == "ok"
 
     db = settings.database_dir
@@ -229,7 +235,7 @@ def test_get_exposes_only_the_diagnosis_not_the_raw_trace(
     run_row = json.loads(
         (settings.database_dir / settings.table_runs / f"{rid}.json").read_text("utf-8")
     )
-    assert run_row["raw_run_response"] and run_row["build_log"]
+    assert run_row["raw_run_response"] and run_row["build_log_path"]
     stored = json.loads(
         next((settings.database_dir / settings.table_analysis_results).glob("*.json")).read_text(
             "utf-8"

@@ -6,13 +6,7 @@ hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa 
 
 Senaryo: $scenario_name
 
-$test_log
-
-$dom
-
-$mobile_dom
-
-$browser_log
+$evidence_blocks
 
 HİBRİT BAĞLAMI: Bu senaryo TEK akışta hem web hem mobil adım içerir (ör. web'de işlem başlar →
 telefona push gelir → cihazda onaylanır → web'e dönülür). Bu yüzden "element bulunamadı" gibi bir

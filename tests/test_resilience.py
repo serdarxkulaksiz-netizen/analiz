@@ -160,8 +160,14 @@ class BuildLogFailingSource(MockSource):
     normally, only the build log is missing — and it says why.
     """
 
-    async def fetch_job(self, run: RunSummary, wants: AttachmentFilter = accept_all) -> JobData:
-        job = await super().fetch_job(run, wants)
+    async def fetch_job(
+        self,
+        run: RunSummary,
+        wants: AttachmentFilter = accept_all,
+        *,
+        want_build_log: bool = False,
+    ) -> JobData:
+        job = await super().fetch_job(run, wants, want_build_log=want_build_log)
         return job.model_copy(
             update={
                 "build_log": "",
@@ -192,7 +198,8 @@ async def test_missing_build_log_reports_its_reason(settings: Settings) -> None:
     assert run["status"] == "done"
     assert run["completed_count"] == run["scenario_count"] == 2
     # But the missing log now carries its cause, on disk and in the API view.
-    assert run["build_log"] == ""
+    assert run["build_log_chars"] == 0
+    assert run["build_log_path"] == ""
     assert "404" in run["build_log_error"]
     assert "404" in build_run_view(run).build_log_error
 
@@ -211,8 +218,14 @@ class CountingLLMProvider(LLMProvider):
 class NoEvidenceSource(MockSource):
     """A run whose failed scenario produced nothing: no error text, no files."""
 
-    async def fetch_job(self, run: RunSummary, wants: AttachmentFilter = accept_all) -> JobData:
-        job = await super().fetch_job(run, wants)
+    async def fetch_job(
+        self,
+        run: RunSummary,
+        wants: AttachmentFilter = accept_all,
+        *,
+        want_build_log: bool = False,
+    ) -> JobData:
+        job = await super().fetch_job(run, wants, want_build_log=want_build_log)
         bare = RawScenario(scenario_name="MOCK_kanıtsız senaryo")
         return job.model_copy(update={"failed_scenarios": [bare], "build_log": ""})
 

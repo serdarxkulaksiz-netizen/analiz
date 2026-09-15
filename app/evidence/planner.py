@@ -14,6 +14,7 @@ see (a new device or file type VisiumGo started producing).
 
 from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import evidence_name_for
+from app.evidence.types import BuildLogEvidence
 from app.source.base import AttachmentFilter
 from app.source.models import Attachment
 
@@ -34,6 +35,17 @@ class AttachmentPlanner:
             return name in wanted if name else True  # unknown file: always fetch
 
         return wants
+
+    def wants_build_log(self, *, job_id: str = "", forced: str = "") -> bool:
+        """Does this run's profile need the job-level build log?
+
+        The build log has its own endpoint, so it cannot be judged by the
+        attachment filter — but it is the same decision, taken from the same
+        profile. Fetching it unconditionally meant downloading a ZIP for every
+        run whether anything read it or not.
+        """
+        profile = self._profiles.get(job_id=job_id, forced=forced)
+        return BuildLogEvidence.evidence_name in profile.wanted_evidence
 
 
 __all__ = ["AttachmentPlanner"]

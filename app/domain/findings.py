@@ -69,6 +69,28 @@ class BlockReport(BaseModel):
     trimmed: bool = False
 
 
+class JobLogReport(BaseModel):
+    """The job-level build log as extraction saw it.
+
+    Deliberately NOT an `AttachmentReport`: the build log does not arrive in
+    VisiumGo's `attachments[]` array at all — it comes from its own endpoint.
+    Putting it in that list would mean the report claims the API sent a file it
+    never sent, which is the one thing this report exists to answer honestly.
+    """
+
+    #: Where it comes from, so nobody has to remember that it is not an attachment.
+    source: str = "/api/runs/{run_id}/logs"
+    #: Did the active profile ask for it at all? False = never fetched.
+    wanted: bool = False
+    #: Size as received (before content rules).
+    chars: int = 0
+    goes_to_llm: bool = False
+    goes_to_store: bool = False
+    #: Why it is missing although the profile wanted it (network, 404, not a
+    #: ZIP, entry missing). Empty when it was not wanted or it arrived.
+    error: str = ""
+
+
 class EvidenceReport(BaseModel):
     """Extraction's self-diagnosis for one scenario.
 
@@ -76,7 +98,11 @@ class EvidenceReport(BaseModel):
     empty / oversized?" without anyone reproducing it by hand.
     """
 
+    #: ONLY what VisiumGo's `attachments[]` array carried. Nothing this code
+    #: produced ever enters this list.
     attachments: list[AttachmentReport] = []
+    #: The job-level build log — a separate endpoint, so a separate field.
+    job_log: JobLogReport = JobLogReport()
     blocks: list[BlockReport] = []
     #: File names VisiumGo sent that no Evidence class claimed.
     unmatched: list[str] = []

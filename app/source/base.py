@@ -35,7 +35,13 @@ class Source(ABC):
         """
 
     @abstractmethod
-    async def fetch_job(self, run: RunSummary, wants: AttachmentFilter = accept_all) -> JobData:
+    async def fetch_job(
+        self,
+        run: RunSummary,
+        wants: AttachmentFilter = accept_all,
+        *,
+        want_build_log: bool = False,
+    ) -> JobData:
         """Return the job report and raw evidence for every failed scenario.
 
         Takes the already-resolved run: resolution happens once, in
@@ -45,4 +51,9 @@ class Source(ABC):
         transferred, whether a file is downloaded at all. A file it rejects is
         still reported (metadata + `download_skipped`), so "the profile did not
         want it" and "it never arrived" stay distinguishable.
+
+        `want_build_log` is the same decision for the job-level log, which has
+        its own endpoint instead of an `attachments[]` row and so cannot be
+        judged by `wants`. False means the profile did not ask for it — never
+        "it could not be fetched".
         """

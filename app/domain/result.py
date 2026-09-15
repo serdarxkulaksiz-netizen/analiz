@@ -17,6 +17,11 @@ from app.domain.enums import AnalysisStatus, Verdict
 class AnalysisMeta(BaseModel):
     """System-side call metadata (`meta`)."""
 
+    #: Who produced this diagnosis: `llm` or `precheck` ("" = neither ran).
+    #: Separate from `llm_model` because a PreCheck answer has no model, and
+    #: writing the word "precheck" into a field that names a model made the
+    #: stored row claim a model that never existed.
+    answered_by: str = ""
     llm_model: str = ""
     #: Which prompt template was used, and a hash of its exact text. Without
     #: these, "the answers got worse" cannot be traced back to a prompt change

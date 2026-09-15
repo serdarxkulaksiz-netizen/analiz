@@ -6,7 +6,7 @@ Teşhisini BUNUN ÜZERİNDEN kur: KESİN HÜKÜM DEĞİL, gerekçeli bir ÖN TE�
 
 Senaryo: $scenario_name
 
-$build_log
+$evidence_blocks
 
 BUILD LOG HAKKINDA: Bu log tüm koşumu kapsayan job log'udur; yukarıdaki bölüm bu senaryoya ait
 kısımdır. Senaryo bazlı dosya bulunmaması bu job'da NORMALDİR — bir arıza ya da bulgu değildir,

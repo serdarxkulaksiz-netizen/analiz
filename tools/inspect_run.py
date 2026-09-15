@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import Any
 
 from app.config import Settings, get_settings
-from app.extraction.evidence_extractor import BUILD_LOG_DEVICE_ID
 from app.main import build_service
 from app.persistence.file_repository import FileRepository
 
@@ -44,7 +43,6 @@ _OK = "OK"
 _MISSING = "EKSİK"
 _SKIPPED = "ATLANDI"
 _UNMATCHED = "EŞLEŞMEDİ"
-_JOB_LEVEL = "JOB LOGU"
 _LINE = "=" * 78
 
 
@@ -65,17 +63,21 @@ def _print_run(run: dict[str, Any]) -> None:
     if run.get("build_log_error"):
         print(f"        build log ALINAMADI: {run['build_log_error']}")
     else:
-        print(f"        build log: {len(run.get('build_log') or '')} karakter")
+        print(
+            f"        build log: {run.get('build_log_chars', 0)} karakter "
+            f"-> {run.get('build_log_path') or '(diske yazılmadı)'}"
+        )
     if run.get("note"):
         print(f"        not: {run['note']}")
 
 
 def _attachment_status(row: dict[str, Any], stored_path: str) -> str:
-    """One attachment's verdict: downloaded and on disk, or why not."""
-    if row.get("device_id") == BUILD_LOG_DEVICE_ID:
-        # Not a per-scenario file at all: the build log is job-level and lives
-        # on the run row. It has no path of its own and never will.
-        return _JOB_LEVEL
+    """One attachment's verdict: downloaded and on disk, or why not.
+
+    Every row here really is one of VisiumGo's `attachments[]` entries. The
+    build log used to appear in this table as a synthetic row and needed its
+    own exception; it has its own report field now, printed separately.
+    """
     if row.get("download_skipped"):
         return _SKIPPED  # profile did not want it (not possible under test_all)
     if not row.get("evidence_name"):
@@ -108,6 +110,16 @@ def _print_scenario(evidence_row: dict[str, Any], prompt_chars: int) -> int:
             f"{row.get('evidence_name') or '-':24} {row.get('chars', 0):>8} krk"
         )
 
+    job_log = report.get("job_log") or {}
+    if job_log.get("wanted"):
+        if job_log.get("error"):
+            print(f"  JOB LOGU   /logs ALINAMADI: {job_log['error']}")
+        else:
+            hedef = "prompt'a girer" if job_log.get("goes_to_llm") else "yalnız depoya"
+            print(f"  JOB LOGU   build.log ({hedef}) {job_log.get('chars', 0):>8} krk")
+    else:
+        print("  JOB LOGU   profil istemedi — /logs hiç çağrılmadı")
+
     for block in report.get("blocks") or []:
         cut = " (kural kesti)" if block.get("trimmed") else ""
         print(f"  BLOK       {block.get('label'):52} {block.get('chars', 0):>8} krk{cut}")
@@ -121,7 +133,7 @@ def inspect(run_id: str, job_id: str) -> int:
     service = build_service(settings)
     repo = FileRepository(settings.database_dir)
 
-    analyzer_run_id = service.create_run("default", job_id, "default", run_id)
+    analyzer_run_id = service.create_run("", job_id, "", run_id)
     asyncio.run(service.run_analysis(analyzer_run_id, profile_override=INSPECT_PROFILE))
 
     run = service.get_run(analyzer_run_id)

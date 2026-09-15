@@ -6,9 +6,9 @@ mock/real difference lives entirely in the Source).
 
 The run's job_id selects an analysis Profile, which decides which evidence
 types become prompt blocks and how each one's content is shaped
-(content rules). The `=== HATA ===` block is `error_text`. The job-level build
-log is injected as a synthetic `build` attachment so it flows through the same
-profile + rule machinery as every other evidence. No field-extracting parsing
+(content rules). The job-level build log is built as its own evidence from its
+own endpoint — it is NOT dressed up as an attachment, because VisiumGo's
+`attachments[]` array never contained it. No field-extracting parsing
 (parse-minimal).
 """
 
@@ -18,19 +18,18 @@ from app.domain.findings import (
     EvidenceBlock,
     EvidenceReport,
     Findings,
+    JobLogReport,
 )
 from app.evidence.profiles import Profile, ProfileRegistry
 from app.evidence.registry import EvidenceRegistry, evidence_name_for
 from app.evidence.rules import RuleContext
+from app.evidence.types import BuildLogEvidence
 from app.extraction.base import Extractor
-from app.source.models import Attachment, RawScenario
-
-#: device_id of the synthetic attachment carrying the job-level build log.
-BUILD_LOG_DEVICE_ID = "build"
+from app.source.models import RawScenario
 
 
 class EvidenceExtractor(Extractor):
-    """Maps a RawScenario's attachments + fields into the Findings contract."""
+    """Maps a RawScenario's attachments + the job log into the Findings contract."""
 
     def __init__(self, registry: EvidenceRegistry, profiles: ProfileRegistry) -> None:
         self._registry = registry
@@ -43,29 +42,18 @@ class EvidenceExtractor(Extractor):
         job_id: str = "",
         forced_profile: str = "",
         build_log: str = "",
+        build_log_error: str = "",
     ) -> Findings:
         profile = self._profiles.get(job_id=job_id, forced=forced_profile)
 
-        # The job-level build log becomes a normal attachment, so the profile
-        # can include/exclude it and its rules can slice it per scenario.
-        scenario_for_evidence = scenario
-        if build_log:
-            scenario_for_evidence = scenario.model_copy(
-                update={
-                    "attachments": [
-                        *scenario.attachments,
-                        Attachment(
-                            file_name="build.log",
-                            mime_type="text/plain",
-                            device_id=BUILD_LOG_DEVICE_ID,
-                            content=build_log,
-                        ),
-                    ]
-                }
-            )
-
         ctx = RuleContext(scenario_name=scenario.scenario_name)
-        evidences = self._registry.build_for(scenario_for_evidence, profile, ctx)
+        evidences = self._registry.build_for(scenario, profile, ctx)
+
+        # The job log is a peer of the attachment-backed evidences, not one of
+        # them: same profile flags, same content rules, different origin.
+        job_log = self._registry.build_job_log(build_log, profile, ctx)
+        if job_log is not None:
+            evidences.append(job_log)
 
         evidence_blocks: list[EvidenceBlock] = []
         screenshot_paths: list[str] = []
@@ -95,7 +83,14 @@ class EvidenceExtractor(Extractor):
         order = {name: index for index, name in enumerate(profile.evidence_to_llm)}
         evidence_blocks.sort(key=lambda block: order.get(block.evidence_name, len(order)))
 
-        report = _build_report(scenario_for_evidence, profile, evidence_blocks, trimmed_labels)
+        report = _build_report(
+            scenario,
+            profile,
+            evidence_blocks,
+            trimmed_labels,
+            build_log=build_log,
+            build_log_error=build_log_error,
+        )
 
         return Findings(
             scenario_name=scenario.scenario_name,
@@ -122,12 +117,18 @@ def _build_report(
     profile: Profile,
     blocks: list[EvidenceBlock],
     trimmed_labels: set[str],
+    *,
+    build_log: str = "",
+    build_log_error: str = "",
 ) -> EvidenceReport:
     """Record what arrived and what reached the prompt.
 
     Answers, from one real run and without reproducing it by hand: did the
     evidence arrive at all, did it map to an Evidence class, did the profile
     send it, and did its content rules actually cut anything.
+
+    `attachments` lists ONLY what VisiumGo's `attachments[]` array carried; the
+    job log has its own field because it has its own endpoint.
     """
     attachments = [
         AttachmentReport(
@@ -141,8 +142,16 @@ def _build_report(
         )
         for attachment in scenario.attachments
     ]
+    build_log_name = BuildLogEvidence.evidence_name
     return EvidenceReport(
         attachments=attachments,
+        job_log=JobLogReport(
+            wanted=build_log_name in profile.wanted_evidence,
+            chars=len(build_log),
+            goes_to_llm=build_log_name in profile.evidence_to_llm,
+            goes_to_store=build_log_name in profile.evidence_to_store,
+            error=build_log_error,
+        ),
         blocks=[
             BlockReport(
                 label=block.label,

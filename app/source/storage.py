@@ -48,4 +48,21 @@ def save_attachment(
     return dest
 
 
-__all__ = ["safe_path_part", "save_attachment"]
+def save_build_log(root: Path, run_id: str, text: str) -> Path:
+    """Write the job-level build log and return where it landed.
+
+    `<build_logs>/<run_id>.log` — one file per RUN, not per scenario, because
+    that is what the log is: the whole run's output. It lives apart from
+    `attachments/` for the same reason it has its own report field — it never
+    came from a scenario's `attachments[]`.
+
+    Kept on disk instead of inline in the run row: a job log is large, and a
+    run row is read for status.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    dest = root / f"{safe_path_part(run_id)}.log"
+    dest.write_text(text, encoding="utf-8")
+    return dest
+
+
+__all__ = ["safe_path_part", "save_attachment", "save_build_log"]

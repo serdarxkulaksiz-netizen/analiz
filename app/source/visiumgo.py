@@ -33,13 +33,20 @@ from typing import Any
 from app.domain.enums import ANALYZABLE_RUN_STATES, RunState
 from app.source.base import AttachmentFilter, Source, accept_all
 from app.source.models import Attachment, JobData, RawScenario, RunSummary
-from app.source.storage import save_attachment
+from app.source.storage import save_attachment, save_build_log
 from app.source.visiumgo_client import VisiumGoClient, encode_segment
 
 #: Upper bound for the recorded build-log failure reason (see
 #: `fetch_build_log`): keeps a long exception text or ZIP listing from
 #: bloating the persisted run row.
 _BUILD_LOG_ERROR_MAX_CHARS = 500
+
+#: The run's log archive. A path, like every other endpoint here — not a
+#: setting. It used to live in `.env`, which meant an unset key silently turned
+#: the whole step off and recorded no reason: "this job has no build log" and
+#: "nobody filled in the config" looked identical. Whether the log is fetched
+#: is now a PROFILE decision (`BuildLogEvidence`), which is where it belongs.
+PATH_LOGS = "/api/runs/{run_id}/logs"
 
 
 def _state_of(record: dict[str, Any]) -> str:
@@ -84,12 +91,13 @@ class VisiumGoSource(Source):
         self,
         client: VisiumGoClient,
         attachments_dir: Path,
-        build_log_path: str = "",
+        build_logs_dir: Path | None = None,
         build_log_entry: str = "build.log",
     ) -> None:
         self._client = client
         self._attachments_dir = attachments_dir
-        self._build_log_path = build_log_path
+        #: Where a fetched build log is written. None = keep it in memory only.
+        self._build_logs_dir = build_logs_dir
         self._build_log_entry = build_log_entry
 
     # ------------------------------------------------------------- endpoints
@@ -136,15 +144,12 @@ class VisiumGoSource(Source):
         plain text; the wanted entry (`build.log` by default) is extracted from
         it. The archive itself is not kept — only the extracted text.
 
-        Returns `(log, error)`. Optional: unset path = deliberate skip, both
-        empty. Any failure (network, 404, not a zip, entry missing) leaves the
-        log empty and the job continues — but the REASON is returned instead of
-        being swallowed, so "no build log configured" and "build log could not
-        be fetched" stay distinguishable (no silent loss).
+        Returns `(log, error)`. Any failure (network, 404, not a zip, entry
+        missing) leaves the log empty and the job continues — but the REASON is
+        returned instead of being swallowed, so a broken endpoint can never
+        pass for "this job simply has no build log".
         """
-        if not self._build_log_path:
-            return "", ""
-        path = self._build_log_path.format(run_id=encode_segment(run_id))
+        path = PATH_LOGS.format(run_id=encode_segment(run_id))
         try:
             archive = await self._client.get_bytes(path)
             return self._extract_log(archive), ""
@@ -200,9 +205,15 @@ class VisiumGoSource(Source):
         if run_id:
             record = await self.get_run(run_id)
             summary = _summary_from(record or {}, job_id=job_id)
-            # A run detail with no id at all means we asked for a run that is
-            # not there; keep the requested id rather than returning an empty one.
-            return summary if summary.run_id else summary.model_copy(update={"run_id": run_id})
+            if not summary.run_id:
+                # The response carries no `id`, so VisiumGo did not confirm this
+                # run. Filling the requested id back in would put a run id in the
+                # record that the API never returned — analysis would then run
+                # against a run nobody can prove exists.
+                raise ValueError(
+                    f"run_id={run_id!r} için koşum bulunamadı (cevapta 'id' alanı yok)."
+                )
+            return summary
         if not job_id:
             raise ValueError("Either job_id or run_id is required.")
 
@@ -237,9 +248,23 @@ class VisiumGoSource(Source):
         note = f"bilinmeyen koşum durumu atlandı: {', '.join(unknown)}" if unknown else ""
         return _summary_from(max(analyzable, key=_run_order_key), job_id=job_id, note=note)
 
-    async def fetch_job(self, run: RunSummary, wants: AttachmentFilter = accept_all) -> JobData:
+    async def fetch_job(
+        self,
+        run: RunSummary,
+        wants: AttachmentFilter = accept_all,
+        *,
+        want_build_log: bool = False,
+    ) -> JobData:
         """Adım B-D: evidence for an already-resolved run."""
-        build_log, build_log_error = await self.fetch_build_log(run.run_id)
+        # Not fetched unless the active profile asked for it: a ZIP download
+        # nobody uses is bytes paid for nothing. `want_build_log=False` means
+        # "not wanted", never "could not be fetched" — the two are told apart
+        # by `evidence_report.job_log.wanted`.
+        build_log, build_log_error, build_log_path = "", "", ""
+        if want_build_log:
+            build_log, build_log_error = await self.fetch_build_log(run.run_id)
+            if build_log and self._build_logs_dir is not None:
+                build_log_path = str(save_build_log(self._build_logs_dir, run.run_id, build_log))
 
         results = await self.get_results(run.run_id)
         failed = [r for r in results if r.get("resultType") == "FAILED"]
@@ -248,7 +273,11 @@ class VisiumGoSource(Source):
         for record in failed:
             scenarios.append(await self._build_scenario(run.run_id, record, wants))
 
-        total = run.run_result.get("totalScenarios", len(results))
+        # Only what VisiumGo reported. This used to fall back to our own count
+        # of `/results` rows, which put two different numbers in one field with
+        # no way to tell which one you were reading. Absent -> 0, and the
+        # service records that in the run note; `run_result` is stored raw.
+        total = run.run_result.get("totalScenarios", 0)
         return JobData(
             job_id=run.job_id,
             run_id=run.run_id,
@@ -257,6 +286,7 @@ class VisiumGoSource(Source):
             total_scenario_count=total,
             failed_scenarios=scenarios,
             build_log=build_log,
+            build_log_path=build_log_path,
             build_log_error=build_log_error,
             raw_run_response=run.raw,
             raw_results_response=results,
