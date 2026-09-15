@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from app.config import Settings
-from app.evidence.planner import AttachmentPlanner
+from app.evidence.plan import AnalysisPlan, plan_for
 from app.evidence.profiles import ProfileRegistry
 from app.main import build_service
 from app.source.models import Attachment
@@ -25,12 +25,12 @@ def _att(device: str, extension: str, mime: str = "text/plain") -> Attachment:
     return Attachment(file_name=f"220/{device}_1{extension}", mime_type=mime, device_id=device)
 
 
-def _planner(tmp_path: Path, profiles: dict) -> AttachmentPlanner:
-    return AttachmentPlanner(ProfileRegistry(write_profiles(tmp_path / "p.json", profiles)))
+def _plan(tmp_path: Path, profiles: dict) -> AnalysisPlan:
+    return plan_for(ProfileRegistry(write_profiles(tmp_path / "p.json", profiles)))
 
 
 def test_filter_follows_the_profile(tmp_path: Path) -> None:
-    planner = _planner(
+    plan = _plan(
         tmp_path,
         {
             "default_web": {
@@ -39,7 +39,7 @@ def test_filter_follows_the_profile(tmp_path: Path) -> None:
             }
         },
     )
-    wants = planner.wants_for()
+    wants = plan.wants
 
     assert wants(_att("test", ".log")) is True  # prompted
     assert wants(_att("browser.default", ".png", "image/png")) is True  # stored only
@@ -53,9 +53,9 @@ def test_unknown_file_is_always_fetched(tmp_path: Path) -> None:
     report exists to surface; skipping it would hide the change we most want
     to notice.
     """
-    planner = _planner(tmp_path, {"default_web": {"evidence_to_llm": ["TestLogEvidence"]}})
+    plan = _plan(tmp_path, {"default_web": {"evidence_to_llm": ["TestLogEvidence"]}})
 
-    assert planner.wants_for()(_att("bilinmeyen-cihaz", ".pdf", "application/pdf")) is True
+    assert plan.wants(_att("bilinmeyen-cihaz", ".pdf", "application/pdf")) is True
 
 
 def test_prompting_what_is_not_stored_fails_at_startup(tmp_path: Path) -> None:
@@ -122,8 +122,8 @@ async def test_unwanted_attachment_is_not_requested_but_is_reported(tmp_path: Pa
         ),
         tmp_path / "attachments",
     )
-    planner = _planner(tmp_path, {"default_web": {"evidence_to_llm": ["TestLogEvidence"]}})
-    wants = planner.wants_for()
+    plan = _plan(tmp_path, {"default_web": {"evidence_to_llm": ["TestLogEvidence"]}})
+    wants = plan.wants
 
     from app.source.models import RunSummary
 

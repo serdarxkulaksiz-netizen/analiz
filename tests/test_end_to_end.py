@@ -22,7 +22,6 @@ import httpx
 
 from app.config import Settings
 from app.domain.api import build_run_view
-from app.evidence.planner import AttachmentPlanner
 from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
 from app.extraction.evidence_extractor import EvidenceExtractor
@@ -158,7 +157,7 @@ def _service(
             settings.database_dir / "attachments",
             settings.database_dir / "build_logs",
         ),
-        extractor=EvidenceExtractor(EvidenceRegistry(), profiles),
+        extractor=EvidenceExtractor(EvidenceRegistry()),
         prompt_builder=PromptBuilder(settings.prompts_dir, settings.confidence_buckets),
         llm_provider=OpenAICompatibleLLMProvider(
             base_url=settings.llm_base_url,
@@ -171,7 +170,7 @@ def _service(
             transport=_llm_transport(prompts),
         ),
         precheck=NoOpPreCheck(),
-        planner=AttachmentPlanner(profiles),
+        profiles=profiles,
     )
 
 

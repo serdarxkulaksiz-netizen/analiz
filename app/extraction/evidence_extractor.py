@@ -3,9 +3,10 @@
 Extraction works from `RawScenario` alone, never from a VisiumGo response, so
 there is ONE extractor and the API's shape stops at the Source layer.
 
-The run's job_id selects an analysis Profile, which decides which evidence
-types become prompt blocks and how each one's content is shaped
-(content rules). The job-level build log is built as its own evidence from its
+The Profile — resolved once for the run, before anything was fetched — decides
+which evidence types become prompt blocks, in what order, and how each one's
+content is shaped (content rules). The job-level build log is built as its own
+evidence from its
 own endpoint — it is NOT dressed up as an attachment, because VisiumGo's
 `attachments[]` array never contained it. No field-extracting parsing
 (parse-minimal).
@@ -19,7 +20,7 @@ from app.domain.findings import (
     Findings,
     JobLogReport,
 )
-from app.evidence.profiles import Profile, ProfileRegistry
+from app.evidence.profiles import Profile
 from app.evidence.registry import EvidenceRegistry, evidence_name_for
 from app.evidence.rules import RuleContext, RuleError
 from app.evidence.types import BuildLogEvidence
@@ -30,22 +31,18 @@ from app.source.models import RawScenario
 class EvidenceExtractor(Extractor):
     """Maps a RawScenario's attachments + the job log into the Findings contract."""
 
-    def __init__(self, registry: EvidenceRegistry, profiles: ProfileRegistry) -> None:
+    def __init__(self, registry: EvidenceRegistry) -> None:
         self._registry = registry
-        self._profiles = profiles
 
     def extract(
         self,
         scenario: RawScenario,
         *,
-        job_id: str = "",
-        forced_profile: str = "",
+        profile: Profile,
         build_log: str = "",
         build_log_error: str = "",
         build_log_path: str = "",
     ) -> Findings:
-        profile = self._profiles.get(job_id=job_id, forced=forced_profile)
-
         ctx = RuleContext(scenario_name=scenario.scenario_name)
         evidences = self._registry.build_for(scenario, profile, ctx)
 

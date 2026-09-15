@@ -23,8 +23,8 @@ from app.config import Settings
 from app.domain.enums import AnalysisStatus, RunState, RunStatus
 from app.domain.findings import Findings
 from app.domain.result import AnalysisMeta, AnalysisResult, LLMAnalysis
-from app.evidence.planner import AttachmentPlanner
-from app.evidence.profiles import JOB_FAILED_PROFILE_NAME
+from app.evidence.plan import plan_for
+from app.evidence.profiles import JOB_FAILED_PROFILE_NAME, Profile, ProfileRegistry
 from app.extraction.base import Extractor
 from app.llm.provider import LLMProvider
 from app.parsing.json_parser import try_json
@@ -144,13 +144,13 @@ class AnalyzerService:
         prompt_builder: PromptBuilder,
         llm_provider: LLMProvider,
         precheck: PreCheck,
-        planner: AttachmentPlanner,
+        profiles: ProfileRegistry,
     ) -> None:
         self._settings = settings
         self._repo = repository
         self._source = source
         self._extractor = extractor
-        self._planner = planner
+        self._profiles = profiles
         self._builder = prompt_builder
         self._llm = llm_provider
         self._precheck = precheck
@@ -284,13 +284,10 @@ class AnalyzerService:
 
         # The profile decides what is worth downloading, so it is resolved
         # BEFORE the evidence is fetched — not after, when the bytes are
-        # already paid for.
-        wants = self._planner.wants_for(job_id=profile_job_id, forced=forced_profile)
-        # The job-level log has its own endpoint, so it needs its own yes/no —
-        # same profile, same question. A profile that does not list
-        # `BuildLogEvidence` no longer pays for the ZIP download.
-        want_build_log = self._planner.wants_build_log(job_id=profile_job_id, forced=forced_profile)
-        job = await self._source.fetch_job(summary, wants, want_build_log=want_build_log)
+        # already paid for. Resolved ONCE: this object is what every later step
+        # reads, so "which profile ran" has one answer for the whole run.
+        plan = plan_for(self._profiles, job_id=profile_job_id, forced=forced_profile)
+        job = await self._source.fetch_job(summary, plan.wants, want_build_log=plan.wants_build_log)
         self._update_run(
             run,
             run_id=summary.run_id,
@@ -324,8 +321,7 @@ class AnalyzerService:
                 self._analyze_scenario(
                     run["analyzer_run_id"],
                     scenario,
-                    job_id=profile_job_id,
-                    forced_profile=forced_profile,
+                    profile=plan.profile,
                     build_log=job.build_log,
                     build_log_error=job.build_log_error,
                     build_log_path=job.build_log_path,
@@ -367,8 +363,7 @@ class AnalyzerService:
         analyzer_run_id: str,
         scenario: RawScenario,
         *,
-        job_id: str,
-        forced_profile: str,
+        profile: Profile,
         build_log: str,
         build_log_error: str,
         build_log_path: str,
@@ -395,8 +390,7 @@ class AnalyzerService:
             try:
                 findings = self._extractor.extract(
                     scenario,
-                    job_id=job_id,
-                    forced_profile=forced_profile,
+                    profile=profile,
                     build_log=build_log,
                     build_log_error=build_log_error,
                     build_log_path=build_log_path,

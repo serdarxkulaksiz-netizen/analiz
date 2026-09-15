@@ -88,7 +88,7 @@ def test_request_parameters_reach_no_decision() -> None:
     """
     import inspect
 
-    from app.evidence.planner import AttachmentPlanner
+    from app.evidence.plan import plan_for
     from app.evidence.profiles import ProfileRegistry
     from app.extraction.base import Extractor
     from app.prompting.builder import KNOWN_PLACEHOLDERS
@@ -98,7 +98,7 @@ def test_request_parameters_reach_no_decision() -> None:
 
     for func in (
         ProfileRegistry.get,
-        AttachmentPlanner.wants_for,
+        plan_for,
         Extractor.extract,
         AnalyzerService._analyze_scenario,
     ):

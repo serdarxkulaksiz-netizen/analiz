@@ -3,9 +3,10 @@
 Raw evidence goes out as labeled blocks; interpretation belongs to the LLM
 (parse-minimal).
 
-`job_id` selects the analysis profile — which evidence reaches the prompt and
-how its content is shaped; `forced_profile` overrules it (the caller knows the
-job itself failed, or is a tool that must run with one profile). The request's
+The `profile` arrives already resolved: which evidence reaches the prompt, in
+what order, and how each one is shaped are its decisions. Extraction does not
+look a profile up — the run resolved it once, before any evidence was fetched,
+and hands the same object to every scenario. The request's
 `parameter1`/`parameter2` never reach here: they decide nothing.
 
 `build_log` is job-level context (VisiumGo `/api/runs/{run_id}/logs` ->
@@ -18,6 +19,7 @@ can answer that on its own, without anyone opening the run row.
 from abc import ABC, abstractmethod
 
 from app.domain.findings import Findings
+from app.evidence.profiles import Profile
 from app.source.models import RawScenario
 
 
@@ -29,8 +31,7 @@ class Extractor(ABC):
         self,
         scenario: RawScenario,
         *,
-        job_id: str = "",
-        forced_profile: str = "",
+        profile: Profile,
         build_log: str = "",
         build_log_error: str = "",
         build_log_path: str = "",

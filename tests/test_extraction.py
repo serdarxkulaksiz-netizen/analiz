@@ -1,8 +1,8 @@
 """EvidenceExtractor tests: RawScenario -> Findings."""
 
-import pytest
+from collections.abc import Callable
 
-from app.extraction.evidence_extractor import EvidenceExtractor
+from app.domain.findings import Findings
 from app.source.models import Attachment, RawScenario
 
 
@@ -37,8 +37,8 @@ def _scenario(**overrides: object) -> RawScenario:
     return RawScenario(**base)  # type: ignore[arg-type]
 
 
-def test_default_profile_full_findings(extractor: EvidenceExtractor) -> None:
-    findings = extractor.extract(_scenario())
+def test_default_profile_full_findings(extract: Callable[..., Findings]) -> None:
+    findings = extract(_scenario())
 
     # Order follows the profile's evidence_to_llm list, and the header names
     # the file the way VisiumGo does.
@@ -56,13 +56,13 @@ def test_default_profile_full_findings(extractor: EvidenceExtractor) -> None:
     assert png.stored_path == "web.png"
 
 
-def test_request_parameters_never_reach_extraction(extractor: EvidenceExtractor) -> None:
+def test_request_parameters_never_reach_extraction(extract: Callable[..., Findings]) -> None:
     """`Findings` has no parameter fields at all — they decide nothing.
 
     Keeping them in the analysis contract invited exactly what happened before:
     they crept into profile selection and into the prompt.
     """
-    findings = extractor.extract(_scenario())
+    findings = extract(_scenario())
 
     assert not hasattr(findings, "parameter1")
     assert not hasattr(findings, "parameter2")
@@ -71,20 +71,14 @@ def test_request_parameters_never_reach_extraction(extractor: EvidenceExtractor)
     assert "TestLogEvidence" in names and "HtmlEvidence" in names
 
 
-def test_unknown_forced_profile_raises(extractor: EvidenceExtractor) -> None:
-    # Loud failure instead of silently analyzing with the wrong profile.
-    with pytest.raises(ValueError, match="Unknown profile"):
-        extractor.extract(_scenario(), forced_profile="boyle-profil-yok")
-
-
 def test_missing_evidence_produces_no_block_at_all(
-    extractor: EvidenceExtractor,
+    extract: Callable[..., Findings],
 ) -> None:
     """Profile wants DOM but it never arrived -> no block, no header, no marker."""
     scenario = _scenario(
         attachments=[_att("test", ".log", content="test log")]  # no html at all
     )
-    findings = extractor.extract(scenario)
+    findings = extract(scenario)
 
     assert not [b for b in findings.evidence_blocks if b.evidence_name == "HtmlEvidence"]
     # Present evidence is untouched.
@@ -92,7 +86,7 @@ def test_missing_evidence_produces_no_block_at_all(
     assert test_log.content == "test log"
 
 
-def test_empty_evidence_also_produces_no_block(extractor: EvidenceExtractor) -> None:
+def test_empty_evidence_also_produces_no_block(extract: Callable[..., Findings]) -> None:
     # Attachment arrived but the download failed -> empty content, same result.
     scenario = _scenario(
         attachments=[
@@ -100,19 +94,19 @@ def test_empty_evidence_also_produces_no_block(extractor: EvidenceExtractor) -> 
             _att("browser.default", ".html", mime="text/html", content=""),
         ]
     )
-    findings = extractor.extract(scenario)
+    findings = extract(scenario)
     assert not [b for b in findings.evidence_blocks if b.evidence_name == "HtmlEvidence"]
 
 
-def test_build_log_is_profile_controlled(extractor: EvidenceExtractor) -> None:
+def test_build_log_is_profile_controlled(extract: Callable[..., Findings]) -> None:
     # The default profile does NOT send the job-level build log (it holds all
     # scenarios and would bloat every prompt); a profile must opt in.
-    findings = extractor.extract(_scenario(), build_log="build out")
+    findings = extract(_scenario(), build_log="build out")
     assert not [b for b in findings.evidence_blocks if b.evidence_name == "BuildLogEvidence"]
 
 
 def test_evidence_report_shows_what_arrived_and_what_matched(
-    extractor: EvidenceExtractor,
+    extract: Callable[..., Findings],
 ) -> None:
     """One real run must answer "did it not arrive, or did it not match?".
 
@@ -130,7 +124,7 @@ def test_evidence_report_shows_what_arrived_and_what_matched(
         )
     )
 
-    report = extractor.extract(scenario).evidence_report
+    report = extract(scenario).evidence_report
 
     unmatched = [row.file_name for row in report.attachments if not row.evidence_name]
     assert "beklenmeyen.pdf" in unmatched
@@ -146,7 +140,7 @@ def test_evidence_report_shows_what_arrived_and_what_matched(
     assert blocks["test.log"].chars > 0
 
 
-def test_report_never_invents_a_file_path(extractor: EvidenceExtractor) -> None:
+def test_report_never_invents_a_file_path(extract: Callable[..., Findings]) -> None:
     """`stored_path` is where the file landed, or nothing at all.
 
     Two different pieces of code used to fall back to the API's `fileName` when
@@ -156,7 +150,7 @@ def test_report_never_invents_a_file_path(extractor: EvidenceExtractor) -> None:
     landed = _att("browser.default", ".png", mime="image/png", path="/db/web.png")
     failed = _att("mobile.android.s", ".png", mime="image/png", path="")
 
-    report = extractor.extract(_scenario(attachments=[landed, failed])).evidence_report
+    report = extract(_scenario(attachments=[landed, failed])).evidence_report
     by_class = {row.evidence_name: row for row in report.attachments}
 
     assert by_class["WebScreenshotEvidence"].stored_path == "/db/web.png"

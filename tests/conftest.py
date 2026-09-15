@@ -1,14 +1,18 @@
 """Shared test fixtures — isolated settings per test (tmp database dir)."""
 
 import json
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from app.config import Settings
+from app.domain.findings import Findings
 from app.evidence.profiles import DEFAULT_PROFILE_NAME, JOB_FAILED_PROFILE_NAME, ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
 from app.extraction.evidence_extractor import EvidenceExtractor
+from app.source.models import RawScenario
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,8 +49,21 @@ def profile_registry(settings: Settings) -> ProfileRegistry:
 
 
 @pytest.fixture
-def extractor(profile_registry: ProfileRegistry) -> EvidenceExtractor:
-    return EvidenceExtractor(EvidenceRegistry(), profile_registry)
+def extract(profile_registry: ProfileRegistry) -> Callable[..., Findings]:
+    """Extract with the profile a job_id resolves to — what the service does.
+
+    The extractor no longer looks profiles up; the run resolves one and hands
+    the object down. This binds the two steps the way `_run_job` binds them.
+    """
+    extractor = EvidenceExtractor(EvidenceRegistry())
+
+    def run(
+        scenario: RawScenario, *, job_id: str = "", forced: str = "", **kwargs: Any
+    ) -> Findings:
+        profile = profile_registry.get(job_id=job_id, forced=forced)
+        return extractor.extract(scenario, profile=profile, **kwargs)
+
+    return run
 
 
 def write_profiles(path: Path, profiles: dict, *, complete: bool = False) -> Path:

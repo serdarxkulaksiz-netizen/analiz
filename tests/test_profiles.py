@@ -96,17 +96,19 @@ def test_bad_rule_config_fails_fast(tmp_path: Path) -> None:
 
 def test_profile_limits_prompt_evidence_end_to_end(tmp_path: Path) -> None:
     # Job 901 -> only test.log reaches the prompt (config only, no code).
-    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path))
+    profiles = _registry(tmp_path)
+    extractor = EvidenceExtractor(EvidenceRegistry())
 
-    findings = extractor.extract(_scenario(), job_id="901")
+    findings = extractor.extract(_scenario(), profile=profiles.get(job_id="901"))
 
     assert findings.profile_name == "B_sadece_testlog"
     assert [b.evidence_name for b in findings.evidence_blocks] == ["TestLogEvidence"]
 
 
 def test_extra_context_flows_to_findings(tmp_path: Path) -> None:
-    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path))
-    findings = extractor.extract(_scenario(), job_id="1350")
+    profiles = _registry(tmp_path)
+    extractor = EvidenceExtractor(EvidenceRegistry())
+    findings = extractor.extract(_scenario(), profile=profiles.get(job_id="1350"))
     assert findings.extra_context == "Bu projede X kullanılıyor."
 
 
@@ -138,9 +140,12 @@ def test_job_c_only_build_log_sliced_per_scenario(tmp_path: Path) -> None:
             },
         },
     }
-    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+    profiles = _registry(tmp_path, config)
+    extractor = EvidenceExtractor(EvidenceRegistry())
 
-    findings = extractor.extract(_scenario(), job_id="1204", build_log=_JOB_LOG)
+    findings = extractor.extract(
+        _scenario(), profile=profiles.get(job_id="1204"), build_log=_JOB_LOG
+    )
 
     # Only the build log reaches the prompt; the scenario's own files do not.
     assert [b.evidence_name for b in findings.evidence_blocks] == ["BuildLogEvidence"]
@@ -183,9 +188,12 @@ def test_findings_carry_the_profiles_prompt_template(tmp_path: Path) -> None:
             "evidence_to_llm": ["BuildLogEvidence"],
         },
     }
-    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+    profiles = _registry(tmp_path, config)
+    extractor = EvidenceExtractor(EvidenceRegistry())
 
-    findings = extractor.extract(_scenario(), job_id="889", build_log="BUILD FAILED")
+    findings = extractor.extract(
+        _scenario(), profile=profiles.get(job_id="889"), build_log="BUILD FAILED"
+    )
 
     assert findings.prompt_template == "buildlog"
     assert findings.profile_name == "sadece_buildlog"
@@ -219,9 +227,10 @@ def test_slicing_that_cannot_match_fails_the_scenario_instead_of_flooding_it(
             },
         },
     }
-    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+    profiles = _registry(tmp_path, config)
+    extractor = EvidenceExtractor(EvidenceRegistry())
 
-    findings = extractor.extract(_scenario(), job_id="889", build_log=job_log)
+    findings = extractor.extract(_scenario(), profile=profiles.get(job_id="889"), build_log=job_log)
 
     assert findings.evidence_blocks == []  # nothing reached the prompt
     (error,) = findings.evidence_report.rule_errors
@@ -250,9 +259,10 @@ def test_report_shows_a_successful_scenario_slice(tmp_path: Path) -> None:
             "rules": {"BuildLogEvidence": [{"type": "keep_scenario_section"}]},
         },
     }
-    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+    profiles = _registry(tmp_path, config)
+    extractor = EvidenceExtractor(EvidenceRegistry())
 
-    findings = extractor.extract(_scenario(), job_id="889", build_log=job_log)
+    findings = extractor.extract(_scenario(), profile=profiles.get(job_id="889"), build_log=job_log)
 
     block = next(b for b in findings.evidence_blocks if b.evidence_name == "BuildLogEvidence")
     assert "bizim satır FAILED" in block.content
@@ -301,10 +311,11 @@ def test_profile_alone_decides_what_reaches_the_prompt(tmp_path: Path) -> None:
             "evidence_to_store": ["TestLogEvidence", "BuildLogEvidence"],
         },
     }
-    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+    profiles = _registry(tmp_path, config)
+    extractor = EvidenceExtractor(EvidenceRegistry())
     builder = PromptBuilder(Path("config/prompts"), [0.1, 0.25, 0.5, 0.75, 0.99])
 
-    findings = extractor.extract(_scenario(), build_log=_JOB_LOG)
+    findings = extractor.extract(_scenario(), profile=profiles.get(), build_log=_JOB_LOG)
     prompt = builder.build(findings)
 
     assert "=== test.log · " in prompt
@@ -328,9 +339,12 @@ def test_build_log_is_reported_as_a_job_log_not_an_attachment(tmp_path: Path) ->
             "evidence_to_store": ["BuildLogEvidence"],
         },
     }
-    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+    profiles = _registry(tmp_path, config)
+    extractor = EvidenceExtractor(EvidenceRegistry())
 
-    report = extractor.extract(_scenario(), build_log=_JOB_LOG).evidence_report
+    report = extractor.extract(
+        _scenario(), profile=profiles.get(), build_log=_JOB_LOG
+    ).evidence_report
 
     listed = {row.file_name for row in report.attachments}
     assert not [name for name in listed if "build" in name]
@@ -351,16 +365,20 @@ def test_job_log_report_tells_wanted_from_broken(tmp_path: Path) -> None:
             "evidence_to_store": ["TestLogEvidence"],
         },
     }
-    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+    profiles = _registry(tmp_path, config)
+    extractor = EvidenceExtractor(EvidenceRegistry())
 
-    not_wanted = extractor.extract(_scenario()).evidence_report.job_log
+    not_wanted = extractor.extract(_scenario(), profile=profiles.get()).evidence_report.job_log
     assert not_wanted.wanted is False and not_wanted.error == ""
 
     config["default_web"]["evidence_to_llm"] = ["TestLogEvidence", "BuildLogEvidence"]
     config["default_web"]["evidence_to_store"] = ["TestLogEvidence", "BuildLogEvidence"]
-    extractor = EvidenceExtractor(EvidenceRegistry(), _registry(tmp_path, config))
+    profiles = _registry(tmp_path, config)
+    extractor = EvidenceExtractor(EvidenceRegistry())
 
-    broken = extractor.extract(_scenario(), build_log="", build_log_error="404").evidence_report
+    broken = extractor.extract(
+        _scenario(), profile=profiles.get(), build_log="", build_log_error="404"
+    ).evidence_report
     assert broken.job_log.wanted is True
     assert broken.job_log.chars == 0
     assert broken.job_log.error == "404"

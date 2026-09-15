@@ -23,7 +23,6 @@ from pydantic import BaseModel, model_validator
 from app.config import Settings, get_settings
 from app.domain.api import RunView, build_run_view
 from app.domain.enums import RunStatus
-from app.evidence.planner import AttachmentPlanner
 from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry, known_evidence_names
 from app.extraction.evidence_extractor import EvidenceExtractor
@@ -147,11 +146,11 @@ def build_service(settings: Settings) -> AnalyzerService:
         settings=settings,
         repository=FileRepository(settings.database_dir),
         source=_select(SOURCE_REGISTRY, settings.source_provider, "source")(settings),
-        extractor=EvidenceExtractor(EvidenceRegistry(), profiles),
+        extractor=EvidenceExtractor(EvidenceRegistry()),
         prompt_builder=prompt_builder,
         llm_provider=_select(LLM_REGISTRY, settings.llm_provider, "llm")(settings),
         precheck=_select(PRECHECK_REGISTRY, settings.precheck_provider, "precheck")(settings),
-        planner=AttachmentPlanner(profiles),
+        profiles=profiles,
     )
 
 
