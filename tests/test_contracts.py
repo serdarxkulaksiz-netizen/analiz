@@ -48,6 +48,7 @@ def test_analysis_result_adds_only_system_meta() -> None:
     assert system_fields == {
         "result_id",
         "analyzer_run_id",
+        "failure_reason",
         "profile_name",
         "truncated",
         "truncated_note",

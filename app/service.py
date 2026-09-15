@@ -82,6 +82,15 @@ def _skipped_reason(
     )
 
 
+class _RuleFailure(Exception):
+    """A content rule failed — this scenario stops, the run does not.
+
+    Its own type so the handler can tell a decision ("the rule could not slice
+    this log") from an accident ("the LLM timed out") and record each as what
+    it is.
+    """
+
+
 def _running_note(state: str) -> str:
     """Say it when the analyzed run had not finished yet ("" when it had).
 
@@ -415,6 +424,8 @@ class AnalyzerService:
             findings: Findings | None = None
             #: Set when the prompt would have carried no evidence at all.
             skipped_no_evidence = False
+            #: Set when a profile's content rule could not shape its evidence.
+            rule_failure = ""
 
             try:
                 findings = self._extractor.extract(
@@ -424,6 +435,14 @@ class AnalyzerService:
                     build_log=build_log,
                     build_log_error=build_log_error,
                 )
+
+                # A content rule that could not do its job stops this
+                # scenario here. Its evidence has no shaped content, and the
+                # unshaped original is exactly what the profile said not to
+                # send — so there is nothing to ask about.
+                if findings.evidence_report.rule_errors:
+                    meta = AnalysisMeta(analyzed_at=_utcnow_iso())
+                    raise _RuleFailure(" · ".join(findings.evidence_report.rule_errors))
 
                 # PreCheck: may short-circuit before the LLM.
                 precheck_result = self._precheck.check(findings)
@@ -473,11 +492,25 @@ class AnalyzerService:
                             analysis = LLMAnalysis.model_validate(parsed)
                         except ValidationError:
                             analysis = None
+            except _RuleFailure as exc:
+                # Not an accident: a decision. The reason is already readable,
+                # so it is not dressed up as a missing LLM response.
+                rule_failure = str(exc)
             except Exception as exc:
                 # Timeout / transport / stub NotImplementedError / anything:
                 # mark this scenario failed, keep the job going.
                 if not raw_response:
                     raw_response = f"<no response — {type(exc).__name__}: {exc}>"
+
+            failure_reason = (
+                rule_failure
+                if rule_failure
+                else _skipped_reason(prompt, findings, skipped_no_evidence, meta.answered_by)
+                if analysis is None
+                else ""
+            )
+            if analysis is None and not failure_reason:
+                failure_reason = "LLM cevabı alınamadı ya da ayrıştırılamadı — ham cevap saklandı"
 
             # Profile-driven flags (empty when extraction itself failed).
             result_screenshots = findings.screenshot_paths if findings else []
@@ -520,9 +553,7 @@ class AnalyzerService:
                     # Why there is no prompt, when there is none. An empty
                     # `prompt` with no reason next to it is the one thing this
                     # row must never be: unreadable.
-                    "skipped_reason": _skipped_reason(
-                        prompt, findings, skipped_no_evidence, meta.answered_by
-                    ),
+                    "skipped_reason": failure_reason,
                     "request": llm_request,
                 },
             )
@@ -570,6 +601,7 @@ class AnalyzerService:
                     result_id=result_id,
                     analyzer_run_id=analyzer_run_id,
                     scenario_name=scenario.scenario_name,
+                    failure_reason=failure_reason,
                     profile_name=profile_name,
                     screenshot_paths=result_screenshots,
                     truncated=truncated,

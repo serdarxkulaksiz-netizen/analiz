@@ -58,6 +58,17 @@ class RuleContext(BaseModel):
     scenario_name: str = ""
 
 
+class RuleError(ValueError):
+    """A content rule could not do what the profile asked it to do.
+
+    Raised instead of quietly returning the input unchanged. A rule that says
+    "keep only this scenario's section" and cannot find that section has not
+    trimmed anything — it has failed, and passing the whole job log through as
+    if nothing happened sends every scenario the same megabyte of unrelated
+    output while the config reads as if it were sliced.
+    """
+
+
 class Rule(ABC):
     """One content-shaping step applied to a single evidence's text."""
 
@@ -85,9 +96,14 @@ class KeepScenarioSection(Rule):
 
     A job whose log looks different can still override either marker (and
     `"end": ""` means "keep to the end of the file"). `{scenario_name}` is
-    substituted from the context. If the start marker is not found the text is
-    left untouched — no silent emptying (the evidence report shows it was not
-    trimmed).
+    substituted from the context.
+
+    If the start marker is NOT found, this raises `RuleError`. It used to
+    return the whole log instead, which looked harmless and was not: every
+    scenario of the run then carried the entire job log — measured at 38.889
+    characters × 40 scenarios — while `profiles.json` still read "sliced per
+    scenario". A marker that does not match is a fact about the log format that
+    somebody has to see, not a case to shrug off.
     """
 
     rule_type = "keep_scenario_section"
@@ -104,7 +120,10 @@ class KeepScenarioSection(Rule):
         start = self._start.format(scenario_name=ctx.scenario_name)
         index = text.find(start)
         if index == -1:
-            return text
+            raise RuleError(
+                f"{self.rule_type}: başlangıç işareti bulunamadı ({start!r}). "
+                f"Log {len(text)} karakter; bu senaryonun bölümü ayrılamadı."
+            )
         rest = text[index:]
         if self._end:
             end = self._end.format(scenario_name=ctx.scenario_name)

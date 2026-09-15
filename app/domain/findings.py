@@ -110,6 +110,11 @@ class EvidenceReport(BaseModel):
     #: set, `attachments` is empty for a reason that has nothing to do with the
     #: run producing no files.
     scenario_error: str = ""
+    #: Content rules that could not do what the profile asked. The evidence
+    #: they were shaping produces NO block: a rule that failed has not trimmed
+    #: anything, and sending the untrimmed original would be the silent
+    #: behaviour this replaces.
+    rule_errors: list[str] = []
     blocks: list[BlockReport] = []
     #: File names VisiumGo sent that no Evidence class claimed.
     unmatched: list[str] = []

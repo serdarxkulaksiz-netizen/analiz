@@ -83,6 +83,10 @@ class AnalysisResult(BaseModel):
     error_signature: str = ""
 
     # --- system-side meta ; code attaches, LLM never produces) ---
+    #: Why this row carries no diagnosis, in one sentence, when `status` is not
+    #: `ok`. The status alone says THAT something went wrong; this says what,
+    #: without anyone opening the trace files to find out.
+    failure_reason: str = ""
     profile_name: str = ""  # which analysis profile actually ran
     truncated: bool = False
     truncated_note: str = ""

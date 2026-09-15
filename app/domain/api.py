@@ -40,6 +40,9 @@ class DiagnosisView(BaseModel):
 
     # --- minimal system state: did it work, and who answered ---
     status: AnalysisStatus = AnalysisStatus.OK
+    #: Why there is no diagnosis, when there is none. Exposed because the
+    #: caller cannot open `database/` and should not have to ask.
+    failure_reason: str = ""
     meta: AnalysisMeta = AnalysisMeta()
 
 

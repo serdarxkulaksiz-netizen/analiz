@@ -21,7 +21,7 @@ from app.domain.findings import (
 )
 from app.evidence.profiles import Profile, ProfileRegistry
 from app.evidence.registry import EvidenceRegistry, evidence_name_for
-from app.evidence.rules import RuleContext
+from app.evidence.rules import RuleContext, RuleError
 from app.evidence.types import BuildLogEvidence
 from app.extraction.base import Extractor
 from app.source.models import RawScenario
@@ -59,12 +59,22 @@ class EvidenceExtractor(Extractor):
         trimmed: list[str] = []
         trimmed_labels: set[str] = set()
         excluded_from_store: list[str] = []
+        rule_errors: list[str] = []
         for evidence in evidences:
-            block = evidence.to_block()
+            name = type(evidence).evidence_name
+            try:
+                block = evidence.to_block()
+                was_trimmed = evidence.was_trimmed
+            except RuleError as exc:
+                # The rule failed, so this evidence has NO shaped content and
+                # therefore no block. The untrimmed original is not a fallback:
+                # it is the thing the profile said not to send.
+                rule_errors.append(f"{name}: {exc}")
+                block, was_trimmed = None, False
             if block is not None:
                 evidence_blocks.append(block)
-                if evidence.was_trimmed:
-                    trimmed.append(type(evidence).evidence_name)
+                if was_trimmed:
+                    trimmed.append(name)
                     trimmed_labels.add(block.label)
             if evidence.screenshot_path:
                 screenshot_paths.append(evidence.screenshot_path)
@@ -89,6 +99,7 @@ class EvidenceExtractor(Extractor):
             trimmed_labels,
             build_log=build_log,
             build_log_error=build_log_error,
+            rule_errors=rule_errors,
         )
 
         return Findings(
@@ -119,6 +130,7 @@ def _build_report(
     *,
     build_log: str = "",
     build_log_error: str = "",
+    rule_errors: list[str] | None = None,
 ) -> EvidenceReport:
     """Record what arrived and what reached the prompt.
 
@@ -146,6 +158,7 @@ def _build_report(
     return EvidenceReport(
         attachments=attachments,
         scenario_error=scenario.fetch_error,
+        rule_errors=rule_errors or [],
         job_log=JobLogReport(
             wanted=build_log_name in profile.wanted_evidence,
             chars=len(build_log),

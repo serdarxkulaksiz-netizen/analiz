@@ -21,6 +21,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.domain.api import build_run_view
 from app.evidence.planner import AttachmentPlanner
 from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry
@@ -71,10 +72,10 @@ _DIAGNOSIS = {
 }
 
 
-def _run_record(run_id: int, state: str) -> dict[str, Any]:
+def _run_record(run_id: int, state: str, job_id: int = 999) -> dict[str, Any]:
     return {
         "id": run_id,
-        "jobId": 886,
+        "jobId": job_id,
         "jobName": "nightly",
         "runResult": {"state": state, "totalScenarios": 100, "failScenarios": 1},
     }
@@ -88,14 +89,16 @@ def _zip_bytes(entries: dict[str, str]) -> bytes:
     return buffer.getvalue()
 
 
-def _visiumgo_transport(state: str, calls: list[str]) -> httpx.MockTransport:
+def _visiumgo_transport(
+    state: str, calls: list[str], *, job_id: int = 999, build_log: str = "BUILD ok"
+) -> httpx.MockTransport:
     """Serves the five VisiumGo endpoints the chain walks, in one place."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         calls.append(path)
         if path.endswith("/logs"):
-            return httpx.Response(200, content=_zip_bytes({"build.log": "BUILD ok"}))
+            return httpx.Response(200, content=_zip_bytes({"build.log": build_log}))
         if "/attachments/" in path:
             if path.endswith(".html"):
                 return httpx.Response(200, text="<html><body>tutar yok</body></html>")
@@ -105,9 +108,9 @@ def _visiumgo_transport(state: str, calls: list[str]) -> httpx.MockTransport:
         if path.endswith("/results"):
             return httpx.Response(200, json=_RESULTS)
         if path == "/api/runs":
-            return httpx.Response(200, json=[_run_record(149132, state)])
+            return httpx.Response(200, json=[_run_record(149132, state, job_id)])
         if path.startswith("/api/runs/"):
-            return httpx.Response(200, json=_run_record(int(path.rsplit("/", 1)[1]), state))
+            return httpx.Response(200, json=_run_record(int(path.rsplit("/", 1)[1]), state, job_id))
         return httpx.Response(404)
 
     return httpx.MockTransport(handler)
@@ -132,14 +135,20 @@ def _llm_transport(prompts: list[str]) -> httpx.MockTransport:
 
 
 def _service(
-    settings: Settings, state: str, calls: list[str], prompts: list[str]
+    settings: Settings,
+    state: str,
+    calls: list[str],
+    prompts: list[str],
+    *,
+    job_id: int = 999,
+    build_log: str = "BUILD ok",
 ) -> AnalyzerService:
     profiles = ProfileRegistry(settings.profiles_config_path)
     client = VisiumGoClient(
         settings.visiumgo_base_url,
         settings.visiumgo_token,
         settings.visiumgo_timeout_seconds,
-        transport=_visiumgo_transport(state, calls),
+        transport=_visiumgo_transport(state, calls, job_id=job_id, build_log=build_log),
     )
     return AnalyzerService(
         settings=settings,
@@ -166,10 +175,24 @@ def _service(
     )
 
 
-def _analyze(settings: Settings, *, job_id: str = "", run_id: str = "", state: str = "PASSED"):
+def _analyze(
+    settings: Settings,
+    *,
+    job_id: str = "",
+    run_id: str = "",
+    state: str = "PASSED",
+    build_log: str = "BUILD ok",
+):
     calls: list[str] = []
     prompts: list[str] = []
-    service = _service(settings, state, calls, prompts)
+    service = _service(
+        settings,
+        state,
+        calls,
+        prompts,
+        job_id=int(job_id) if job_id else 999,
+        build_log=build_log,
+    )
     analyzer_run_id = service.create_run("", job_id, "", run_id)
     asyncio.run(service.run_analysis(analyzer_run_id))
     run = service.get_run(analyzer_run_id)
@@ -228,3 +251,53 @@ def test_a_named_run_is_analyzed_even_while_it_is_still_running(settings: Settin
     assert "/api/runs" not in calls
     # ...and the row says the evidence may be incomplete.
     assert "RUNNING" in run["note"] and "eksik olabilir" in run["note"]
+
+
+def test_build_log_job_slices_the_log_per_scenario(settings: Settings) -> None:
+    """886 is a build-log job: no per-scenario files, one job log, sliced."""
+    log = (
+        "[gradle] derleme\n"
+        "beforeScenario:63 - [1]  > Scenario [Döviz alış başarısız] started\n"
+        "  adım 2 FAILED: #tutar bulunamadı\n"
+        "beforeScenario:63 - [2]  > Scenario [baska] started\n"
+        "  baska satır\n"
+    )
+    run, calls, prompts = _analyze(settings, job_id="886", build_log=log)
+
+    assert run["status"] == "done"
+    assert run["results"][0]["profile_name"] == "finart_regresyon"
+
+    # The profile wants no attachments, so none were requested.
+    assert not [c for c in calls if "/attachments/" in c]
+    # The log was fetched ONCE for the run, not once per scenario.
+    assert len([c for c in calls if c.endswith("/logs")]) == 1
+
+    (prompt,) = prompts
+    assert "#tutar bulunamadı" in prompt  # this scenario's section
+    assert "baska satır" not in prompt  # and not the next one's
+
+
+def test_a_log_the_rule_cannot_slice_fails_the_scenario_with_its_reason(
+    settings: Settings,
+) -> None:
+    """The instruction was "this scenario's section", and it could not be met.
+
+    Sending the untrimmed log instead is the opposite of that instruction,
+    repeated once per scenario. So the LLM is never asked, the row says
+    `analysis_failed`, and the reason travels all the way to the API — the
+    caller cannot open `database/` and should not have to.
+    """
+    run, calls, prompts = _analyze(settings, job_id="886", build_log="bambaska bir format\n")
+
+    assert run["status"] == "done"  # the run itself finished
+    assert prompts == []  # nothing was sent to the model
+
+    (diagnosis,) = run["results"]
+    assert diagnosis["status"] == "analysis_failed"
+    assert diagnosis["verdict"] is None  # no fabricated answer
+    assert "keep_scenario_section" in diagnosis["failure_reason"]
+    assert "> Scenario [Döviz alış başarısız] started" in diagnosis["failure_reason"]
+
+    # And the API view carries it too, not just the stored row.
+    view = build_run_view(run)
+    assert "keep_scenario_section" in view.results[0].failure_reason

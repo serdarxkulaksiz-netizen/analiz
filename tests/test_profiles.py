@@ -191,13 +191,15 @@ def test_findings_carry_the_profiles_prompt_template(tmp_path: Path) -> None:
     assert findings.profile_name == "sadece_buildlog"
 
 
-def test_report_shows_when_scenario_slicing_did_not_match(tmp_path: Path) -> None:
-    """The build-log risk, made visible instead of silent.
+def test_slicing_that_cannot_match_fails_the_scenario_instead_of_flooding_it(
+    tmp_path: Path,
+) -> None:
+    """The profile said "this scenario's section". It could not be found.
 
-    `keep_scenario_section` leaves the text untouched when its marker is not
-    found (deliberate: no silent loss). The cost is that the WHOLE job log then
-    goes into every scenario's prompt. The report says so: the block was not
-    trimmed and is as large as the raw log.
+    Sending the untrimmed job log is not a lesser version of that instruction —
+    it is the opposite of it, repeated once per scenario. So the evidence
+    produces NO block, and the reason is recorded where the scenario's own row
+    will carry it.
     """
     job_log = "\n".join(f"satır {i}" for i in range(200))
     config = {
@@ -221,12 +223,10 @@ def test_report_shows_when_scenario_slicing_did_not_match(tmp_path: Path) -> Non
 
     findings = extractor.extract(_scenario(), job_id="889", build_log=job_log)
 
-    block = next(
-        row for row in findings.evidence_report.blocks if row.label.startswith("build.log · ")
-    )
-    assert block.trimmed is False  # the marker was never found
-    assert block.chars == len(job_log)  # so the entire job log went to the prompt
-    assert findings.truncated is False
+    assert findings.evidence_blocks == []  # nothing reached the prompt
+    (error,) = findings.evidence_report.rule_errors
+    assert error.startswith("BuildLogEvidence: keep_scenario_section")
+    assert "> Scenario [Senaryo] started" in error  # the marker it looked for
 
 
 def test_report_shows_a_successful_scenario_slice(tmp_path: Path) -> None:

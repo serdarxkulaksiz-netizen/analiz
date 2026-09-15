@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.evidence.rules import RuleContext, build_rule
+from app.evidence.rules import RuleContext, RuleError, build_rule
 
 _CTX = RuleContext(scenario_name="Senaryo B")
 
@@ -38,12 +38,24 @@ def test_keep_scenario_section_slices_only_own_part() -> None:
     assert "Senaryo A" not in out and "Senaryo C" not in out
 
 
-def test_keep_scenario_section_without_match_keeps_text() -> None:
-    out = _apply(
-        {"type": "keep_scenario_section", "start": "Scenario: {scenario_name}"},
-        "hiç eşleşme yok",
-    )
-    assert out == "hiç eşleşme yok"  # never silently empties
+def test_keep_scenario_section_without_a_match_raises() -> None:
+    """A marker that does not match is a fact somebody has to see.
+
+    Returning the whole text looked harmless and was not: every scenario of the
+    run then carried the entire job log (measured: 38.889 characters × 40
+    scenarios) while `profiles.json` still read "sliced per scenario". The error
+    names the marker it looked for and how much it could not cut.
+    """
+    with pytest.raises(RuleError) as caught:
+        _apply(
+            {"type": "keep_scenario_section", "start": "Scenario: {scenario_name}"},
+            "hiç eşleşme yok",
+        )
+
+    message = str(caught.value)
+    assert "keep_scenario_section" in message  # which rule failed
+    assert "Scenario: Senaryo B" in message  # what it looked for
+    assert "karakter" in message  # and how much stayed unsliced
 
 
 # --- line rules --------------------------------------------------------------
