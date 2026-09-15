@@ -58,7 +58,6 @@ class EvidenceExtractor(Extractor):
         screenshot_paths: list[str] = []
         trimmed: list[str] = []
         trimmed_labels: set[str] = set()
-        excluded_from_store: list[str] = []
         rule_errors: list[str] = []
         for evidence in evidences:
             name = type(evidence).evidence_name
@@ -78,8 +77,6 @@ class EvidenceExtractor(Extractor):
                     trimmed_labels.add(block.label)
             if evidence.screenshot_path:
                 screenshot_paths.append(evidence.screenshot_path)
-            if not evidence.goes_to_store:
-                excluded_from_store.append(type(evidence).evidence_name)
 
         # An evidence the profile asked for but that never arrived produces NO
         # block: it leaves the prompt with its header. What was
@@ -110,7 +107,6 @@ class EvidenceExtractor(Extractor):
             profile_name=profile.name,
             prompt_template=profile.prompt,
             extra_context=profile.extra_context,
-            excluded_from_store=excluded_from_store,
             evidence_report=report,
             truncated=bool(trimmed),
             truncated_note=(
@@ -151,6 +147,7 @@ def _build_report(
             download_skipped=attachment.download_skipped,
             download_error=attachment.download_error,
             chars=len(attachment.content),
+            stored_path=attachment.stored_path,
         )
         for attachment in scenario.attachments
     ]

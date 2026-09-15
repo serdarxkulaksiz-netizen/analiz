@@ -25,7 +25,6 @@ from app.domain.findings import Findings
 from app.domain.result import AnalysisMeta, AnalysisResult, LLMAnalysis
 from app.evidence.planner import AttachmentPlanner
 from app.evidence.profiles import JOB_FAILED_PROFILE_NAME
-from app.evidence.registry import evidence_name_for
 from app.extraction.base import Extractor
 from app.llm.provider import LLMProvider
 from app.parsing.json_parser import try_json
@@ -378,26 +377,6 @@ class AnalyzerService:
             if attachment.mime_type.startswith("image/") and attachment.stored_path
         ]
 
-    def _storable_scenario(self, scenario: RawScenario, excluded: list[str]) -> dict[str, Any]:
-        """Raw scenario dump, honouring the profile's `evidence_to_store`.
-
-        Excluded evidence keeps its metadata (file name, type, stored path) so
-        the gap stays visible — only the inline content is dropped. The
-        downloaded file itself still lives under `database/attachments/`.
-
-        WHICH rows were emptied is answered by this row's own
-        `excluded_from_store` list, not by a marker on the attachment: a flag
-        written only onto dropped rows made its own absence mean something, and
-        an absent key is the worst place to keep a fact.
-        """
-        dump = scenario.model_dump(mode="json")
-        if not excluded:
-            return dump
-        for attachment, row in zip(scenario.attachments, dump.get("attachments", []), strict=True):
-            if evidence_name_for(attachment) in excluded:
-                row["content"] = ""
-        return dump
-
     async def _analyze_scenario(
         self,
         analyzer_run_id: str,
@@ -517,11 +496,18 @@ class AnalyzerService:
             truncated = findings.truncated if findings else False
             truncated_note = findings.truncated_note if findings else ""
             profile_name = findings.profile_name if findings else ""
-            excluded = findings.excluded_from_store if findings else []
 
-            # Full trace, part 1: raw evidence as received (raw_detail included).
-            # Written after extraction so the profile's `evidence_to_store` can
-            # be honoured; if extraction failed, nothing is excluded.
+            # Part 1: what extraction saw — which attachments arrived, which
+            # evidence class each mapped to, what reached the prompt, what got
+            # cut, and where each file landed on disk.
+            #
+            # The file CONTENTS are not copied in here. They used to be, so a
+            # text attachment was stored twice: once as a file under
+            # `database/attachments/` and again inside this row. Nothing ever
+            # read the copy back — this table is written and never queried — and
+            # the questions it was meant to answer are answered by the file
+            # itself (the raw evidence) and by the `prompts` row (what the model
+            # actually saw).
             self._repo.save(
                 settings.table_evidence,
                 result_id,
@@ -530,11 +516,7 @@ class AnalyzerService:
                     "analyzer_run_id": analyzer_run_id,
                     "scenario_name": scenario.scenario_name,
                     "screenshot_paths": self._screenshot_paths(scenario),
-                    "excluded_from_store": excluded,
-                    # What extraction saw: which attachments mapped to which
-                    # evidence, what reached the prompt, what got cut.
                     "evidence_report": (findings.evidence_report.model_dump() if findings else {}),
-                    "raw_scenario": self._storable_scenario(scenario, excluded),
                 },
             )
 

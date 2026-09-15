@@ -54,8 +54,13 @@ class AttachmentReport(BaseModel):
     #: Why the download failed, when it did. The third reason `chars` can be 0,
     #: and the only one that is a fault.
     download_error: str = ""
-    #: Size as received (before content rules).
+    #: Size of the text taken inline (before content rules). Always 0 for a
+    #: binary file: its bytes are on disk, not in this record.
     chars: int = 0
+    #: Where the downloaded file landed. This is the ONLY record of that now —
+    #: the raw scenario dump that used to carry it is gone, along with the
+    #: second copy of every text file it took with it.
+    stored_path: str = ""
 
 
 class BlockReport(BaseModel):
@@ -151,9 +156,6 @@ class Findings(BaseModel):
     extra_context: str = ""
     truncated: bool = False
     truncated_note: str = ""
-    # Evidence types the profile keeps out of the store: their inline content is
-    # dropped from the `evidence` row (metadata stays, so the gap is visible).
-    excluded_from_store: list[str] = []
     #: What extraction saw and did (observability, never sent to the LLM).
     evidence_report: EvidenceReport = EvidenceReport()
 

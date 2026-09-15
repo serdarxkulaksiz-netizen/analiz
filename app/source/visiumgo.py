@@ -372,7 +372,6 @@ class VisiumGoSource(Source):
             error_text=str(detail.get("errorText", "")),
             attachments=attachments,
             retry_info=str(record.get("retryNumber", "")),
-            raw_detail=detail,  # full raw response, persisted (save everything)
             fetch_error=fetch_error,
         )
 

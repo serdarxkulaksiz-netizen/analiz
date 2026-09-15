@@ -65,8 +65,6 @@ class RawScenario(BaseModel):
     """One failed scenario's raw evidence bundle.
 
     Any attachment may be absent; the analysis tolerates whatever arrived.
-    `raw_detail` is the FULL scenario-detail API response (properties and all),
-    persisted for observability — nothing from the source is thrown away.
 
     `error_text` arrives with the detail call and is kept here but goes nowhere
     else: it never reaches the prompt, because VisiumGo derives it from
@@ -81,7 +79,6 @@ class RawScenario(BaseModel):
     error_text: str = ""
     attachments: list[Attachment] = []
     retry_info: str = ""
-    raw_detail: dict = {}
     #: Why this scenario's DETAIL could not be read (no id in the `/results`
     #: row, 404, timeout). The scenario still travels — with the name the
     #: results row gave and no attachments — so one unreadable scenario costs

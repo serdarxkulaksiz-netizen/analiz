@@ -22,7 +22,6 @@ def test_findings_contract_fields_are_frozen() -> None:
         "extra_context",
         "truncated",
         "truncated_note",
-        "excluded_from_store",
         "evidence_report",
     }
 

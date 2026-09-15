@@ -202,16 +202,25 @@ async def test_job_id_path_refuses_to_choose_an_unfinished_run(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
-async def test_every_raw_response_is_kept(tmp_path: Path) -> None:
-    # Save-everything rule: run response, /results array and scenario detail
-    # all survive verbatim on the models.
+async def test_job_level_raw_responses_are_kept(tmp_path: Path) -> None:
+    """The two job-level responses survive verbatim; the per-scenario one does not.
+
+    A scenario's detail response used to be carried whole on the model for one
+    reason: to be written into the `evidence` row. Nothing read it back, and
+    that row no longer stores raw content at all — so it stopped travelling.
+    What the detail was FOR still travels: the attachment list it named, and
+    the error text PreCheck will read.
+    """
     source = _source(tmp_path / "attachments")
     job = await _job(source)
 
     assert job.raw_run_response["jobName"] == "nightly"
     assert job.raw_results_response == _RESULTS
+
     scenario = job.failed_scenarios[0]
-    assert scenario.raw_detail["properties"]["retryNumber"] == "0"
+    assert not hasattr(scenario, "raw_detail")
+    assert scenario.error_text.startswith("AssertionError")
+    assert len(scenario.attachments) == 5
 
 
 @pytest.mark.asyncio
