@@ -184,13 +184,17 @@ def test_profile_rules_are_applied_to_content() -> None:
     # A rule on HtmlEvidence must shape only that evidence's content.
     profile = _profile(
         ["TestLogEvidence", "HtmlEvidence"],
-        rules={"HtmlEvidence": [{"type": "max_chars", "n": 4}]},
+        rules={"HtmlEvidence": [{"type": "strip_tags", "tags": ["script"]}]},
     )
-    evidences = EvidenceRegistry().build_for(_scenario(_web_attachments()), profile)
+    attachments = [
+        _att("test", ".log", content="steps"),
+        _att("browser.default", ".html", mime="text/html", content="<b>x</b><script>y</script>"),
+    ]
+    evidences = EvidenceRegistry().build_for(_scenario(attachments), profile)
     by_name = {type(e).evidence_name: e for e in evidences}
 
     assert by_name["HtmlEvidence"].was_trimmed is True
-    assert by_name["HtmlEvidence"].to_block().content.startswith("<htm")
+    assert by_name["HtmlEvidence"].to_block().content == "<b>x</b>"
     # test.log has no rules -> untouched
     assert by_name["TestLogEvidence"].was_trimmed is False
     assert by_name["TestLogEvidence"].to_block().content == "steps"

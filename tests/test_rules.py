@@ -58,32 +58,12 @@ def test_keep_scenario_section_without_a_match_raises() -> None:
     assert "karakter" in message  # and how much stayed unsliced
 
 
-# --- line rules --------------------------------------------------------------
-
-
-def test_keep_last_and_first_lines() -> None:
-    text = "\n".join(str(i) for i in range(10))
-    assert _apply({"type": "keep_last_lines", "n": 3}, text) == "7\n8\n9"
-    assert _apply({"type": "keep_first_lines", "n": 2}, text) == "0\n1"
-    # Shorter than n -> untouched
-    assert _apply({"type": "keep_last_lines", "n": 99}, text) == text
-
-
-def test_drop_and_keep_matching() -> None:
-    text = "INFO ok\nDEBUG noise\nERROR patladı"
-    assert _apply({"type": "drop_matching", "patterns": ["DEBUG"]}, text) == (
-        "INFO ok\nERROR patladı"
-    )
-    assert _apply({"type": "keep_matching", "patterns": ["ERROR"]}, text) == ("ERROR patladı")
-
-
-def test_max_chars_and_collapse_whitespace() -> None:
-    assert _apply({"type": "max_chars", "n": 5}, "0123456789").startswith("01234")
-    assert _apply({"type": "max_chars", "n": 99}, "kısa") == "kısa"
+def test_collapse_whitespace_squeezes_indentation() -> None:
+    """Markup dumps are mostly indentation; it is not evidence."""
     assert _apply({"type": "collapse_whitespace"}, "a      b\n\n\n\nc") == "a b\n\nc"
 
 
-# --- markup rules (job D) ----------------------------------------------------
+# --- markup rules ----------------------------------------------------
 
 _HTML = """<html><body>
 <script>var x = 1; if (a<b) {}</script>
@@ -107,30 +87,6 @@ def test_strip_tags_handles_void_tags_without_eating_rest() -> None:
     assert "a" in out and "b" in out and "<br>" not in out
 
 
-def test_select_nth_takes_first_linearlayout_with_subtree() -> None:
-    # Job D: "4 LinearLayout gelecek, ilkini al"
-    out = _apply({"type": "select_nth", "match": {"tag": "LinearLayout"}, "index": 0}, _HTML)
-    assert "Tamam" in out  # first one's subtree
-    assert "İptal" not in out and "second" not in out
-    assert "<script>" not in out
-
-
-def test_select_nth_second_element() -> None:
-    out = _apply({"type": "select_nth", "match": {"tag": "LinearLayout"}, "index": 1}, _HTML)
-    assert "İptal" in out and "Tamam" not in out
-
-
-def test_select_nth_by_class() -> None:
-    html = '<div class="a">bir</div><div class="target">iki</div>'
-    out = _apply({"type": "select_nth", "match": {"tag": "div", "class": "target"}}, html)
-    assert "iki" in out and "bir" not in out
-
-
-def test_select_nth_without_match_keeps_text() -> None:
-    out = _apply({"type": "select_nth", "match": {"tag": "yoktur"}}, _HTML)
-    assert out == _HTML
-
-
 # --- registry / fail-fast ----------------------------------------------------
 
 
@@ -141,16 +97,19 @@ def test_unknown_rule_type_raises() -> None:
 
 def test_bad_params_raise() -> None:
     with pytest.raises(ValueError, match="Invalid config"):
-        build_rule({"type": "keep_last_lines"})  # missing n
+        build_rule({"type": "strip_tags"})  # missing tags
     with pytest.raises(ValueError, match="Invalid config"):
-        build_rule({"type": "drop_matching", "patterns": ["[unclosed"]})  # bad regex
+        build_rule({"type": "strip_tags", "tags": ["script"], "n": 5})  # unknown param
 
 
 def test_rules_apply_in_order() -> None:
-    # strip script first, then take the first LinearLayout
-    text = _apply({"type": "strip_tags", "tags": ["script", "style"]}, _HTML)
-    out = _apply({"type": "select_nth", "match": {"tag": "LinearLayout"}, "index": 0}, text)
-    assert "Tamam" in out and "İptal" not in out
+    """The profile lists rules in order, and order changes the result."""
+    stripped = _apply({"type": "strip_tags", "tags": ["script", "style"]}, _HTML)
+    out = _apply({"type": "collapse_whitespace"}, stripped)
+
+    assert "var x = 1" not in out  # the script went first
+    assert "Tamam" in out and "İptal" in out  # the content survived
+    assert "\n\n\n" not in out  # and the holes it left were squeezed
 
 
 def test_rule_context_rejects_unknown_fields() -> None:

@@ -10,13 +10,21 @@ behaviour = a config row only, no code.
 Two ground rules:
   - Rules only shape what goes to the LLM. The full raw content is still
     written to `database/` (save-everything).
-  - A rule that finds nothing leaves the text untouched — never silently
-    empties the evidence.
+  - A rule that cannot do what it was asked RAISES (`RuleError`). It does not
+    quietly return the input: "I could not slice this" and "here is the whole
+    thing" are different answers, and the config only asked for one of them.
 
-HTML rules use the standard library's `html.parser` (no third-party
-dependency): enough for "drop these tags with their subtree" and "take the
-Nth <tag>". Compound CSS selectors would need a real parser — deliberately out
-of scope for now.
+The markup rule uses the standard library's `html.parser` (no third-party
+dependency): enough for "drop these tags with their subtree". Anything that
+needs real selectors would need a real parser — deliberately out of scope.
+
+There are three rules, and each one is used by a profile today. Six others
+shipped with this engine on day one — line pickers, pattern filters, a size
+cap, an Nth-element selector — written for job shapes that had not been seen
+yet. None was ever referenced by `profiles.json`, so they were removed: a rule
+nobody runs is a rule nobody notices is wrong (one of them repeated, unseen,
+the same silent-fallback bug that had to be fixed in `keep_scenario_section`).
+Adding one back is a class and a registry row.
 """
 
 import re
@@ -133,64 +141,6 @@ class KeepScenarioSection(Rule):
         return rest
 
 
-class KeepLastLines(Rule):
-    """Keep the last N lines (logs put the failure at the end)."""
-
-    rule_type = "keep_last_lines"
-
-    def __init__(self, n: int) -> None:
-        self._n = int(n)
-
-    def apply(self, text: str, ctx: RuleContext) -> str:
-        lines = text.splitlines()
-        if len(lines) <= self._n:
-            return text
-        return "\n".join(lines[-self._n :])
-
-
-class KeepFirstLines(Rule):
-    """Keep the first N lines."""
-
-    rule_type = "keep_first_lines"
-
-    def __init__(self, n: int) -> None:
-        self._n = int(n)
-
-    def apply(self, text: str, ctx: RuleContext) -> str:
-        lines = text.splitlines()
-        if len(lines) <= self._n:
-            return text
-        return "\n".join(lines[: self._n])
-
-
-class DropMatching(Rule):
-    """Drop lines matching any of the given regex patterns (noise removal)."""
-
-    rule_type = "drop_matching"
-
-    def __init__(self, patterns: list[str]) -> None:
-        self._patterns = [re.compile(p) for p in patterns]
-
-    def apply(self, text: str, ctx: RuleContext) -> str:
-        kept = [
-            line for line in text.splitlines() if not any(p.search(line) for p in self._patterns)
-        ]
-        return "\n".join(kept)
-
-
-class KeepMatching(Rule):
-    """Keep only lines matching any of the given regex patterns."""
-
-    rule_type = "keep_matching"
-
-    def __init__(self, patterns: list[str]) -> None:
-        self._patterns = [re.compile(p) for p in patterns]
-
-    def apply(self, text: str, ctx: RuleContext) -> str:
-        kept = [line for line in text.splitlines() if any(p.search(line) for p in self._patterns)]
-        return "\n".join(kept) if kept else text
-
-
 class CollapseWhitespace(Rule):
     """Squeeze runs of whitespace (markup dumps are mostly indentation)."""
 
@@ -198,20 +148,6 @@ class CollapseWhitespace(Rule):
 
     def apply(self, text: str, ctx: RuleContext) -> str:
         return re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", text)).strip()
-
-
-class MaxChars(Rule):
-    """Hard character cap — the last-resort size guard."""
-
-    rule_type = "max_chars"
-
-    def __init__(self, n: int) -> None:
-        self._n = int(n)
-
-    def apply(self, text: str, ctx: RuleContext) -> str:
-        if len(text) <= self._n:
-            return text
-        return text[: self._n] + "\n…[kesildi]"
 
 
 # --- markup rules (stdlib html.parser, no dependency) ------------------------
@@ -287,102 +223,14 @@ class StripTags(Rule):
         return "".join(parser.out)
 
 
-class _NthSelector(HTMLParser):
-    """Captures the Nth element matching tag (+ optional class) with subtree."""
-
-    def __init__(self, tag: str, class_name: str, index: int) -> None:
-        super().__init__(convert_charrefs=False)
-        self._tag = tag
-        self._class = class_name
-        self._index = index
-        self._seen = -1
-        self._depth = 0  # >0 while capturing the selected subtree
-        self.out: list[str] = []
-
-    def _matches(self, tag: str, attrs: Any) -> bool:
-        if tag != self._tag:
-            return False
-        if not self._class:
-            return True
-        for name, value in attrs:
-            if name == "class" and value:
-                return self._class in value.split()
-        return False
-
-    def handle_starttag(self, tag: str, attrs: Any) -> None:
-        if self._depth:
-            if tag == self._tag and tag not in _VOID_TAGS:
-                self._depth += 1
-            self.out.append(self.get_starttag_text() or f"<{tag}>")
-            return
-        if self.out:  # already captured the wanted element
-            return
-        if self._matches(tag, attrs):
-            self._seen += 1
-            if self._seen == self._index:
-                self._depth = 1
-                self.out.append(self.get_starttag_text() or f"<{tag}>")
-
-    def handle_startendtag(self, tag: str, attrs: Any) -> None:
-        if self._depth:
-            self.out.append(self.get_starttag_text() or f"<{tag}/>")
-
-    def handle_endtag(self, tag: str) -> None:
-        if not self._depth:
-            return
-        self.out.append(f"</{tag}>")
-        if tag == self._tag:
-            self._depth -= 1
-
-    def handle_data(self, data: str) -> None:
-        if self._depth:
-            self.out.append(data)
-
-    def handle_comment(self, data: str) -> None:
-        if self._depth:
-            self.out.append(f"<!--{data}-->")
-
-
-class SelectNth(Rule):
-    """Keep only the Nth element of a given tag (0-based), with its subtree.
-
-    Example: four `<LinearLayout>` blocks, take the first —
-    `{"type": "select_nth", "match": {"tag": "LinearLayout"}, "index": 0}`.
-    Tag names are matched case-insensitively (the parser lowercases them).
-    If nothing matches, the text is left untouched.
-    """
-
-    rule_type = "select_nth"
-
-    def __init__(self, match: dict[str, str], index: int = 0) -> None:
-        self._tag = str(match.get("tag", "")).lower()
-        self._class = str(match.get("class", ""))
-        self._index = int(index)
-        if not self._tag:
-            raise ValueError("select_nth requires match.tag")
-
-    def apply(self, text: str, ctx: RuleContext) -> str:
-        parser = _NthSelector(self._tag, self._class, self._index)
-        parser.feed(text)
-        parser.close()
-        selected = "".join(parser.out)
-        return selected if selected.strip() else text
-
-
 # --- registry ----------------------------------------------------------------
 
 RULE_REGISTRY: dict[str, type[Rule]] = {
     rule.rule_type: rule
     for rule in (
         KeepScenarioSection,
-        KeepLastLines,
-        KeepFirstLines,
-        DropMatching,
-        KeepMatching,
         CollapseWhitespace,
-        MaxChars,
         StripTags,
-        SelectNth,
     )
 }
 
