@@ -41,19 +41,28 @@ from app.source.models import RawScenario
 STATE_PROFILE_OVERRIDE: dict[str, str] = {RunState.FAILED.value: JOB_FAILED_PROFILE_NAME}
 
 
-def _skipped_reason(prompt: str, findings: Findings | None, no_evidence: bool) -> str:
+def _skipped_reason(
+    prompt: str, findings: Findings | None, no_evidence: bool, answered_by: str
+) -> str:
     """Why no prompt was built for this scenario ("" when one was).
 
     A `prompts` row whose `prompt` is empty used to say nothing about why, so
     "the profile sends nothing", "the evidence never arrived" and "extraction
     crashed" all looked the same: an empty file.
+
+    Every branch is READ from what happened, never inferred. "PreCheck answered"
+    comes from `answered_by` and not from "there was no prompt and no evidence
+    gap" — which was also true when building the prompt itself crashed, and the
+    row then blamed a PreCheck rule that had never run.
     """
     if prompt:
         return ""
+    if answered_by == "precheck":
+        return "precheck kuralı cevapladı — LLM çağrılmadı"
     if findings is None:
         return "kanıt çıkarımı hata verdi — prompt kurulamadı"
     if not no_evidence:
-        return "precheck kuralı cevapladı — LLM çağrılmadı"
+        return "prompt kurulamadı — hata ayrıntısı llm_responses.raw_response satırında"
 
     report = findings.evidence_report
     if report.scenario_error:
@@ -490,7 +499,9 @@ class AnalyzerService:
                     # Why there is no prompt, when there is none. An empty
                     # `prompt` with no reason next to it is the one thing this
                     # row must never be: unreadable.
-                    "skipped_reason": _skipped_reason(prompt, findings, skipped_no_evidence),
+                    "skipped_reason": _skipped_reason(
+                        prompt, findings, skipped_no_evidence, meta.answered_by
+                    ),
                     "request": llm_request,
                 },
             )
