@@ -603,3 +603,53 @@ async def test_a_named_run_resolves_even_while_it_is_still_running(tmp_path: Pat
     assert summary.run_id == "149140"
     assert summary.state == "RUNNING"  # reported, not refused
     assert summary.job_id == "886"  # taken from the run's own response
+
+
+@pytest.mark.asyncio
+async def test_a_response_of_the_wrong_shape_says_what_arrived(tmp_path: Path) -> None:
+    """The failure has to name the endpoint AND the body, or it names nothing.
+
+    An SSO login page, an error envelope, one object where an array was
+    promised — each of these used to surface deep in the chain as
+    `AttributeError: 'str' object has no attribute 'get'`, and the run note
+    repeated that verbatim. Nobody can act on it.
+    """
+
+    def wrong_type(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/runs":
+            return httpx.Response(200, json={"id": 1})  # object, not array
+        return _handler(request)
+
+    source = _source_with(tmp_path, wrong_type)
+    with pytest.raises(ValueError, match="dizi bekleniyordu"):
+        await source.resolve_run("job-42")
+
+    def not_json(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, text="<html>SSO login</html>", headers={"content-type": "text/html"}
+        )
+
+    source = _source_with(tmp_path, not_json)
+    with pytest.raises(ValueError, match="cevap JSON değil") as caught:
+        await source.resolve_run("job-42")
+    assert "SSO login" in str(caught.value)  # the body itself, not just its shape
+
+    def bad_rows(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/results"):
+            return httpx.Response(200, json=["bu bir nesne değil"])
+        return _handler(request)
+
+    source = _source_with(tmp_path, bad_rows)
+    run = await source.resolve_run("job-42")
+    with pytest.raises(ValueError, match="elemanları nesne olmalıydı"):
+        await source.fetch_job(run, _Plan())
+
+
+def _source_with(tmp_path: Path, handler) -> VisiumGoSource:  # noqa: ANN001 — test helper
+    client = VisiumGoClient(
+        base_url="https://visiumgo.test.local",
+        token="eyJmock",
+        timeout_seconds=5.0,
+        transport=httpx.MockTransport(handler),
+    )
+    return VisiumGoSource(client, tmp_path / "attachments", tmp_path / "build_logs")

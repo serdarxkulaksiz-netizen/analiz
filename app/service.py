@@ -290,7 +290,6 @@ class AnalyzerService:
         job = await self._source.fetch_job(summary, plan)
         self._update_run(
             run,
-            run_id=summary.run_id,
             job_name=summary.job_name,
             # Full raw traces (save-everything rule). `runResult` is inside the
             # run response; storing it again as its own column put the same
@@ -310,9 +309,29 @@ class AnalyzerService:
             total_scenario_count=job.total_scenario_count,
         )
 
+        # Everything the run has to say about ITSELF, collected once. Both
+        # exits below end with these plus whatever they add — the early exit
+        # used to write its own note and silently drop the rest, so a RUNNING
+        # run with no failures yet reported "analiz edilecek hata yok" and no
+        # warning at all. That reading is exactly backwards: the run had not
+        # finished, so "no errors" was not a result, it was a snapshot.
+        run_notes = [
+            note
+            for note in (
+                summary.note,
+                running_note,
+                _forced_note(forced_profile),
+                _total_scenarios_note(summary.run_result),
+            )
+            if note
+        ]
+
         if not job.failed_scenarios:
-            notes = [note for note in (summary.note, "analiz edilecek hata yok") if note]
-            self._update_run(run, status=RunStatus.DONE.value, note=" · ".join(notes))
+            self._update_run(
+                run,
+                status=RunStatus.DONE.value,
+                note=" · ".join([*run_notes, "analiz edilecek hata yok"]),
+            )
             return
 
         semaphore = asyncio.Semaphore(settings.max_concurrency)
@@ -338,16 +357,7 @@ class AnalyzerService:
         escaped = [o for o in outcomes if isinstance(o, BaseException)]
 
         run = self._repo.get(settings.table_runs, run["analyzer_run_id"]) or run
-        notes = [
-            note
-            for note in (
-                summary.note,
-                running_note,
-                _forced_note(forced_profile),
-                _total_scenarios_note(summary.run_result),
-            )
-            if note
-        ]
+        notes = list(run_notes)
         if escaped:
             kinds = ", ".join(sorted({f"{type(e).__name__}: {e}" for e in escaped}))
             notes.append(
@@ -415,8 +425,15 @@ class AnalyzerService:
                     meta = AnalysisMeta(analyzed_at=_utcnow_iso())
                 else:
                     prompt = self._builder.build(findings)
-                    prompt_template = findings.prompt_template
-                    prompt_version = self._builder.version_of(prompt_template)
+                    # Stamped BEFORE the call, not after it. Built after, a
+                    # failed call left the row with no template and no time at
+                    # all — and "which prompt version produced this" is the one
+                    # question the stamp exists to answer.
+                    meta = AnalysisMeta(
+                        prompt_template=findings.prompt_template,
+                        prompt_version=self._builder.version_of(findings.prompt_template),
+                        analyzed_at=_utcnow_iso(),
+                    )
                     # Size management happened upstream: each
                     # Evidence applied its profile's content rules, and any cut
                     # is flagged on the Findings. There is no token threshold —
@@ -430,15 +447,14 @@ class AnalyzerService:
                     # providers that don't populate it); parse the diagnosis
                     # from the message content only.
                     raw_response = response.raw_response or response.content
-                    meta = AnalysisMeta(
-                        answered_by="llm",
-                        llm_model=response.model,
-                        prompt_template=prompt_template,
-                        prompt_version=prompt_version,
-                        input_tokens=response.input_tokens,
-                        output_tokens=response.output_tokens,
-                        duration_ms=response.duration_ms,
-                        analyzed_at=_utcnow_iso(),
+                    meta = meta.model_copy(
+                        update={
+                            "answered_by": "llm",
+                            "llm_model": response.model,
+                            "input_tokens": response.input_tokens,
+                            "output_tokens": response.output_tokens,
+                            "duration_ms": response.duration_ms,
+                        }
                     )
                     parsed = try_json(response.content)
                     if parsed is not None:

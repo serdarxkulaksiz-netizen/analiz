@@ -6,7 +6,12 @@ what is missing.
 """
 
 from app.domain.findings import AttachmentReport, EvidenceReport, Findings, JobLogReport
-from app.service import _running_note, _skipped_reason, _total_scenarios_note
+from app.service import (
+    _forced_note,
+    _running_note,
+    _skipped_reason,
+    _total_scenarios_note,
+)
 
 
 def _findings(**overrides: object) -> Findings:
@@ -82,3 +87,21 @@ def test_an_unfinished_run_says_so_on_the_row() -> None:
     assert _running_note("PASSED") == ""
     assert _running_note("FAILED") == ""
     assert _running_note("") == ""
+
+
+def test_a_run_with_no_failures_still_says_what_it_has_to_say() -> None:
+    """The early exit used to write its own note and drop every other one.
+
+    The case that matters: a RUNNING run with no failed scenarios YET reported
+    "analiz edilecek hata yok" and no warning at all. That reading is backwards
+    — the run had not finished, so "no errors" was not a result, it was a
+    snapshot of an unfinished run.
+    """
+    notes = [
+        n for n in (_running_note("RUNNING"), _forced_note(""), _total_scenarios_note({})) if n
+    ]
+    line = " · ".join([*notes, "analiz edilecek hata yok"])
+
+    assert "RUNNING" in line  # the warning survives
+    assert "totalScenarios gelmedi" in line  # and so does the other one
+    assert line.endswith("analiz edilecek hata yok")

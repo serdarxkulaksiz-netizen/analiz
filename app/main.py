@@ -18,7 +18,7 @@ from collections.abc import Callable, Mapping
 from typing import TypeVar
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.config import Settings, get_settings
 from app.domain.api import RunView, build_run_view
@@ -45,9 +45,21 @@ class AnalyzeRequest(BaseModel):
 
     `parameter1`/`parameter2` are reserved keys: they are recorded on the run
     and returned by GET, and they influence NOTHING — not the profile, not the
-    prompt. Either `job_id` or `run_id` must be given (run_id
-    wins if both are present).
+    prompt. Either `job_id` or `run_id` must be given (run_id wins for WHICH
+    run; job_id still chooses the profile).
+
+    `extra="forbid"`: a key this body does not define is a typo, and a typo
+    that is silently dropped is the worst kind. Every other config surface in
+    this system already fails on one — `.env`, the profiles file, the prompt
+    templates — and this was the only door left open.
+
+    `coerce_numbers_to_str`: VisiumGo reports `jobId` and run ids as NUMBERS.
+    A caller copying one out of a VisiumGo response sends `886`, not `"886"`,
+    and used to get a 422 for it. Ids are text here because they end up in URLs
+    and config keys; where they came from is not the caller's problem.
     """
+
+    model_config = ConfigDict(extra="forbid", coerce_numbers_to_str=True)
 
     # No invented default: an absent key stays absent instead of being
     # recorded (and returned by GET) as the literal string "default".

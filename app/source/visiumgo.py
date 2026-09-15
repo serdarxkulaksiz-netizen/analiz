@@ -47,7 +47,48 @@ _BUILD_LOG_ERROR_MAX_CHARS = 500
 #: the whole step off and recorded no reason: "this job has no build log" and
 #: "nobody filled in the config" looked identical. Whether the log is fetched
 #: is now a PROFILE decision (`BuildLogEvidence`), which is where it belongs.
+PATH_RUN = "/api/runs/{run_id}"
+PATH_RUNS = "/api/runs"
+PATH_RESULTS = "/api/runs/{run_id}/results"
 PATH_LOGS = "/api/runs/{run_id}/logs"
+
+#: How much of an unexpected response body is quoted back in the error. Long
+#: enough to recognise a login page or an error envelope, short enough not to
+#: paste a megabyte into a run note.
+_SHAPE_ERROR_SAMPLE = 200
+
+
+def _as_list(value: Any, path: str) -> list[dict[str, Any]]:
+    """The endpoint promises an array of objects. Say so when it is not.
+
+    An HTML login page, an error envelope, a single object instead of a list —
+    each of these used to surface deep inside the chain as
+    `AttributeError: 'str' object has no attribute 'get'`, with the body that
+    caused it nowhere to be seen.
+    """
+    if not isinstance(value, list):
+        raise ValueError(
+            f"{path}: dizi bekleniyordu, {type(value).__name__} geldi — "
+            f"gelen: {str(value)[:_SHAPE_ERROR_SAMPLE]}"
+        )
+    bad = next((row for row in value if not isinstance(row, dict)), None)
+    if bad is not None:
+        raise ValueError(
+            f"{path}: dizinin elemanları nesne olmalıydı, {type(bad).__name__} var — "
+            f"gelen: {str(value)[:_SHAPE_ERROR_SAMPLE]}"
+        )
+    return value
+
+
+def _as_dict(value: Any, path: str) -> dict[str, Any]:
+    """The endpoint promises one object. Say so when it is not."""
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"{path}: nesne bekleniyordu, {type(value).__name__} geldi — "
+            f"gelen: {str(value)[:_SHAPE_ERROR_SAMPLE]}"
+        )
+    return value
+
 
 #: Named in a scenario's `fetch_error`, so the reason says which call failed.
 PATH_SCENARIO_DETAIL = "/api/runs/{run_id}/results/{scenario_id}"
@@ -127,11 +168,12 @@ class VisiumGoSource(Source):
         runResult{state, totalScenarios, failScenarios, passScenarios,
         unstableScenarios}}`.
         """
-        return await self._client.get_json(f"/api/runs/{encode_segment(run_id)}")
+        path = PATH_RUN.format(run_id=encode_segment(run_id))
+        return _as_dict(await self._client.get_json(path), path)
 
     async def list_runs(self, job_id: str) -> list[dict[str, Any]]:
         """`GET /api/runs?jobId=` — a job's runs, each in the `get_run` shape."""
-        return await self._client.get_json("/api/runs", params={"jobId": job_id})
+        return _as_list(await self._client.get_json(PATH_RUNS, params={"jobId": job_id}), PATH_RUNS)
 
     async def get_results(self, run_id: str) -> list[dict[str, Any]]:
         """`GET /api/runs/{run_id}/results` — the run's scenarios.
@@ -140,7 +182,8 @@ class VisiumGoSource(Source):
         retryNumber, dateTime, featureName, feature, jobStep}`. `resultType` is
         `FAILED` | `PASSED` | `UNSTABLE`; every scenario appears once.
         """
-        return await self._client.get_json(f"/api/runs/{encode_segment(run_id)}/results")
+        path = PATH_RESULTS.format(run_id=encode_segment(run_id))
+        return _as_list(await self._client.get_json(path), path)
 
     async def get_scenario_detail(self, run_id: str, scenario_id: str) -> dict[str, Any]:
         """`GET /api/runs/{run_id}/results/{scenario_id}` — one scenario.
@@ -151,9 +194,10 @@ class VisiumGoSource(Source):
         `properties`. `stepResults` is deliberately NOT read: VisiumGo derives
         it from `test.log`, which we send whole.
         """
-        return await self._client.get_json(
-            f"/api/runs/{encode_segment(run_id)}/results/{encode_segment(scenario_id)}"
+        path = PATH_SCENARIO_DETAIL.format(
+            run_id=encode_segment(run_id), scenario_id=encode_segment(scenario_id)
         )
+        return _as_dict(await self._client.get_json(path), path)
 
     async def fetch_build_log(self, run_id: str) -> tuple[str, str]:
         """Job-level build log, served by VisiumGo.
