@@ -7,9 +7,8 @@ The file is named the way VisiumGo's UI names it (`browser.default.html`,
 scenario folder is what keeps those names apart: every scenario of a run
 produces its own `browser.default.html`.
 
-MockSource writes here too. A mock that only pretends to save files would leave
-the "did it actually land on disk?" question untestable on the machine where
-all development happens.
+Every downloaded attachment goes through here, so "did it actually land on
+disk?" has one answer and one naming rule.
 """
 
 from pathlib import Path

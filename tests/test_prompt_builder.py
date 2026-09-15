@@ -30,7 +30,7 @@ def _builder(settings: Settings) -> PromptBuilder:
 def test_prompt_contains_evidence_and_constraints(settings: Settings) -> None:
     prompt = _builder(settings).build(_sample_findings())
 
-    # identity line (MockLLMProvider relies on the Senaryo: prefix)
+    # identity line
     assert "Senaryo: Login - geçerli kullanıcı" in prompt
     # The evidence itself, under a header that names its file.
     assert "=== test.log · koşum logu ===" in prompt

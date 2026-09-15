@@ -15,13 +15,24 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    """Mock-everything settings writing to a temporary database dir."""
+    """Real providers, temporary database dir, no `.env` on the machine read.
+
+    Nothing here reaches the network: the tests that touch a provider inject a
+    fake httpx transport into it, so the real client code runs against a fake
+    wire instead of a fake client.
+    """
     return Settings(
         _env_file=None,
         database_dir=tmp_path / "database",
-        source_provider="mock",
-        llm_provider="mock",
+        source_provider="visiumgo",
+        llm_provider="openai_compatible",
         precheck_provider="noop",
+        # Addresses that exist only so the real clients can be constructed.
+        # Nothing contacts them: a test that needs an answer injects a fake
+        # httpx transport, and the rest never issues a request at all.
+        visiumgo_base_url="https://visiumgo.test.local",
+        visiumgo_token="eyJtest",
+        llm_base_url="https://llm.test.local",
         prompts_dir=PROJECT_ROOT / "config" / "prompts",
         profiles_config_path=PROJECT_ROOT / "config" / "profiles.json",
         max_concurrency=2,

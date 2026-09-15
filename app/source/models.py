@@ -1,8 +1,8 @@
 """Raw job data models — the Source layer's output.
 
-Attachment-based, source-agnostic shape: both MockSource and VisiumGoSource
-produce the SAME `RawScenario`, so the extraction ring is identical regardless
-of origin (the mock/real difference lives entirely in the Source).
+Attachment-based, source-agnostic shape: the Source layer is the only place
+that knows VisiumGo's response shape, so everything downstream works from
+`RawScenario` alone.
 
 Everything the source received is kept (user rule: save everything for now):
 `raw_detail` carries the scenario-detail response untouched, and

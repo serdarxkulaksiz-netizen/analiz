@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     table_llm_responses: str = "llm_responses"  # raw LLM answer per scenario
 
     # --- source / Halka 1 — value = registry key ---
-    source_provider: str = "mock"  # mock | visiumgo
+    source_provider: str = "visiumgo"  # the only source there is
 
     # --- VisiumGo connection ; real source) — from.env, never code ---
     visiumgo_base_url: str = ""  # e.g. https://visiumgo.fintek.local
@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     confidence_buckets: list[float] = [0.1, 0.25, 0.5, 0.75, 0.99]
 
     # --- LLM / Halka 4 — value = registry key ---
-    llm_provider: str = "mock"  # mock | openai_compatible
+    llm_provider: str = "openai_compatible"  # the only provider there is
     # Base URL + path are separate so switching to a direct LLM server later is
     # a single config change (no code). Full URL = base_url + endpoint_path.
     llm_base_url: str = ""  # e.g. https://test-automation-ai-api.apps.nonfin-vip.zke.zb

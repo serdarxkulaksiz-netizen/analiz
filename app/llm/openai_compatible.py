@@ -38,7 +38,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not base_url:
-            raise ValueError("LLM_BASE_URL is empty — set it in .env (or use LLM_PROVIDER=mock).")
+            raise ValueError("LLM_BASE_URL is empty — set it in .env.")
         self._url = base_url.rstrip("/") + endpoint_path
         self._api_key = api_key
         self._model = model  # kept for meta only; not sent in the body

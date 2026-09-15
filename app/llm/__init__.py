@@ -1,1 +1,1 @@
-"""LLM layer: provider interface + OpenAI-compatible and mock implementations."""
+"""LLM layer: provider interface + the OpenAI-compatible implementation."""

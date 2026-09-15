@@ -71,7 +71,7 @@ async def test_score_counts_matching_verdicts(
 ) -> None:
     monkeypatch.setitem(
         __import__("evals.runner", fromlist=["LLM_REGISTRY"]).LLM_REGISTRY,
-        "mock",
+        "openai_compatible",
         lambda s: FixedVerdictLLM("test_maintenance"),
     )
     cases_dir = _write_cases(

@@ -5,9 +5,13 @@ Endpoints (names frozen):
   GET  /analyze/visiumgo/{analyzer_run_id} -> status + finished diagnoses (from disk)
 
 Every pluggable backend (source, LLM, precheck) is chosen from config via a
-REGISTRY (name -> factory) and injected here — no `if provider ==` branching
-. Extraction is a single source-agnostic implementation. Switching
-mock -> real VisiumGo is a `.env` change, not code.
+REGISTRY (name -> factory) and injected here — no `if provider ==` branching.
+Extraction is a single source-agnostic implementation. A second backend is a
+row in a registry, not a code change.
+
+There is no fake backend: the system talks to the real VisiumGo and the real
+model, or it does not run. A mock mode meant every local result carried
+invented data that looked exactly like a real one.
 """
 
 from collections.abc import Callable, Mapping
@@ -23,7 +27,6 @@ from app.evidence.planner import AttachmentPlanner
 from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry, known_evidence_names
 from app.extraction.evidence_extractor import EvidenceExtractor
-from app.llm.mock import MockLLMProvider
 from app.llm.openai_compatible import OpenAICompatibleLLMProvider
 from app.llm.provider import LLMProvider
 from app.persistence.file_repository import FileRepository
@@ -34,7 +37,6 @@ from app.precheck.rules import load_rules
 from app.prompting.builder import PromptBuilder
 from app.service import AnalyzerService
 from app.source.base import Source
-from app.source.mock import MockSource
 from app.source.visiumgo import VisiumGoSource
 from app.source.visiumgo_client import VisiumGoClient
 
@@ -74,7 +76,6 @@ def _build_logs_dir(settings: Settings):
 # --- Registries: name -> factory. A new variant = one row. -----
 
 SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
-    "mock": lambda s: MockSource(_attachments_dir(s), _build_logs_dir(s)),
     "visiumgo": lambda s: VisiumGoSource(
         VisiumGoClient(
             s.visiumgo_base_url,
@@ -89,7 +90,6 @@ SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
 }
 
 LLM_REGISTRY: dict[str, Callable[[Settings], LLMProvider]] = {
-    "mock": lambda s: MockLLMProvider(model=s.llm_model),
     "openai_compatible": lambda s: OpenAICompatibleLLMProvider(
         base_url=s.llm_base_url,
         endpoint_path=s.llm_endpoint_path,

@@ -32,9 +32,7 @@ class VisiumGoClient:
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not base_url:
-            raise ValueError(
-                "VISIUMGO_BASE_URL is empty — set it in .env (or use SOURCE_PROVIDER=mock)."
-            )
+            raise ValueError("VISIUMGO_BASE_URL is empty — set it in .env.")
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._timeout = timeout_seconds

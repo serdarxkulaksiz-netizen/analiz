@@ -7,8 +7,8 @@ Chain (real-spec Bölüm 2):
   C. per failed scenario: fetch detail (errorText, stepResults, attachments)
   D. download each attachment (URL-encoded name), save to disk for observability
 
-Produces the same attachment-based `RawScenario` as MockSource, so the
-extraction ring is unchanged (mock/real difference lives only here).
+Produces the attachment-based `RawScenario` the extraction ring consumes, so
+VisiumGo's response shape stops at this file.
 
 Every VisiumGo endpoint is ONE public, single-purpose method here
 (`get_run`, `list_runs`, `get_results`, `get_scenario_detail`,

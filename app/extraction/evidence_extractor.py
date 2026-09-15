@@ -1,8 +1,7 @@
 """EvidenceExtractor — the single, source-agnostic extractor.
 
-Because MockSource and VisiumGoSource produce the SAME `RawScenario` shape,
-extraction is identical regardless of origin — so there is ONE extractor (the
-mock/real difference lives entirely in the Source).
+Extraction works from `RawScenario` alone, never from a VisiumGo response, so
+there is ONE extractor and the API's shape stops at the Source layer.
 
 The run's job_id selects an analysis Profile, which decides which evidence
 types become prompt blocks and how each one's content is shaped

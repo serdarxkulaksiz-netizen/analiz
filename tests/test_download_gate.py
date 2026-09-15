@@ -49,9 +49,9 @@ def test_filter_follows_the_profile(tmp_path: Path) -> None:
 def test_unknown_file_is_always_fetched(tmp_path: Path) -> None:
     """We cannot judge a file we never look at.
 
-    A device or extension no Evidence claims is exactly what `inspect_run` and
-    the evidence report exist to surface; skipping it would hide the change we
-    most want to notice.
+    A device or extension no Evidence claims is exactly what the evidence
+    report exists to surface; skipping it would hide the change we most want
+    to notice.
     """
     planner = _planner(tmp_path, {"default_web": {"evidence_to_llm": ["TestLogEvidence"]}})
 
