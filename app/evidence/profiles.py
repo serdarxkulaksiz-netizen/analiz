@@ -31,7 +31,6 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from app.domain.findings import DEFAULT_PROMPT_TEMPLATE
 from app.evidence.rules import Rule, RuleContext, build_rule
 
 #: Fallback profile: the one a job that matches nothing is analyzed with. The
@@ -57,10 +56,13 @@ class ProfileConfig(BaseModel):
     #: fetched from VisiumGo at all.
     evidence_to_store: list[str] = []
     rules: dict[str, list[dict]] = {}
-    #: Prompt template name (a file in the prompts dir, without .txt). The
-    #: existence check happens at startup in the wiring root, which is the only
-    #: place that knows both the profiles and the available templates.
-    prompt: str = DEFAULT_PROMPT_TEMPLATE
+    #: Prompt template name (a file in the prompts dir, without .txt).
+    #: MANDATORY — there is no fallback template. A profile that forgot to name
+    #: one used to silently get `default.txt`, which meant a mobile job could
+    #: be asked with a web-shaped prompt and nothing would say so. The existence
+    #: check happens at startup in the wiring root, the only place that knows
+    #: both the profiles and the available templates.
+    prompt: str
     extra_context: str = ""
 
 

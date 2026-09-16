@@ -19,7 +19,9 @@ _ALL = [
 def _profile(to_llm: list[str], rules: dict | None = None) -> Profile:
     return Profile(
         "test",
-        ProfileConfig(evidence_to_llm=to_llm, evidence_to_store=_ALL, rules=rules or {}),
+        ProfileConfig(
+            prompt="web", evidence_to_llm=to_llm, evidence_to_store=_ALL, rules=rules or {}
+        ),
     )
 
 

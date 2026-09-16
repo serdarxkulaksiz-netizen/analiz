@@ -7,11 +7,6 @@ travels as labeled blocks, one per file; interpretation is left to the LLM
 
 from pydantic import BaseModel
 
-#: Prompt template used when a profile does not name its own.
-#: Lives here, in the contract layer, because both the profile config and the
-#: prompt builder need it without depending on each other.
-DEFAULT_PROMPT_TEMPLATE = "default"
-
 
 class EvidenceBlock(BaseModel):
     """One evidence, rendered as `=== <label> ===` + content in the prompt.
@@ -151,7 +146,9 @@ class Findings(BaseModel):
     # whether content rules actually cut anything (visible, never silent).
     profile_name: str = ""
     #: Which prompt template this scenario is asked with (profile decision).
-    prompt_template: str = DEFAULT_PROMPT_TEMPLATE
+    #: There is no fallback: every profile names its own, and a Findings that
+    #: reached the builder without one is a wiring error, not a default.
+    prompt_template: str = ""
     extra_context: str = ""
     #: What extraction saw and did (observability, never sent to the LLM).
     evidence_report: EvidenceReport = EvidenceReport()

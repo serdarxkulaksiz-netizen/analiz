@@ -12,6 +12,7 @@ from app.prompting.builder import PromptBuilder
 def _sample_findings(**overrides: object) -> Findings:
     findings = Findings(
         scenario_name="Login - geçerli kullanıcı",
+        prompt_template="web",
         evidence_blocks=[
             EvidenceBlock(
                 label="test.log · koşum logu",
@@ -59,7 +60,7 @@ def test_every_template_carries_the_shared_contract(settings: Settings) -> None:
     copies drift, and a drifted verdict list breaks parsing silently.
     """
     builder = _builder(settings)
-    assert builder.template_names == {"default", "web", "mobile", "buildlog"}
+    assert builder.template_names == {"web", "mobile", "buildlog"}
 
     for name in builder.template_names:
         prompt = builder.build(_sample_findings(prompt_template=name))
@@ -145,12 +146,16 @@ def test_unknown_placeholder_in_a_template_fails_at_startup(
         PromptBuilder(tmp_path, settings.confidence_buckets)
 
 
-def test_missing_contract_or_default_fails_at_startup(settings: Settings, tmp_path: Path) -> None:
+def test_missing_contract_fails_at_startup(settings: Settings, tmp_path: Path) -> None:
+    """The shared contract is the one file the builder cannot do without.
+
+    A missing `default.txt` used to be the second such file. It is not any
+    more: there is no fallback template, so no template is special.
+    """
     (tmp_path / "web.txt").write_text("Senaryo: $scenario_name", encoding="utf-8")
 
     with pytest.raises(ValueError, match="contract"):
         PromptBuilder(tmp_path, settings.confidence_buckets)
 
     (tmp_path / "_contract.txt").write_text("JSON ŞEMASI: {}", encoding="utf-8")
-    with pytest.raises(ValueError, match="default.txt"):
-        PromptBuilder(tmp_path, settings.confidence_buckets)
+    assert PromptBuilder(tmp_path, settings.confidence_buckets).template_names == {"web"}

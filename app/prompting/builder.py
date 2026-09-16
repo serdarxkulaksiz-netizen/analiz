@@ -42,7 +42,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from string import Template
 
-from app.domain.findings import DEFAULT_PROMPT_TEMPLATE, Findings
+from app.domain.findings import Findings
 
 #: Shared output contract appended to every template (not a template itself).
 CONTRACT_FILE = "_contract.txt"
@@ -106,12 +106,6 @@ class PromptBuilder:
             self._templates[path.stem] = template
             self._versions[path.stem] = hashlib.sha256(template.template.encode()).hexdigest()[:12]
 
-        if DEFAULT_PROMPT_TEMPLATE not in self._templates:
-            raise ValueError(
-                f"Prompt templates directory {prompts_dir} must contain "
-                f"{DEFAULT_PROMPT_TEMPLATE}{TEMPLATE_SUFFIX} (used by every profile that does "
-                "not name its own)."
-            )
         self._confidence_buckets = confidence_buckets
 
     @property

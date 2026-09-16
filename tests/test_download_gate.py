@@ -64,6 +64,7 @@ def test_prompting_what_is_not_stored_fails_at_startup(tmp_path: Path) -> None:
                 tmp_path / "p.json",
                 {
                     "default_web": {
+                        "prompt": "web",
                         "evidence_to_llm": ["HtmlEvidence"],
                         "evidence_to_store": ["TestLogEvidence"],
                     }

@@ -70,13 +70,13 @@ def test_unknown_forced_profile_raises(tmp_path: Path) -> None:
 
 def test_missing_default_profile_fails_fast(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="default_web"):
-        _registry(tmp_path, {"onlyone": {"job_ids": ["1"]}}, complete=True)
+        _registry(tmp_path, {"onlyone": {"job_ids": ["1"], "prompt": "web"}}, complete=True)
 
 
 def test_missing_job_failed_profile_fails_fast(tmp_path: Path) -> None:
     """A config without `job_failed` cannot serve a job-level FAILED run."""
     with pytest.raises(ValueError, match="job_failed"):
-        _registry(tmp_path, {"default_web": {}}, complete=True)
+        _registry(tmp_path, {"default_web": {"prompt": "web"}}, complete=True)
 
 
 def test_duplicate_job_id_fails_fast(tmp_path: Path) -> None:
@@ -161,9 +161,9 @@ def test_job_c_only_build_log_sliced_per_scenario(tmp_path: Path) -> None:
 
 
 def test_profile_picks_its_prompt_template(tmp_path: Path) -> None:
-    """A job group chooses its own prompt; unnamed profiles get `default`."""
+    """A job group chooses its own prompt — every profile names one."""
     config = {
-        "default_web": {"evidence_to_llm": ["TestLogEvidence"]},
+        "default_web": {"prompt": "web", "evidence_to_llm": ["TestLogEvidence"]},
         "mobil_bankacilik": {
             "job_ids": ["223", "234"],
             "prompt": "mobile",
@@ -174,9 +174,19 @@ def test_profile_picks_its_prompt_template(tmp_path: Path) -> None:
     registry = _registry(tmp_path, config)
 
     assert registry.get(job_id="223").prompt == "mobile"
-    assert registry.get(job_id="bilinmeyen").prompt == "default"  # şablon adı, profil değil
+    assert registry.get(job_id="bilinmeyen").prompt == "web"
     # The wiring root asks for this set to validate it against the templates.
-    assert registry.prompt_names() == {"default", "mobile"}
+    assert registry.prompt_names() == {"web", "mobile"}
+
+
+def test_a_profile_without_a_prompt_template_fails_at_startup(tmp_path: Path) -> None:
+    """There is no fallback template, so forgetting one is an error.
+
+    It used to resolve to `default.txt` in silence, which meant a mobile job
+    could be asked with a web-shaped prompt and nothing anywhere would say so.
+    """
+    with pytest.raises(ValueError, match="prompt"):
+        _registry(tmp_path, {"default_web": {}, "job_failed": {}}, complete=True)
 
 
 def test_findings_carry_the_profiles_prompt_template(tmp_path: Path) -> None:

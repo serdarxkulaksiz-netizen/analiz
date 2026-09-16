@@ -69,11 +69,12 @@ def extract(profile_registry: ProfileRegistry) -> Callable[..., Findings]:
 def write_profiles(path: Path, profiles: dict, *, complete: bool = False) -> Path:
     """Write a profiles config, filling in what every legal config must carry.
 
-    Two pieces of boilerplate a test about something else should not repeat:
-    the mandatory `default_web` + `job_failed` profiles, and the rule that
-    prompted evidence must also be stored (what is not downloaded cannot be
-    prompted). `complete=True` writes the dict verbatim — that is how the
-    fail-fast guards themselves are tested.
+    Three pieces of boilerplate a test about something else should not repeat:
+    the mandatory `default_web` + `job_failed` profiles, the rule that prompted
+    evidence must also be stored (what is not downloaded cannot be prompted),
+    and the prompt template every profile must now name (there is no fallback).
+    `complete=True` writes the dict verbatim — that is how the fail-fast guards
+    themselves are tested.
     """
     if complete:
         path.write_text(json.dumps(profiles, ensure_ascii=False), encoding="utf-8")
@@ -81,7 +82,10 @@ def write_profiles(path: Path, profiles: dict, *, complete: bool = False) -> Pat
 
     data = {DEFAULT_PROFILE_NAME: {}, JOB_FAILED_PROFILE_NAME: {}, **profiles}
     for row in data.values():
-        if isinstance(row, dict) and "evidence_to_store" not in row:
+        if not isinstance(row, dict):
+            continue
+        if "evidence_to_store" not in row:
             row["evidence_to_store"] = list(row.get("evidence_to_llm", []))
+        row.setdefault("prompt", "web")
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     return path
