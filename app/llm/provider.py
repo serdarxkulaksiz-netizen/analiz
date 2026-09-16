@@ -22,8 +22,12 @@ class LLMResponse(BaseModel):
 
     `content` is the message content (the diagnosis JSON, fed to `try_json`).
     `raw_response` is the FULL response envelope as text (id/choices/usage/model
-    — everything), kept for the trace even when parsing fails. `request` is the
-    full request that was sent (url + body + model), for the `prompts` trace.
+    — everything), kept for the trace even when parsing fails.
+
+    `request` is what the call was made WITH — url, model, temperature, token
+    cap — and deliberately not the prompt itself. The prompt is the `prompts`
+    row's own field; carrying it here too wrote the same 3.5 KB twice into one
+    file and doubled that row for nothing.
     """
 
     content: str

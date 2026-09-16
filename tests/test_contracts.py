@@ -45,7 +45,6 @@ def test_analysis_result_adds_only_system_meta() -> None:
         "scenario_name",
         "failure_reason",
         "profile_name",
-        "raw_llm_response",
         "status",
         "meta",
     }

@@ -208,3 +208,22 @@ async def test_envelope_without_a_model_field_names_no_model() -> None:
     assert result.content == "DIAG"
     assert result.model == ""  # the service did not say; we do not guess
     assert result.http_status == 200
+
+
+@pytest.mark.asyncio
+async def test_the_request_record_does_not_repeat_the_prompt() -> None:
+    """The prompt has its own field on the `prompts` row; once is enough.
+
+    `request` used to be the whole body, `messages` included, so a 3.5 KB
+    prompt was written twice into the same file and that row was more than
+    double the size it needed to be.
+    """
+    result = await _provider(_ok_handler).complete("KANITLAR" * 200)
+
+    assert "messages" not in result.request
+    assert "KANITLAR" not in json.dumps(result.request)
+    # What the call was made WITH is all still there.
+    assert result.request["url"].endswith("/api/v1/extension/send")
+    assert result.request["model"] == "qwen3-coder-next"
+    assert result.request["temperature"] == 0
+    assert result.request["max_tokens"] == 8000

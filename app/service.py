@@ -558,7 +558,6 @@ class AnalyzerService:
                     scenario_name=scenario.scenario_name,
                     **analysis.model_dump(),
                     profile_name=profile_name,
-                    raw_llm_response=raw_response,
                     status=AnalysisStatus.OK,
                     meta=meta,
                 )
@@ -571,7 +570,6 @@ class AnalyzerService:
                     scenario_name=scenario.scenario_name,
                     failure_reason=failure_reason,
                     profile_name=profile_name,
-                    raw_llm_response=raw_response,
                     status=(
                         AnalysisStatus.NO_EVIDENCE
                         if skipped_no_evidence

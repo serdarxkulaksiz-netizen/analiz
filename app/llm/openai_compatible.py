@@ -60,8 +60,16 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             "temperature": self._temperature,
             "max_tokens": self._max_tokens,
         }
-        # Full request for the trace (model is logged here but NOT sent in body).
-        request = {"url": self._url, "model": self._model, **payload}
+        # The call's parameters for the trace — everything except `messages`.
+        # The prompt travels in its own field on the `prompts` row; recording
+        # it here as well wrote the same 3.5 KB twice into one file.
+        # (`model` is logged but NOT sent in the body — see the class docstring.)
+        request = {
+            "url": self._url,
+            "model": self._model,
+            "temperature": self._temperature,
+            "max_tokens": self._max_tokens,
+        }
 
         client_kwargs: dict[str, Any] = {"timeout": self._timeout_seconds}
         # A custom transport (tests) handles its own connection; `verify` only
