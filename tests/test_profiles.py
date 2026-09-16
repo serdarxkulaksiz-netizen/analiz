@@ -397,3 +397,45 @@ def test_job_log_report_tells_wanted_from_broken(tmp_path: Path) -> None:
     assert broken.job_log.wanted is True
     assert broken.job_log.chars == 0
     assert broken.job_log.error == "404"
+
+
+def test_a_typo_in_a_profile_key_fails_at_startup(tmp_path: Path) -> None:
+    """The file people edit most was the last one that swallowed typos.
+
+    `evidence_to_lm` loaded cleanly and left the list empty: the evidence
+    silently never reached the prompt while `profiles.json` read as if it did.
+    `job_id` instead of `job_ids` made the whole profile unselectable, just as
+    quietly. Both now stop the app before it serves a single request.
+    """
+    with pytest.raises(ValueError, match="evidence_to_lm"):
+        _registry(
+            tmp_path,
+            {
+                "default_web": {"prompt": "web", "evidence_to_lm": ["TestLogEvidence"]},
+                "job_failed": {"prompt": "buildlog"},
+            },
+            complete=True,
+        )
+
+    with pytest.raises(ValueError, match="job_id"):
+        _registry(
+            tmp_path,
+            {
+                "default_web": {"prompt": "web"},
+                "job_failed": {"prompt": "buildlog", "job_id": ["886"]},
+            },
+            complete=True,
+        )
+
+
+def test_underscore_keys_are_comments_not_typos(tmp_path: Path) -> None:
+    """JSON has no comments, so the file uses `_`-prefixed keys as ones."""
+    registry = _registry(
+        tmp_path,
+        {
+            "default_web": {"_not": "buraya açıklama", "prompt": "web"},
+            "job_failed": {"prompt": "buildlog"},
+        },
+        complete=True,
+    )
+    assert registry.get(job_id="herhangi").prompt == "web"

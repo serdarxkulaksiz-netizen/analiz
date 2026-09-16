@@ -29,7 +29,7 @@ mid-analysis.
 import json
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.evidence.rules import Rule, RuleContext, build_rule
 
@@ -46,7 +46,20 @@ JOB_FAILED_PROFILE_NAME = "job_failed"
 
 
 class ProfileConfig(BaseModel):
-    """Raw profile row as written in the config file."""
+    """Raw profile row as written in the config file.
+
+    `extra="forbid"`: a key this row does not define is a typo, and this file is
+    the one people edit most. `evidence_to_lm` used to load cleanly and leave
+    the list empty — the evidence silently never reached the prompt while
+    `profiles.json` read as if it did. `job_id` instead of `job_ids` made the
+    whole profile unselectable, just as quietly. Every other config surface
+    already fails on an unknown key; this was the last one that did not.
+
+    Keys starting with `_` are comments and are stripped before validation —
+    the same convention the file already uses at the top level.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     job_ids: list[str] = []
     #: Evidence that reaches the prompt. Must be a subset of `evidence_to_store`
@@ -115,7 +128,9 @@ class ProfileRegistry:
             if name.startswith("_"):
                 continue
             try:
-                profile = Profile(name, ProfileConfig.model_validate(row))
+                # `_`-prefixed keys are comments (JSON has none of its own).
+                clean = {k: v for k, v in row.items() if not k.startswith("_")}
+                profile = Profile(name, ProfileConfig.model_validate(clean))
             except ValueError as exc:
                 raise ValueError(f"profile {name!r}: {exc}") from exc
             self._profiles[name] = profile
