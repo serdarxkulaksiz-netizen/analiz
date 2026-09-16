@@ -59,7 +59,7 @@ def test_every_template_carries_the_shared_contract(settings: Settings) -> None:
     copies drift, and a drifted verdict list breaks parsing silently.
     """
     builder = _builder(settings)
-    assert builder.template_names == {"default", "web", "mobile", "hybrid", "buildlog"}
+    assert builder.template_names == {"default", "web", "mobile", "buildlog"}
 
     for name in builder.template_names:
         prompt = builder.build(_sample_findings(prompt_template=name))

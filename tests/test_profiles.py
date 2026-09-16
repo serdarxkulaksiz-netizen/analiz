@@ -289,13 +289,10 @@ def test_shipped_profiles_config_stays_valid() -> None:
     builder.ensure_templates_exist(registry.prompt_names())  # raises if a name is wrong
     assert registry.evidence_names() <= known_evidence_names()
 
-    # The three profiles the system relies on by name.
+    # The two profiles the CODE reaches for by name — one when nothing matches
+    # the job, one when the run's own state overrules its job.
     assert registry.get(job_id="bilinmeyen-job").name == "default_web"
     assert registry.get(forced=JOB_FAILED_PROFILE_NAME).name == JOB_FAILED_PROFILE_NAME
-    test_all = registry.get(forced="test_all")
-    # The inspection profile has to fetch everything, or the tool built on it
-    # would report "missing" for files nobody asked for.
-    assert test_all.wanted_evidence == known_evidence_names()
 
 
 def test_profile_alone_decides_what_reaches_the_prompt(tmp_path: Path) -> None:
