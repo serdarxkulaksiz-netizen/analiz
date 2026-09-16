@@ -24,7 +24,6 @@ def test_findings_contract_fields_are_frozen() -> None:
 
 def test_llm_analysis_contract_fields_are_frozen() -> None:
     assert set(LLMAnalysis.model_fields) == {
-        "scenario_name",
         "root_cause",
         "error_type",
         "verdict",
@@ -43,6 +42,7 @@ def test_analysis_result_adds_only_system_meta() -> None:
     assert system_fields == {
         "result_id",
         "analyzer_run_id",
+        "scenario_name",
         "failure_reason",
         "profile_name",
         "raw_llm_response",
@@ -136,3 +136,20 @@ def test_scenario_error_and_steps_never_reach_the_analysis() -> None:
         text = path.read_text(encoding="utf-8")
         for placeholder in ("$error_message", "$failed_step", "$steps"):
             assert placeholder not in text, f"{path.name} hâlâ {placeholder} kullanıyor"
+
+
+def test_the_scenario_name_is_never_read_out_of_the_model() -> None:
+    """Identity is a fact the system holds, not part of the answer.
+
+    `LLMAnalysis` used to carry `scenario_name`, and the stored row took it
+    straight from the model's reply: empty when the model left it out, and
+    another scenario's name when the model got it wrong — while the
+    `analysis_failed` branch, three lines away, filled it from the scenario
+    itself. The prompt no longer asks for it either; a field we discard is
+    worse than a field we never requested.
+    """
+    assert "scenario_name" not in LLMAnalysis.model_fields
+    assert "scenario_name" in AnalysisResult.model_fields
+
+    contract = (Path("config/prompts") / "_contract.txt").read_text(encoding="utf-8")
+    assert "scenario_name" not in contract

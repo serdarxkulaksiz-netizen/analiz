@@ -37,13 +37,17 @@ class AnalysisMeta(BaseModel):
 class LLMAnalysis(BaseModel):
     """Exactly what the LLM is required to return.
 
-        `verdict` and `confidence` are mandatory: if missing or invalid the
-        response is rejected and the scenario is marked `analysis_failed`
-    . `confidence` is stored as returned — no mapping. The
-        parameters are NOT here — the system attaches them (A10 system-side meta).
+    `verdict` and `confidence` are mandatory: if missing or invalid the response
+    is rejected and the scenario is marked `analysis_failed`. `confidence` is
+    stored as returned — no mapping.
+
+    `scenario_name` is NOT here. The system knows which scenario it asked
+    about; asking the model to repeat it meant the stored row took the name
+    from the answer — empty when the model left it out, and a different
+    scenario's name when the model got it wrong. A fact the system already
+    holds is never read back out of the model's mouth.
     """
 
-    scenario_name: str = ""
     root_cause: str = ""
     error_type: str = ""
     verdict: Verdict
@@ -59,10 +63,10 @@ class LLMAnalysis(BaseModel):
 class AnalysisResult(BaseModel):
     """Stored analysis row: LLM fields (flat) + system-side meta.
 
-    On `status=analysis_failed`, LLM analysis fields stay empty/None; only
-    `scenario_name` is filled by the system (factual identity, not fabricated
-    analysis) so the row stays traceable. The request's parameters are not
-    repeated here: they live on the run row this result belongs to.
+    `scenario_name` is ALWAYS the system's — on every status, not just the
+    failed ones. It is the identity of what was analyzed, not part of the
+    answer. The request's parameters are not repeated here: they live on the
+    run row this result belongs to.
     """
 
     # --- persistence keys (system) ---

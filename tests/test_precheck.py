@@ -58,7 +58,8 @@ def test_matching_rule_returns_canned_answer(tmp_path: Path) -> None:
     assert result.verdict.value == "environment_error"
     assert result.confidence == 0.99
     assert result.suggestion == "Lütfen veritabanı bilgilerinizi güncelleyin."
-    assert result.scenario_name == "S"  # identity from the scenario
+    # Identity is the system's: the rule answers, it does not name the scenario.
+    assert not hasattr(result, "scenario_name")
     assert result.error_signature == "db-credentials"  # which rule answered
 
 

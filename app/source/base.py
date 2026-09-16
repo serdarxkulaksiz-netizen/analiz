@@ -29,22 +29,6 @@ class DownloadPlan(Protocol):
         ...
 
 
-class FetchEverything:
-    """A plan that takes every file there is — what the source did before profiles.
-
-    Not used in production: a real run always arrives with a resolved profile.
-    It exists so a caller that genuinely wants everything (and a test about the
-    source alone) does not have to invent one.
-    """
-
-    def wants(self, attachment: Attachment) -> bool:
-        return True
-
-    @property
-    def wants_build_log(self) -> bool:
-        return True
-
-
 class Source(ABC):
     """Fetches a finished job's failure evidence.
 

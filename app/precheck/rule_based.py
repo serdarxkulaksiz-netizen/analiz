@@ -32,7 +32,6 @@ class RuleBasedPreCheck(PreCheck):
         for rule in self._rules:
             if rule.matches(evidence_text):
                 return LLMAnalysis(
-                    scenario_name=findings.scenario_name,
                     root_cause=rule.root_cause,
                     error_type=rule.error_type,
                     verdict=Verdict(rule.verdict),

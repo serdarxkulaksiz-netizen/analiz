@@ -554,6 +554,8 @@ class AnalyzerService:
                 result = AnalysisResult(
                     result_id=result_id,
                     analyzer_run_id=analyzer_run_id,
+                    # The system's name, not the model's echo of it.
+                    scenario_name=scenario.scenario_name,
                     **analysis.model_dump(),
                     profile_name=profile_name,
                     raw_llm_response=raw_response,

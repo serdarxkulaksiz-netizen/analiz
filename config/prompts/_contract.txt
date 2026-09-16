@@ -26,7 +26,6 @@ KURALLAR (UYULMASI ZORUNLU):
 
 JSON ŞEMASI:
 {
-  "scenario_name": "<senaryo adı>",
   "root_cause": "<kök neden, Türkçe>",
   "error_type": "<hata tipi, ör. NoSuchElementException>",
   "verdict": "<test_maintenance|application_bug|environment_error|transient_error|unknown|inconclusive>",
