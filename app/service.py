@@ -6,10 +6,10 @@ Redis-ready boundaries:
   2. Status/results are always read from disk (Repository), never from
      in-memory state.
 
-Full trace, one row per table per scenario, linked by the same
-`result_id`: raw evidence -> `evidence`, outgoing prompt+request -> `prompts`,
-incoming LLM answer -> `llm_responses`, parsed diagnosis -> `analysis_results`;
-run status -> `runs`.
+Full trace, one row per table per scenario, linked by the same `result_id`:
+what extraction saw -> `evidence` (metadata and file paths, never a second copy
+of the files), outgoing prompt+request -> `prompts`, incoming LLM answer ->
+`llm_responses`, parsed diagnosis -> `analysis_results`; run status -> `runs`.
 """
 
 import asyncio

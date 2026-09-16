@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
+from pydantic import ValidationError
 
 from app.config import Settings, get_settings
 from app.main import build_service
@@ -122,3 +123,18 @@ def test_profile_with_unknown_prompt_template_fails_at_startup(tmp_path: Path) -
 
     with pytest.raises(ValueError, match="unknown prompt template"):
         build_service(settings)
+
+
+def test_a_concurrency_of_zero_is_refused_at_startup() -> None:
+    """The one setting that could fail by hanging instead of raising.
+
+    `asyncio.Semaphore(0)` is a semaphore nobody can ever enter: the run would
+    sit at status `running` forever, with no error, no timeout and nothing in
+    the note. Every other setting in this file fails loudly; this one did not.
+    """
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, max_concurrency=0)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, max_concurrency=-1)
+
+    assert Settings(_env_file=None, max_concurrency=1).max_concurrency == 1

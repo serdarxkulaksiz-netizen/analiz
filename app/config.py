@@ -1,16 +1,18 @@
-"""Single configuration layer — no hardcoded values).
+"""Single configuration layer — no hardcoded values.
 
-Every tunable — table names, URLs, model name, concurrency, confidence
-buckets, profile/prompt file locations — lives here and is overridable via
-environment variables / `.env` (see
-`.env.example`). Defaults below mirror `.env.example`; only architecture-frozen
-constants (enum values, block labels) live in code instead.
+Every tunable — table names, URLs, model name, concurrency, confidence buckets,
+profile/prompt file locations — lives here and is overridable via environment
+variables / `.env` (see `.env.example`). Defaults below mirror `.env.example`.
+
+What deliberately does NOT live here: enum values, endpoint paths and evidence
+identities. Those are contracts, not settings — changing one changes the code
+that reads it, so a config line would only pretend otherwise.
 """
 
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,7 +31,7 @@ class Settings(BaseSettings):
         extra="forbid",
     )
 
-    # --- persistence / DB simulation ---
+    # --- persistence (JSON files standing in for a database) ---
     database_dir: Path = Path("database")
     table_runs: str = "runs"
     table_analysis_results: str = "analysis_results"
@@ -88,7 +90,11 @@ class Settings(BaseSettings):
     llm_verify_ssl: bool = False
 
     # --- API & background processing ---
-    max_concurrency: int = 2  # asyncio.Semaphore size
+    #: How many scenarios are analyzed at once (asyncio.Semaphore size).
+    #: `ge=1` is not pedantry: `0` builds a semaphore nobody can ever enter, so
+    #: the run hangs forever with status `running`, no error and no timeout —
+    #: the one setting in this file that could fail silently.
+    max_concurrency: int = Field(default=2, ge=1)
 
 
 @lru_cache

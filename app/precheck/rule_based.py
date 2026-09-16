@@ -6,8 +6,9 @@ scenario takes the normal LLM path.
 
 The answer is a normal `LLMAnalysis`, so everything downstream (parsing,
 persistence, the API response) is unchanged. Two things make the shortcut
-visible in the stored result: `meta.llm_model` is set to `precheck` by the
-service, and the rule's `error_signature` says which rule answered.
+visible in the stored result: `meta.answered_by` is `precheck` (and
+`meta.llm_model` stays empty, because no model ran), and the rule's
+`error_signature` says which rule answered.
 """
 
 from app.domain.enums import Verdict

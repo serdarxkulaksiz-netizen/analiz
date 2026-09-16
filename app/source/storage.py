@@ -1,4 +1,4 @@
-"""Where a downloaded attachment lands on disk — one rule, both sources.
+"""Where a downloaded attachment lands on disk.
 
 `<attachments>/<run_id>/<scenario_id>/<device_id><extension>`
 
