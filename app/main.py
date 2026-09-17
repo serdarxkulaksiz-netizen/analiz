@@ -1,18 +1,4 @@
-"""FastAPI app — async start/poll API.
-
-Endpoints (names frozen):
-  POST /analyze/visiumgo {parameter1?, parameter2?, job_id?/run_id?} -> analyzer_run_id
-  GET  /analyze/visiumgo/{analyzer_run_id} -> status + finished diagnoses (from disk)
-
-Every pluggable backend (source, LLM, precheck) is chosen from config via a
-REGISTRY (name -> factory) and injected here — no `if provider ==` branching.
-Extraction is a single source-agnostic implementation. A second backend is a
-row in a registry, not a code change.
-
-There is no fake backend: the system talks to the real VisiumGo and the real
-model, or it does not run. A mock mode meant every local result carried
-invented data that looked exactly like a real one.
-"""
+"""FastAPI app — async start/poll API."""
 
 from collections.abc import Callable, Mapping
 from typing import TypeVar
@@ -41,28 +27,10 @@ from app.source.visiumgo_client import VisiumGoClient
 
 
 class AnalyzeRequest(BaseModel):
-    """Body of POST /analyze/visiumgo.
-
-    `parameter1`/`parameter2` are reserved keys: they are recorded on the run
-    and returned by GET, and they influence NOTHING — not the profile, not the
-    prompt. Either `job_id` or `run_id` must be given (run_id wins for WHICH
-    run; job_id still chooses the profile).
-
-    `extra="forbid"`: a key this body does not define is a typo, and a typo
-    that is silently dropped is the worst kind. Every other config surface in
-    this system already fails on one — `.env`, the profiles file, the prompt
-    templates — and this was the only door left open.
-
-    `coerce_numbers_to_str`: VisiumGo reports `jobId` and run ids as NUMBERS.
-    A caller copying one out of a VisiumGo response sends `886`, not `"886"`,
-    and used to get a 422 for it. Ids are text here because they end up in URLs
-    and config keys; where they came from is not the caller's problem.
-    """
+    """Body of POST /analyze/visiumgo."""
 
     model_config = ConfigDict(extra="forbid", coerce_numbers_to_str=True)
 
-    # No invented default: an absent key stays absent instead of being
-    # recorded (and returned by GET) as the literal string "default".
     parameter1: str = ""
     parameter2: str = ""
     job_id: str = ""
@@ -83,8 +51,6 @@ def _build_logs_dir(settings: Settings):
     """Where the job-level build log is written — one file per run."""
     return settings.database_dir / "build_logs"
 
-
-# --- Registries: name -> factory. A new variant = one row. -----
 
 SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
     "visiumgo": lambda s: VisiumGoSource(
@@ -119,19 +85,13 @@ PRECHECK_REGISTRY: dict[str, Callable[[Settings], PreCheck]] = {
 }
 
 
-#: Provider type a registry produces (Source, LLMProvider, PreCheck, ...).
 T = TypeVar("T")
 
 
 def _select(
     registry: Mapping[str, Callable[[Settings], T]], key: str, kind: str
 ) -> Callable[[Settings], T]:
-    """Look a factory up in a registry, or fail with a clear error.
-
-    Generic over the provider type and takes a Mapping (covariant in its value)
-    so each registry keeps its own precise type instead of collapsing to
-    `object` at the call site.
-    """
+    """Look a factory up in a registry, or fail with a clear error."""
     try:
         return registry[key]
     except KeyError:
@@ -143,9 +103,6 @@ def build_service(settings: Settings) -> AnalyzerService:
     """Wire the whole chain from config (dependency injection root)."""
     profiles = ProfileRegistry(settings.profiles_config_path)
     prompt_builder = PromptBuilder(settings.prompts_dir, settings.confidence_buckets)
-    # Only this place knows both sides, so this is where a profile naming a
-    # template or an evidence that does not exist has to fail — at startup, not
-    # mid-analysis.
     prompt_builder.ensure_templates_exist(profiles.prompt_names())
     unknown = sorted(profiles.evidence_names() - known_evidence_names())
     if unknown:
@@ -181,8 +138,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         analyzer_run_id = service.create_run(
             request.parameter1, request.job_id, request.parameter2, request.run_id
         )
-        # Single trigger call — swapping BackgroundTasks for a real queue
-        # (Redis) only changes this line.
         background_tasks.add_task(service.run_analysis, analyzer_run_id)
         return {
             "analyzer_run_id": analyzer_run_id,
@@ -194,20 +149,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         run = service.get_run(analyzer_run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="analyzer_run_id not found")
-        # Only the diagnosis is exposed; the full trace stays in `database/`.
         return build_run_view(run)
 
     return app
 
 
 def __getattr__(name: str) -> FastAPI:
-    """Build the ASGI app only when something actually asks for it (PEP 562).
-
-    `uvicorn app.main:app` keeps working, but merely IMPORTING this module no
-    longer reads `.env` and wires every provider. That matters because config
-    errors used to surface as import failures in unrelated tests, and the test
-    suite silently depended on whatever `.env` the developer happened to have.
-    """
+    """Build the ASGI app only when something actually asks for it (PEP 562)."""
     if name == "app":
         return create_app()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

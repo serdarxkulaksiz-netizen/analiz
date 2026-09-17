@@ -1,18 +1,4 @@
-"""PreCheck rules — config-defined shortcuts that skip the LLM.
-
-Some failures need no analysis: "the DB credentials changed" looks the same in
-many projects and runs. A rule matches such a failure and returns a ready-made
-answer, so the LLM is never called.
-
-Rules live in config (`config/precheck_rules.json`), never in code: a new case
-is a new row. Everything is validated when the file is loaded — a bad regex,
-an unknown verdict or an off-bucket confidence fails at startup, not mid-run.
-
-CAUTION: a rule bypasses the LLM entirely, so a pattern that is
-too broad will mislabel everything and nobody will notice. Keep the list short
-and the patterns narrow (exact signatures like `ORA-01017`; never bare words
-like `error`/`failed`).
-"""
+"""PreCheck rules — config-defined shortcuts that skip the LLM."""
 
 import json
 import re
@@ -20,10 +6,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, field_validator
 
-#: Where a rule looks for its pattern.
-
-
-#: Allowed confidence values — same buckets as the LLM's.
 _CONFIDENCE_BUCKETS = {0.1, 0.25, 0.5, 0.75, 0.99}
 
 
@@ -31,9 +13,8 @@ class PreCheckRule(BaseModel):
     """One shortcut: if `match` is found, answer with these fields."""
 
     name: str
-    match: str  # regex
+    match: str
 
-    # --- the canned diagnosis (text written by a human, not fabricated) ---
     verdict: str
     confidence: float
     root_cause: str = ""
@@ -42,7 +23,6 @@ class PreCheckRule(BaseModel):
     suggestion: str = ""
     confidence_reason: str = ""
     summary: str = ""
-    #: Which rule answered — surfaces in the stored result.
     error_signature: str = ""
 
     @field_validator("name", "match")
@@ -73,7 +53,7 @@ class PreCheckRule(BaseModel):
     @field_validator("verdict")
     @classmethod
     def _known_verdict(cls, value: str) -> str:
-        from app.domain.enums import Verdict  # local: avoid import cycle at module load
+        from app.domain.enums import Verdict
 
         try:
             Verdict(value)
@@ -83,15 +63,7 @@ class PreCheckRule(BaseModel):
         return value
 
     def matches(self, evidence_text: str) -> bool:
-        """True if this rule's pattern is found in the evidence sent to the LLM.
-
-        The evidence text is the haystack because that is what the analysis
-        actually has: the scenario's `errorText` is no longer carried into
-        `Findings` (VisiumGo derives it from `test.log`, which the profile
-        sends whole, so the same text is already in here). When PreCheck moves
-        to the front of the chain — deciding BEFORE any attachment is
-        downloaded — it will read `RawScenario.error_text` directly.
-        """
+        """True if this rule's pattern is found in the evidence sent to the LLM."""
         return re.search(self.match, evidence_text) is not None
 
 

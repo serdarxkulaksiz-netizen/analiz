@@ -1,21 +1,10 @@
-"""Thin VisiumGo HTTP client.
-
-A small wrapper around httpx — NOT an orchestrator. All requests carry
-`Authorization: Bearer <token>`; base URL, token and timeout come from config
-(never hardcoded). Dynamic path segments (scenario id, file name) must be
-URL-encoded by the caller with `encode_segment` before being placed in a path,
-because they contain `/`, `:` and spaces.
-
-A custom `httpx.AsyncBaseTransport` can be injected for tests (no real server).
-"""
+"""Thin VisiumGo HTTP client."""
 
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 
-#: How much of a non-JSON body is quoted back. Enough to recognise a login
-#: page or an error envelope, not enough to paste a whole page into a run note.
 _BODY_SAMPLE_CHARS = 200
 
 
@@ -55,8 +44,6 @@ class VisiumGoClient:
             "headers": self._headers(),
             "timeout": self._timeout,
         }
-        # A custom transport (tests) handles its own connection; `verify` only
-        # applies to the real default transport.
         if self._transport is not None:
             kwargs["transport"] = self._transport
         else:
@@ -64,13 +51,7 @@ class VisiumGoClient:
         return httpx.AsyncClient(**kwargs)
 
     async def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        """GET and decode JSON — naming the body when it is not JSON.
-
-        A 200 that is not JSON is usually an SSO login page or a gateway error
-        page, and the bare `JSONDecodeError` it produced said only "Expecting
-        value: line 1 column 1" — the one thing it never showed was what had
-        actually arrived, which is the only thing that identifies the problem.
-        """
+        """GET and decode JSON — naming the body when it is not JSON."""
         async with self._client() as client:
             response = await client.get(path, params=params)
             response.raise_for_status()

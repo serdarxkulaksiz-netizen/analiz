@@ -1,13 +1,4 @@
-"""`try_json` — the only parsing the system does on LLM output.
-
-Public (no leading underscore) because the offline eval harness scores real
-LLM answers through the SAME parser the service uses — two parsers would drift.
-
-No regex field extraction, no section parsing. We only try to locate a JSON
-object in the completion (models sometimes wrap it in markdown fences or a
-sentence). Anything that does not yield a JSON object returns None; the
-caller then marks the scenario `analysis_failed` and keeps the raw response.
-"""
+"""`try_json` — the only parsing the system does on LLM output."""
 
 import json
 from typing import Any
@@ -20,7 +11,6 @@ def try_json(text: str) -> dict[str, Any] | None:
     stripped = text.strip()
     candidates.append(stripped)
 
-    # Markdown code fence: keep only what is between the fences.
     if stripped.startswith("```"):
         first_newline = stripped.find("\n")
         if first_newline != -1:
@@ -30,7 +20,6 @@ def try_json(text: str) -> dict[str, Any] | None:
                 inner = inner[:closing]
             candidates.append(inner.strip())
 
-    # Outermost braces: tolerate prose before/after the JSON object.
     start = stripped.find("{")
     end = stripped.rfind("}")
     if start != -1 and end > start:

@@ -1,30 +1,4 @@
-"""Analysis profiles — job-based customization, driven by config.
-
-A profile says, for a group of jobs, three things:
-  - `evidence_to_store` — which attachments are DOWNLOADED and written to
-    `database/` (an attachment in no list is never fetched at all),
-  - `evidence_to_llm`   — which of them reach the prompt,
-  - `rules`             — how each one is trimmed on the way to the prompt
-    (the stored copy stays whole).
-Plus the prompt template and any extra prompt context. Adding a job's
-behaviour = a config row in `config/profiles.json`, no code.
-
-Resolution order (no `if job_id ==` anywhere — dict/registry lookups):
-    1. a `forced` profile name — set when the run's own job-level state
-       overrules its job (a `FAILED` job is analyzed with `job_failed`,
-       whatever job it is). Nothing in the request can set it.
-    2. the job_id appears in some profile's `job_ids`
-    3. the mandatory `default_web` profile
-
-The request's `parameter1`/`parameter2` take NO part in this (nor in anything
-else the code decides): they are recorded on the run and shown by the API,
-nothing more.
-
-Everything is validated and compiled at startup: unknown rule types, bad
-regexes, a job_id claimed by two profiles, prompted-but-not-stored evidence and
-a missing `default_web`/`job_failed` profile all fail immediately rather than
-mid-analysis.
-"""
+"""Analysis profiles — job-based customization, driven by config."""
 
 import json
 from pathlib import Path
@@ -33,48 +7,20 @@ from pydantic import BaseModel, ConfigDict
 
 from app.evidence.rules import Rule, RuleContext, build_rule
 
-#: Fallback profile: the one a job that matches nothing is analyzed with. The
-#: name says what it is — a web-shaped default — so nobody reads "default" as
-#: "neutral".
 DEFAULT_PROFILE_NAME = "default_web"
 
-#: Profile every scenario of a job-level FAILED run is analyzed with, no matter
-#: which job it is: when the job itself failed, its `job_ids` profile describes
-#: a normal run that never happened. Mandatory, like `default`, so the branch
-#: can never land on a missing profile mid-analysis.
 JOB_FAILED_PROFILE_NAME = "job_failed"
 
 
 class ProfileConfig(BaseModel):
-    """Raw profile row as written in the config file.
-
-    `extra="forbid"`: a key this row does not define is a typo, and this file is
-    the one people edit most. `evidence_to_lm` used to load cleanly and leave
-    the list empty — the evidence silently never reached the prompt while
-    `profiles.json` read as if it did. `job_id` instead of `job_ids` made the
-    whole profile unselectable, just as quietly. Every other config surface
-    already fails on an unknown key; this was the last one that did not.
-
-    Keys starting with `_` are comments and are stripped before validation —
-    the same convention the file already uses at the top level.
-    """
+    """Raw profile row as written in the config file."""
 
     model_config = ConfigDict(extra="forbid")
 
     job_ids: list[str] = []
-    #: Evidence that reaches the prompt. Must be a subset of `evidence_to_store`
-    #: — what is not downloaded cannot be prompted.
     evidence_to_llm: list[str] = []
-    #: Evidence that is downloaded and stored. Anything absent here is NOT
-    #: fetched from VisiumGo at all.
     evidence_to_store: list[str] = []
     rules: dict[str, list[dict]] = {}
-    #: Prompt template name (a file in the prompts dir, without .txt).
-    #: MANDATORY — there is no fallback template. A profile that forgot to name
-    #: one used to silently get `default.txt`, which meant a mobile job could
-    #: be asked with a web-shaped prompt and nothing would say so. The existence
-    #: check happens at startup in the wiring root, the only place that knows
-    #: both the profiles and the available templates.
     prompt: str
     extra_context: str = ""
 
@@ -83,9 +29,6 @@ class Profile:
     """A compiled profile: config plus ready-to-run rule objects."""
 
     def __init__(self, name: str, config: ProfileConfig) -> None:
-        # Prompting an evidence that is never downloaded would silently produce
-        # an empty block, and the config would read as if it were sent. Fail
-        # here instead: this is a config error, not a runtime condition.
         missing = sorted(set(config.evidence_to_llm) - set(config.evidence_to_store))
         if missing:
             raise ValueError(
@@ -122,13 +65,9 @@ class ProfileRegistry:
         self._by_job_id: dict[str, Profile] = {}
 
         for name, row in data.items():
-            # JSON has no comments, so a `_`-prefixed key is one: it documents
-            # the file next to the thing it documents instead of in a README
-            # nobody opens while editing config.
             if name.startswith("_"):
                 continue
             try:
-                # `_`-prefixed keys are comments (JSON has none of its own).
                 clean = {k: v for k, v in row.items() if not k.startswith("_")}
                 profile = Profile(name, ProfileConfig.model_validate(clean))
             except ValueError as exc:

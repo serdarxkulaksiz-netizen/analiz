@@ -1,20 +1,4 @@
-"""Extractor interface.
-
-Raw evidence goes out as labeled blocks; interpretation belongs to the LLM
-(parse-minimal).
-
-The `profile` arrives already resolved: which evidence reaches the prompt, in
-what order, and how each one is shaped are its decisions. Extraction does not
-look a profile up — the run resolved it once, before any evidence was fetched,
-and hands the same object to every scenario. The request's
-`parameter1`/`parameter2` never reach here: they decide nothing.
-
-`job_log` is job-level context (VisiumGo `/api/runs/{run_id}/logs` ->
-`build.log`): it covers the whole run, not one scenario, and becomes a prompt
-block when the profile includes `BuildLogEvidence`. It arrives whole — text,
-where it was stored, and why it is missing — so the evidence row can answer
-all three on its own, without anyone opening the run row.
-"""
+"""Extractor interface."""
 
 from abc import ABC, abstractmethod
 

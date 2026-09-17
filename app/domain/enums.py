@@ -1,8 +1,4 @@
-"""Contract-fixed enums.
-
-These are architectural constants: the *values* are part of the frozen
-contracts and must not change.
-"""
+"""Contract-fixed enums."""
 
 from enum import Enum
 
@@ -14,18 +10,12 @@ class Verdict(str, Enum):
     APPLICATION_BUG = "application_bug"
     ENVIRONMENT_ERROR = "environment_error"
     TRANSIENT_ERROR = "transient_error"
-    UNKNOWN = "unknown"  # model could say nothing / no evidence
-    INCONCLUSIVE = "inconclusive"  # model looked but reached no single verdict
+    UNKNOWN = "unknown"
+    INCONCLUSIVE = "inconclusive"
 
 
 class RunStatus(str, Enum):
-    """Lifecycle of an analyzer run (+ user-approved 4th value).
-
-     lists pending/running/done; `failed` is a user-approved
-    addition for job-level failure (e.g. source unreachable): the run finished
-    abnormally, details in the run row's `note`. Scenario-level LLM failures do
-    NOT fail the run; they are marked per-row via `AnalysisStatus.ANALYSIS_FAILED`.
-    """
+    """Lifecycle of an analyzer run (+ user-approved 4th value)."""
 
     PENDING = "pending"
     RUNNING = "running"
@@ -34,28 +24,13 @@ class RunStatus(str, Enum):
 
 
 class RunState(str, Enum):
-    """VisiumGo's JOB-level health for one run (`runResult.state`).
-
-    Not the scenarios' health: a run whose `state` is `PASSED` can still carry
-    failed scenarios (observed: `state=PASSED` with `failScenarios=2`). It
-    answers "did the job itself run to completion?", which is why `FAILED`
-    routes every scenario to one fixed profile instead of the job_ids mapping.
-    """
+    """VisiumGo's JOB-level health for one run (`runResult.state`)."""
 
     PASSED = "PASSED"
     FAILED = "FAILED"
     RUNNING = "RUNNING"
 
 
-#: States a run may be CHOSEN in when we pick "the newest run of this job".
-#: `RUNNING` is deliberately absent: it is still producing evidence, and
-#: picking it on the caller's behalf would judge half a run without being
-#: asked. Any other value (a state VisiumGo adds later) is unknown to us and is
-#: skipped as well — but never silently: the skip is recorded on the run row.
-#:
-#: This governs the job_id path only. A caller who names a `run_id` gets THAT
-#: run analyzed whatever its state — that is an instruction, not a guess — and
-#: the run row says the run was unfinished.
 ANALYZABLE_RUN_STATES = frozenset({RunState.PASSED.value, RunState.FAILED.value})
 
 
@@ -64,7 +39,4 @@ class AnalysisStatus(str, Enum):
 
     OK = "ok"
     ANALYSIS_FAILED = "analysis_failed"
-    #: No evidence at all reached the prompt, so the LLM was never called
-    #: (distinct from a failed analysis: nothing broke, there was nothing to
-    #: analyze). See `Findings.has_evidence_for_llm`.
     NO_EVIDENCE = "no_evidence"

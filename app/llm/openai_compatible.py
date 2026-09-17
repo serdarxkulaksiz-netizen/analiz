@@ -1,17 +1,4 @@
-"""OpenAI-compatible LLM provider — real service, single-shot.
-
-Sends the prompt as one `user` message to `base_url + endpoint_path` and reads
-`choices[0].message.content` from the OpenAI-style `chat.completion` response.
-
-Verified against the real service (test-automation-ai-api …/api/v1/extension/send):
-  - NO auth: the service takes no token; an `Authorization` header is sent only
-    if an api_key is explicitly configured (empty by default).
-  - The request body carries `messages` + `temperature` + `max_tokens`. The
-    `model` field is NOT sent in the body (it is meta only).
-
-All call parameters (base URL, path, temperature, timeout, max_tokens) come
-from config — nothing hardcoded. A custom transport can be injected for tests.
-"""
+"""OpenAI-compatible LLM provider — real service, single-shot."""
 
 import json
 import time
@@ -41,7 +28,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             raise ValueError("LLM_BASE_URL is empty — set it in .env.")
         self._url = base_url.rstrip("/") + endpoint_path
         self._api_key = api_key
-        self._model = model  # kept for meta only; not sent in the body
+        self._model = model
         self._temperature = temperature
         self._timeout_seconds = timeout_seconds
         self._max_tokens = max_tokens
@@ -50,7 +37,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
 
     def _headers(self) -> dict[str, str]:
         headers = {"accept": "application/json"}
-        if self._api_key:  # this service needs none; generic support only
+        if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         return headers
 
@@ -60,10 +47,6 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             "temperature": self._temperature,
             "max_tokens": self._max_tokens,
         }
-        # The call's parameters for the trace — everything except `messages`.
-        # The prompt travels in its own field on the `prompts` row; recording
-        # it here as well wrote the same 3.5 KB twice into one file.
-        # (`model` is logged but NOT sent in the body — see the class docstring.)
         request = {
             "url": self._url,
             "model": self._model,
@@ -72,24 +55,18 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         }
 
         client_kwargs: dict[str, Any] = {"timeout": self._timeout_seconds}
-        # A custom transport (tests) handles its own connection; `verify` only
-        # applies to the real default transport.
         if self._transport is not None:
             client_kwargs["transport"] = self._transport
         else:
             client_kwargs["verify"] = self._verify_ssl
 
         started = time.perf_counter()
-        # A transport-level failure (timeout / no connection) yields no envelope
-        # to keep — only that raises LLMError.
         try:
             async with httpx.AsyncClient(**client_kwargs) as client:
                 response = await client.post(self._url, json=payload, headers=self._headers())
         except Exception as exc:
             raise LLMError(f"{type(exc).__name__}: {exc}") from exc
 
-        # We HAVE a response: capture the full raw envelope BEFORE any parsing,
-        # so it is never lost even if the body is malformed.
         raw_response = response.text
         duration_ms = int((time.perf_counter() - started) * 1000)
 
@@ -108,31 +85,20 @@ class OpenAICompatibleLLMProvider(LLMProvider):
     def _extract(
         self, response: httpx.Response, raw_response: str
     ) -> tuple[str, str, int | None, int | None]:
-        """Best-effort extraction; on failure return empty content (raw is kept).
-
-        A non-2xx answer is not parsed at all: its body is an error, not a
-        completion. Naming a model there would record that a model answered
-        when the request never reached one.
-        """
+        """Best-effort extraction; on failure return empty content (raw is kept)."""
         if not response.is_success:
             return "", "", None, None
         try:
             data: Any = response.json()
-            # The intermediary may double-encode (a JSON string of JSON).
             if isinstance(data, str):
                 data = json.loads(data)
             content = data["choices"][0]["message"]["content"]
             usage = data.get("usage") or {}
             return (
                 content or "",
-                # Only what the service reported. Falling back to the
-                # configured name meant the row claimed a model had answered
-                # whenever the envelope did not say so.
                 str(data.get("model") or ""),
                 usage.get("prompt_tokens"),
                 usage.get("completion_tokens"),
             )
         except Exception:
-            # Malformed / unexpected envelope: leave content empty; the caller
-            # marks the scenario analysis_failed but the raw envelope is saved.
             return "", "", None, None

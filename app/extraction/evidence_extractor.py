@@ -1,16 +1,4 @@
-"""EvidenceExtractor — the single, source-agnostic extractor.
-
-Extraction works from `RawScenario` alone, never from a VisiumGo response, so
-there is ONE extractor and the API's shape stops at the Source layer.
-
-The Profile — resolved once for the run, before anything was fetched — decides
-which evidence types become prompt blocks, in what order, and how each one's
-content is shaped (content rules). The job-level build log is built as its own
-evidence from its
-own endpoint — it is NOT dressed up as an attachment, because VisiumGo's
-`attachments[]` array never contained it. No field-extracting parsing
-(parse-minimal).
-"""
+"""EvidenceExtractor — the single, source-agnostic extractor."""
 
 from app.domain.findings import (
     AttachmentReport,
@@ -45,8 +33,6 @@ class EvidenceExtractor(Extractor):
         ctx = RuleContext(scenario_name=scenario.scenario_name)
         evidences = self._registry.build_for(scenario, profile, ctx)
 
-        # The job log is a peer of the attachment-backed evidences, not one of
-        # them: same profile flags, same content rules, different origin.
         log_evidence = self._registry.build_job_log(job_log.text, profile, ctx)
         if log_evidence is not None:
             evidences.append(log_evidence)
@@ -60,9 +46,6 @@ class EvidenceExtractor(Extractor):
                 block = evidence.to_block()
                 was_trimmed = evidence.was_trimmed
             except RuleError as exc:
-                # The rule failed, so this evidence has NO shaped content and
-                # therefore no block. The untrimmed original is not a fallback:
-                # it is the thing the profile said not to send.
                 rule_errors.append(f"{name}: {exc}")
                 block, was_trimmed = None, False
             if block is not None:
@@ -70,14 +53,6 @@ class EvidenceExtractor(Extractor):
                 if was_trimmed:
                     trimmed_labels.add(block.label)
 
-        # An evidence the profile asked for but that never arrived produces NO
-        # block: it leaves the prompt with its header. What was
-        # asked for and what actually arrived is recorded in `evidence_report`,
-        # which is where that question belongs — not in the prompt.
-
-        # Order follows the profile's `evidence_to_llm` list, not the order
-        # VisiumGo happened to return the files in: which evidence the model
-        # should read first is a job decision, so config owns it.
         order = {name: index for index, name in enumerate(profile.evidence_to_llm)}
         evidence_blocks.sort(key=lambda block: order.get(block.evidence_name, len(order)))
 
@@ -109,15 +84,7 @@ def _build_report(
     job_log: JobLog,
     rule_errors: list[str] | None = None,
 ) -> EvidenceReport:
-    """Record what arrived and what reached the prompt.
-
-    Answers, from one real run and without reproducing it by hand: did the
-    evidence arrive at all, did it map to an Evidence class, did the profile
-    send it, and did its content rules actually cut anything.
-
-    `attachments` lists ONLY what VisiumGo's `attachments[]` array carried; the
-    job log has its own field because it has its own endpoint.
-    """
+    """Record what arrived and what reached the prompt."""
     attachments = [
         AttachmentReport(
             file_name=attachment.file_name,

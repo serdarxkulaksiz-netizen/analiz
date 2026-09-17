@@ -1,40 +1,4 @@
-"""Strict prompt builder — one template per job group.
-
-The prompt *text* lives in template files (config, not code). A profile picks
-its template by name (`"prompt": "web"` -> `config/prompts/web.txt`); the
-builder only renders Findings into that template's placeholders.
-
-Every template is composed as **job-specific part + shared output contract**
-(`_contract.txt`): the JSON schema, the six verdict values and the confidence
-buckets are written ONCE and appended to each template. Duplicating them per
-template would mean maintaining the same contract in five files, where one
-silent drift breaks parsing.
-
-**The profile alone decides which evidence is sent and in which order.** A
-template renders them with one `$evidence_blocks` placeholder; it does not name
-individual evidences. Per-evidence placeholders (`$test_log`, `$dom`, …) were
-removed for one reason: a profile could list an evidence its template had no
-placeholder for, and that evidence then vanished from the prompt in complete
-silence — the config read as if it were being sent. Now "send build.log to this
-job" is a single edit in `profiles.json`, and no template can drop it.
-
-**Each block carries its own `=== ETİKET ===` header**, so an evidence that did
-not arrive leaves the prompt completely (header included) instead of leaving a
-heading with nothing under it. Blank runs left behind by a missing section are
-collapsed, so the prompt reads the same whether three blocks arrived or one.
-
-The prompt carries evidence blocks and the scenario name — nothing else. The
-scenario's `errorText`/`stepResults` used to have their own sections; they were
-dropped because VisiumGo derives both from `test.log`, which the profile sends
-whole (the same text, twice, is not context — it is noise).
-
-`$parameter1` / `$parameter2` do not exist: those request keys decide nothing
-and reach nothing. In most runs they literally said "default" —
-noise, not context — and a placeholder nobody may use is a trap, not an option.
-
-`string.Template` is used on purpose: the contract contains a literal JSON
-schema with `{}` braces, which `str.format` would mangle.
-"""
+"""Strict prompt builder — one template per job group."""
 
 import hashlib
 import re
@@ -44,27 +8,17 @@ from string import Template
 
 from app.domain.findings import Findings
 
-#: Shared output contract appended to every template (not a template itself).
 CONTRACT_FILE = "_contract.txt"
 TEMPLATE_SUFFIX = ".txt"
 
-#: Three or more newlines -> one blank line (a dropped section leaves a hole).
 _BLANK_RUN = re.compile(r"\n{3,}")
 
 
 def _section(label: str, content: str) -> str:
-    """`=== LABEL ===` + content, or "" when there is no content.
-
-    The header travels WITH the content on purpose: that is what makes an
-    absent evidence disappear from the prompt entirely instead of leaving a
-    heading over an empty space.
-    """
+    """`=== LABEL ===` + content, or "" when there is no content."""
     return f"=== {label} ===\n{content}" if content.strip() else ""
 
 
-#: Everything a template may reference. Anything else — including the old
-#: per-evidence placeholders — is a config error and fails at startup, instead
-#: of being sent to the LLM raw or silently swallowing an evidence.
 KNOWN_PLACEHOLDERS = frozenset(
     {
         "scenario_name",
@@ -79,8 +33,6 @@ class PromptBuilder:
     """Renders a Findings object into its profile's single-shot prompt."""
 
     def __init__(self, prompts_dir: Path, confidence_buckets: list[float]) -> None:
-        # Fail fast at startup: a missing contract, a missing default template
-        # or an unknown placeholder are all config errors.
         contract_path = prompts_dir / CONTRACT_FILE
         if not contract_path.is_file():
             raise ValueError(
@@ -90,7 +42,6 @@ class PromptBuilder:
         contract = contract_path.read_text(encoding="utf-8")
 
         self._templates: dict[str, Template] = {}
-        #: template name -> short hash of its exact composed text.
         self._versions: dict[str, str] = {}
         for path in sorted(prompts_dir.glob(f"*{TEMPLATE_SUFFIX}")):
             if path.name == CONTRACT_FILE:
@@ -114,19 +65,11 @@ class PromptBuilder:
         return set(self._templates)
 
     def version_of(self, name: str) -> str:
-        """Short hash of a template's exact text (template + contract).
-
-        Stamped onto every diagnosis so a later "the answers got worse" can be
-        traced to the prompt version that produced them.
-        """
+        """Short hash of a template's exact text (template + contract)."""
         return self._versions.get(name, "")
 
     def ensure_templates_exist(self, names: Iterable[str]) -> None:
-        """Fail at startup if a profile names a template that does not exist.
-
-        Called from the wiring root with every profile's `prompt` value, so a
-        typo in `profiles.json` surfaces on boot instead of mid-analysis.
-        """
+        """Fail at startup if a profile names a template that does not exist."""
         missing = sorted({name for name in names if name not in self._templates})
         if missing:
             known = ", ".join(sorted(self._templates))
@@ -144,8 +87,6 @@ class PromptBuilder:
                 f"Unknown prompt template {findings.prompt_template!r}. Available: {known}."
             )
 
-        # Already ordered by the profile's `evidence_to_llm` (extraction does
-        # the sorting), so the template has nothing to decide.
         evidence_text = "\n\n".join(
             _section(block.label, block.content)
             for block in findings.evidence_blocks
@@ -159,6 +100,4 @@ class PromptBuilder:
             extra_context=findings.extra_context,
             confidence_buckets=buckets_text,
         )
-        # Dropped sections leave holes; without this the prompt's shape would
-        # advertise exactly what is missing.
         return _BLANK_RUN.sub("\n\n", prompt).strip() + "\n"

@@ -1,10 +1,4 @@
-"""Repository interface.
-
-Upper layers only ever speak at the level of "save to this table / read from
-this table". Table names come from config; no code hardcodes file paths.
-Swapping the backend (SQLite/Oracle) means implementing this interface and
-injecting it — upper code does not change.
-"""
+"""Repository interface."""
 
 from abc import ABC, abstractmethod
 from typing import Any

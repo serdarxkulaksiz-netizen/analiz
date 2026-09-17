@@ -1,15 +1,4 @@
-"""RuleBasedPreCheck — answers known failures without calling the LLM.
-
-Rules come from config (see `rules.py`). The FIRST matching rule wins, in file
-order, so precedence is explicit and predictable. No match -> `None` -> the
-scenario takes the normal LLM path.
-
-The answer is a normal `LLMAnalysis`, so everything downstream (parsing,
-persistence, the API response) is unchanged. Two things make the shortcut
-visible in the stored result: `meta.answered_by` is `precheck` (and
-`meta.llm_model` stays empty, because no model ran), and the rule's
-`error_signature` says which rule answered.
-"""
+"""RuleBasedPreCheck — answers known failures without calling the LLM."""
 
 from app.domain.enums import Verdict
 from app.domain.findings import Findings

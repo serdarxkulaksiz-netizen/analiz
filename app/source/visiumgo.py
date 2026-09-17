@@ -1,30 +1,4 @@
-"""VisiumGoSource — real VisiumGo API client.
-
-Chain:
-  A. resolve the run: `run_id` -> `GET /api/runs/{run_id}` (that run, whatever
-     its state); `job_id` -> `GET /api/runs?jobId=` and pick the newest
-     FINISHED run
-  B. list results, keep resultType == "FAILED"
-  C. per failed scenario: fetch detail (errorText, stepResults, attachments)
-  D. download each attachment (URL-encoded name), save to disk for observability
-
-Produces the attachment-based `RawScenario` the extraction ring consumes, so
-VisiumGo's response shape stops at this file.
-
-Every VisiumGo endpoint is ONE public, single-purpose method here
-(`get_run`, `list_runs`, `get_results`, `get_scenario_detail`,
-`download_attachment`, `fetch_build_log`); `fetch_job` only sequences them.
-That split is what makes the same services usable later from something that
-decides its own order, without touching this file's logic.
-
-Save-everything rule: the raw run response, the raw /results array and each
-scenario's raw detail response are kept verbatim on the models and persisted
-by the service — nothing from the API is discarded.
-
-Robustness: a failed attachment download leaves that
-evidence empty but the scenario continues; the service marks a fully-failing
-scenario `analysis_failed` and the job goes on.
-"""
+"""VisiumGoSource — real VisiumGo API client."""
 
 import io
 import zipfile
@@ -37,35 +11,18 @@ from app.source.models import Attachment, JobData, JobLog, RawScenario, RunSumma
 from app.source.storage import save_attachment, save_build_log
 from app.source.visiumgo_client import VisiumGoClient, encode_segment
 
-#: Upper bound for the recorded build-log failure reason (see
-#: `fetch_build_log`): keeps a long exception text or ZIP listing from
-#: bloating the persisted run row.
 _BUILD_LOG_ERROR_MAX_CHARS = 500
 
-#: The run's log archive. A path, like every other endpoint here — not a
-#: setting. It used to live in `.env`, which meant an unset key silently turned
-#: the whole step off and recorded no reason: "this job has no build log" and
-#: "nobody filled in the config" looked identical. Whether the log is fetched
-#: is now a PROFILE decision (`BuildLogEvidence`), which is where it belongs.
 PATH_RUN = "/api/runs/{run_id}"
 PATH_RUNS = "/api/runs"
 PATH_RESULTS = "/api/runs/{run_id}/results"
 PATH_LOGS = "/api/runs/{run_id}/logs"
 
-#: How much of an unexpected response body is quoted back in the error. Long
-#: enough to recognise a login page or an error envelope, short enough not to
-#: paste a megabyte into a run note.
 _SHAPE_ERROR_SAMPLE = 200
 
 
 def _as_list(value: Any, path: str) -> list[dict[str, Any]]:
-    """The endpoint promises an array of objects. Say so when it is not.
-
-    An HTML login page, an error envelope, a single object instead of a list —
-    each of these used to surface deep inside the chain as
-    `AttributeError: 'str' object has no attribute 'get'`, with the body that
-    caused it nowhere to be seen.
-    """
+    """The endpoint promises an array of objects. Say so when it is not."""
     if not isinstance(value, list):
         raise ValueError(
             f"{path}: dizi bekleniyordu, {type(value).__name__} geldi — "
@@ -90,21 +47,10 @@ def _as_dict(value: Any, path: str) -> dict[str, Any]:
     return value
 
 
-#: Named in a scenario's `fetch_error`, so the reason says which call failed.
 PATH_SCENARIO_DETAIL = "/api/runs/{run_id}/results/{scenario_id}"
 
-#: Upper bound for a recorded scenario-detail failure reason (same rule as the
-#: build log's): a long exception text must not bloat the stored row.
 _FETCH_ERROR_MAX_CHARS = 500
 
-#: Extensions whose content is text and therefore belongs inline on the
-#: attachment, whatever mime type VisiumGo labels them with. The mime type
-#: alone is not a safe test: it is the SECOND half of an attachment's identity
-#: precisely because it is unreliable (`test.log` and `test.properties` share
-#: `text/plain`), and an `.xml` served as `application/xml` would be read as
-#: binary — the file lands on disk, `content` stays empty, and the evidence
-#: silently produces no block. These four are exactly the extensions the text
-#: evidences are built on.
 _TEXT_EXTENSIONS = frozenset({".log", ".properties", ".html", ".xml"})
 
 
@@ -114,14 +60,7 @@ def _state_of(record: dict[str, Any]) -> str:
 
 
 def _run_order_key(record: dict[str, Any]) -> tuple[int, int, str]:
-    """Sort key for picking the newest run: the largest `id` wins.
-
-    `id` IS the run id and grows with every run, so it orders runs even when
-    two of them share a `startTime` (which is what the previous, time-based
-    ordering could not do). Ids are numeric in VisiumGo; a non-numeric one
-    still sorts (below the numeric ones, lexicographically) instead of
-    crashing the whole resolution.
-    """
+    """Sort key for picking the newest run: the largest `id` wins."""
     raw = str(record.get("id", ""))
     try:
         return (1, int(raw), "")
@@ -155,19 +94,11 @@ class VisiumGoSource(Source):
     ) -> None:
         self._client = client
         self._attachments_dir = attachments_dir
-        #: Where a fetched build log is written. None = keep it in memory only.
         self._build_logs_dir = build_logs_dir
         self._build_log_entry = build_log_entry
 
-    # ------------------------------------------------------------- endpoints
-
     async def get_run(self, run_id: str) -> dict[str, Any]:
-        """`GET /api/runs/{run_id}` — one run.
-
-        Returns: `{id, jobId, jobName, userId, startTime, duration,
-        runResult{state, totalScenarios, failScenarios, passScenarios,
-        unstableScenarios}}`.
-        """
+        """`GET /api/runs/{run_id}` — one run."""
         path = PATH_RUN.format(run_id=encode_segment(run_id))
         return _as_dict(await self._client.get_json(path), path)
 
@@ -176,59 +107,30 @@ class VisiumGoSource(Source):
         return _as_list(await self._client.get_json(PATH_RUNS, params={"jobId": job_id}), PATH_RUNS)
 
     async def get_results(self, run_id: str) -> list[dict[str, Any]]:
-        """`GET /api/runs/{run_id}/results` — the run's scenarios.
-
-        Returns rows of `{id, jobId, name, resultType, duration, runId,
-        retryNumber, dateTime, featureName, feature, jobStep}`. `resultType` is
-        `FAILED` | `PASSED` | `UNSTABLE`; every scenario appears once.
-        """
+        """`GET /api/runs/{run_id}/results` — the run's scenarios."""
         path = PATH_RESULTS.format(run_id=encode_segment(run_id))
         return _as_list(await self._client.get_json(path), path)
 
     async def get_scenario_detail(self, run_id: str, scenario_id: str) -> dict[str, Any]:
-        """`GET /api/runs/{run_id}/results/{scenario_id}` — one scenario.
-
-        Returns `{id, name, resultType, errorText, dateTime, stepResults[],
-        attachments[], properties{}}`. Its `runId`/`retryNumber` are unreliable
-        (observed as 0); the real values live in the results row and in
-        `properties`. `stepResults` is deliberately NOT read: VisiumGo derives
-        it from `test.log`, which we send whole.
-        """
+        """`GET /api/runs/{run_id}/results/{scenario_id}` — one scenario."""
         path = PATH_SCENARIO_DETAIL.format(
             run_id=encode_segment(run_id), scenario_id=encode_segment(scenario_id)
         )
         return _as_dict(await self._client.get_json(path), path)
 
     async def fetch_build_log(self, run_id: str) -> tuple[str, str]:
-        """Job-level build log, served by VisiumGo.
-
-        The endpoint (`/api/runs/{run_id}/logs`) returns a **ZIP archive**, not
-        plain text; the wanted entry (`build.log` by default) is extracted from
-        it. The archive itself is not kept — only the extracted text.
-
-        Returns `(log, error)`. Any failure (network, 404, not a zip, entry
-        missing) leaves the log empty and the job continues — but the REASON is
-        returned instead of being swallowed, so a broken endpoint can never
-        pass for "this job simply has no build log".
-        """
+        """Job-level build log, served by VisiumGo."""
         path = PATH_LOGS.format(run_id=encode_segment(run_id))
         try:
             archive = await self._client.get_bytes(path)
             return self._extract_log(archive), ""
         except Exception as exc:
             reason = f"{path}: {type(exc).__name__}: {exc}"
-            # Bounded: an exception text (or a ZIP listing) must not blow up the
-            # run row. Architectural guard, not a tunable setting.
             return "", reason[:_BUILD_LOG_ERROR_MAX_CHARS]
 
     @staticmethod
     def describe_attachment(meta: dict[str, Any]) -> Attachment:
-        """One `attachments[]` row as an Attachment — metadata only, no bytes.
-
-        This is what the download filter judges: `deviceId`, `mimeType` and
-        `fileName` all arrive with the scenario detail, so a file the profile
-        does not want costs nothing at all.
-        """
+        """One `attachments[]` row as an Attachment — metadata only, no bytes."""
         return Attachment(
             file_name=str(meta.get("fileName", "")),
             mime_type=str(meta.get("mimeType", "")),
@@ -238,13 +140,7 @@ class VisiumGoSource(Source):
     async def download_attachment(
         self, run_id: str, meta: dict[str, Any], scenario_id: str = ""
     ) -> Attachment:
-        """Adım D: download one attachment (URL-encoded) and save it to disk.
-
-        `meta` is one `attachments[]` row: `{deviceId, mimeType, fileName,
-        startTime, duration}`. A failed download returns the attachment with
-        empty content AND the reason on `download_error` — the scenario
-        continues, but the gap is never silent.
-        """
+        """Adım D: download one attachment (URL-encoded) and save it to disk."""
         attachment = self.describe_attachment(meta)
         file_name = attachment.file_name
         path = f"/api/runs/{encode_segment(run_id)}/attachments/{encode_segment(file_name)}"
@@ -264,18 +160,12 @@ class VisiumGoSource(Source):
             reason = f"{path}: {type(exc).__name__}: {exc}"
             return attachment.model_copy(update={"download_error": reason[:_FETCH_ERROR_MAX_CHARS]})
 
-    # ----------------------------------------------------------- orchestration
-
     async def resolve_run(self, job_id: str, run_id: str = "") -> RunSummary:
         """Adım A: which run to analyze (see `Source.resolve_run`)."""
         if run_id:
             record = await self.get_run(run_id)
             summary = _summary_from(record or {}, job_id=job_id)
             if not summary.run_id:
-                # The response carries no `id`, so VisiumGo did not confirm this
-                # run. Filling the requested id back in would put a run id in the
-                # record that the API never returned — analysis would then run
-                # against a run nobody can prove exists.
                 raise ValueError(
                     f"run_id={run_id!r} için koşum bulunamadı (cevapta 'id' alanı yok)."
                 )
@@ -289,12 +179,7 @@ class VisiumGoSource(Source):
         return self._select_run(runs, job_id)
 
     def _select_run(self, runs: list[dict[str, Any]], job_id: str) -> RunSummary:
-        """Newest analyzable run: `RUNNING` is skipped, largest `id` wins.
-
-        A run in an unknown state is skipped too — but the skip is reported on
-        the summary, because a state VisiumGo adds later must not quietly
-        remove runs from the analysis.
-        """
+        """Newest analyzable run: `RUNNING` is skipped, largest `id` wins."""
         analyzable = [r for r in runs if _state_of(r) in ANALYZABLE_RUN_STATES]
         if not analyzable:
             states = ", ".join(sorted({_state_of(r) or "<boş>" for r in runs})) or "<yok>"
@@ -317,10 +202,6 @@ class VisiumGoSource(Source):
 
     async def fetch_job(self, run: RunSummary, plan: DownloadPlan) -> JobData:
         """Adım B-D: evidence for an already-resolved run."""
-        # Not fetched unless the active profile asked for it: a ZIP download
-        # nobody uses is bytes paid for nothing. `want_build_log=False` means
-        # "not wanted", never "could not be fetched" — the two are told apart
-        # by `evidence_report.job_log.wanted`.
         job_log = JobLog()
         if plan.wants_build_log:
             text, error = await self.fetch_build_log(run.run_id)
@@ -336,10 +217,6 @@ class VisiumGoSource(Source):
         for record in failed:
             scenarios.append(await self._build_scenario(run.run_id, record, plan))
 
-        # Only what VisiumGo reported. This used to fall back to our own count
-        # of `/results` rows, which put two different numbers in one field with
-        # no way to tell which one you were reading. Absent -> 0, and the
-        # service records that in the run note; `run_result` is stored raw.
         total = run.run_result.get("totalScenarios", 0)
         return JobData(
             total_scenario_count=total,
@@ -349,11 +226,7 @@ class VisiumGoSource(Source):
         )
 
     def _extract_log(self, archive: bytes) -> str:
-        """Read the configured entry out of the ZIP (matched on its ending).
-
-        Raises when the archive holds no matching entry, so the caller can
-        report *why* the log is missing (the exception never reaches the job).
-        """
+        """Read the configured entry out of the ZIP (matched on its ending)."""
         with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
             names = bundle.namelist()
             wanted = next((n for n in names if n.endswith(self._build_log_entry)), "")
@@ -366,21 +239,11 @@ class VisiumGoSource(Source):
     async def _build_scenario(
         self, run_id: str, record: dict[str, Any], plan: DownloadPlan
     ) -> RawScenario:
-        """Adım C: fetch scenario detail and its attachments.
-
-        A detail call that cannot be made, or that fails, does NOT raise: the
-        reason is carried on the scenario and the run goes on. It used to
-        propagate out of `fetch_job`, so one malformed `/results` row (or one
-        404) ended the whole run as `failed` — with every healthy scenario in
-        it never analyzed.
-        """
+        """Adım C: fetch scenario detail and its attachments."""
         scenario_id = str(record.get("id", ""))
         detail: dict[str, Any] = {}
         fetch_error = ""
         if not scenario_id:
-            # No id, no detail endpoint to call: asking for `/results/` with an
-            # empty segment would 404 for a reason that has nothing to do with
-            # this run.
             fetch_error = f"/results satırında 'id' alanı yok: {record}"
         else:
             try:
@@ -393,8 +256,6 @@ class VisiumGoSource(Source):
         for meta in detail.get("attachments", []):
             described = self.describe_attachment(meta)
             if not plan.wants(described):
-                # Not wanted by this profile: no request, no bytes, no file —
-                # but the row stays, flagged, so the gap is explained later.
                 attachments.append(described.model_copy(update={"download_skipped": True}))
                 continue
             attachments.append(await self.download_attachment(run_id, meta, scenario_id))

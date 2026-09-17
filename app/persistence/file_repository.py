@@ -1,9 +1,4 @@
-"""File-based Repository — the DB simulation.
-
-Layout: `<root>/` = database, `<root>/<table>/` = table,
-`<root>/<table>/<row_id>.json` = row. Human-readable (UTF-8, indented) so the
-full trace under `database/` can be opened and inspected.
-"""
+"""File-based Repository — the DB simulation."""
 
 import json
 import os
@@ -29,8 +24,6 @@ class FileRepository(Repository):
         table_dir = self._table_dir(table)
         table_dir.mkdir(parents=True, exist_ok=True)
         path = self._row_path(table, row_id)
-        # Write to a temp file then replace, so concurrent readers never see
-        # a half-written row (status is polled from disk).
         tmp_path = path.with_suffix(".json.tmp")
         tmp_path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2),

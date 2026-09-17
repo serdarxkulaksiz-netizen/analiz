@@ -1,15 +1,4 @@
-"""Where a downloaded attachment lands on disk.
-
-`<attachments>/<run_id>/<scenario_id>/<device_id><extension>`
-
-The file is named the way VisiumGo's UI names it (`browser.default.html`,
-`test.properties`) rather than with the API's uniqueness number, and the
-scenario folder is what keeps those names apart: every scenario of a run
-produces its own `browser.default.html`.
-
-Every downloaded attachment goes through here, so "did it actually land on
-disk?" has one answer and one naming rule.
-"""
+"""Where a downloaded attachment lands on disk."""
 
 from pathlib import Path
 
@@ -24,12 +13,7 @@ def safe_path_part(value: str) -> str:
 def save_attachment(
     root: Path, run_id: str, scenario_id: str, attachment: Attachment, data: bytes
 ) -> Path:
-    """Write one attachment and return where it landed.
-
-    Same device + extension twice in one scenario has not been observed; if it
-    ever happens, both are kept (`-2`, `-3`, …) instead of one silently
-    overwriting the other.
-    """
+    """Write one attachment and return where it landed."""
     folder = root / safe_path_part(run_id)
     if scenario_id:
         folder = folder / safe_path_part(scenario_id)
@@ -48,16 +32,7 @@ def save_attachment(
 
 
 def save_build_log(root: Path, run_id: str, text: str) -> Path:
-    """Write the job-level build log and return where it landed.
-
-    `<build_logs>/<run_id>.log` — one file per RUN, not per scenario, because
-    that is what the log is: the whole run's output. It lives apart from
-    `attachments/` for the same reason it has its own report field — it never
-    came from a scenario's `attachments[]`.
-
-    Kept on disk instead of inline in the run row: a job log is large, and a
-    run row is read for status.
-    """
+    """Write the job-level build log and return where it landed."""
     root.mkdir(parents=True, exist_ok=True)
     dest = root / f"{safe_path_part(run_id)}.log"
     dest.write_text(text, encoding="utf-8")

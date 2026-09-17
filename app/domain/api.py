@@ -1,14 +1,4 @@
-"""API response contract — what `GET /analyze/visiumgo/{id}` actually shows.
-
-Deliberately narrower than what is stored: `database/` keeps the FULL trace
-(raw VisiumGo responses, the build log, the prompt sent, the complete LLM
-envelope), but the API returns only the diagnosis the LLM produced plus the
-small amount of system state a caller needs to make sense of it.
-
-The projection lives here — at the API boundary — and NOT in
-`AnalyzerService.get_run()`, which keeps returning the full row for internal
-use and debugging.
-"""
+"""API response contract — what `GET /analyze/visiumgo/{id}` actually shows."""
 
 from typing import Any
 
@@ -21,11 +11,8 @@ from app.domain.result import AnalysisMeta
 class DiagnosisView(BaseModel):
     """One scenario's diagnosis, as the API exposes it."""
 
-    #: Join key to the `evidence` / `prompts` / `llm_responses` rows on disk,
-    #: so the full trace behind this diagnosis can still be found.
     result_id: str = ""
 
-    # --- what the LLM answered ---
     scenario_name: str = ""
     root_cause: str = ""
     error_type: str = ""
@@ -38,10 +25,7 @@ class DiagnosisView(BaseModel):
     most_relevant_log_lines: list[str] = []
     error_signature: str = ""
 
-    # --- minimal system state: did it work, and who answered ---
     status: AnalysisStatus = AnalysisStatus.OK
-    #: Why there is no diagnosis, when there is none. Exposed because the
-    #: caller cannot open `database/` and should not have to ask.
     failure_reason: str = ""
     meta: AnalysisMeta = AnalysisMeta()
 
@@ -60,9 +44,6 @@ class RunView(BaseModel):
     completed_count: int = 0
     total_scenario_count: int = 0
     note: str = ""
-    #: Why the job-level build log is missing, when it should not be. Run-level
-    #: system state like `note` — NOT raw evidence: the build log itself stays
-    #: on disk and never enters the API.
     build_log_error: str = ""
     created_at: str = ""
     updated_at: str = ""
@@ -70,11 +51,7 @@ class RunView(BaseModel):
 
 
 def build_run_view(run: dict[str, Any]) -> RunView:
-    """Project a stored run row (with its results) into the API view.
-
-    Unknown/extra keys in the stored row are dropped by the model, which is
-    the point: new persisted fields never leak into the API by accident.
-    """
+    """Project a stored run row (with its results) into the API view."""
     return RunView(
         **{key: value for key, value in run.items() if key != "results"},
         results=[DiagnosisView(**row) for row in run.get("results", [])],
