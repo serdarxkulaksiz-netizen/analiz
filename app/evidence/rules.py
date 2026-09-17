@@ -96,9 +96,13 @@ class KeepScenarioSection(Rule):
     The markers are a property of the **log format**, not a per-job decision, so
     they live here as defaults rather than being repeated in every profile:
     VisiumGo's build.log opens each scenario with
-    `beforeScenario:63 - [2]  > Scenario [<ad>] started`, and the next
-    `beforeScenario:` line is where that scenario's part ends. Config only has
-    to ask for the rule:
+    `beforeScenario:63 - [2]  > Scenario [<ad>] started`, and the NEXT
+    scenario's opening line is where that scenario's part ends. The end marker
+    used to be `beforeScenario:`, which also matches lines INSIDE the same
+    scenario (`beforeScenario:50 - Scenario source tag:` follows the opening
+    line immediately), so every section was cut after ~2 lines and the whole
+    body — steps, failure, stack trace — was dropped. Config only has to ask
+    for the rule:
 
         {"type": "keep_scenario_section"}
 
@@ -118,7 +122,7 @@ class KeepScenarioSection(Rule):
 
     #: VisiumGo build.log scenario boundary (verified against a real log).
     DEFAULT_START = "> Scenario [{scenario_name}] started"
-    DEFAULT_END = "beforeScenario:"
+    DEFAULT_END = "> Scenario ["
 
     def __init__(self, start: str | None = None, end: str | None = None) -> None:
         self._start = start if start else self.DEFAULT_START
@@ -137,6 +141,13 @@ class KeepScenarioSection(Rule):
             end = self._end.format(scenario_name=ctx.scenario_name)
             stop = rest.find(end, len(start))
             if stop != -1:
+                # `stop` lands mid-line on the NEXT scenario's opening line (it
+                # is preceded by that line's timestamp and `beforeScenario:NN`).
+                # Cut at that line's start so no fragment of the next scenario
+                # dangles at the end of this one's section.
+                line_start = rest.rfind("\n", 0, stop)
+                if line_start != -1:
+                    stop = line_start
                 return rest[:stop].rstrip()
         return rest
 
