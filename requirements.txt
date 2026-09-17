@@ -1,5 +1,5 @@
 # Pinned runtime dependencies (mirror of pyproject.toml [project.dependencies]).
-# Install: pip install -r requirements.txt   (dev extras: pip install -e ".[dev]")
+# Install: pip install -r requirements.txt   (static checks: pip install -e ".[lint]")
 fastapi==0.139.2
 uvicorn==0.51.0
 pydantic==2.13.4
