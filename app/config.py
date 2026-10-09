@@ -16,6 +16,8 @@ class Settings(BaseSettings):
         extra="forbid",
     )
 
+    repository_provider: str = "memory"
+    max_kept_runs: int = 20
     database_dir: Path = Path("database")
     table_runs: str = "runs"
     table_analysis_results: str = "analysis_results"

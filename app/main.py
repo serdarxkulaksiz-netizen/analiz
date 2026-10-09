@@ -15,6 +15,8 @@ from app.extraction.evidence_extractor import EvidenceExtractor
 from app.llm.openai_compatible import OpenAICompatibleLLMProvider
 from app.llm.provider import LLMProvider
 from app.persistence.file_repository import FileRepository
+from app.persistence.memory_repository import MemoryRepository
+from app.persistence.repository import Repository
 from app.precheck.base import PreCheck
 from app.precheck.noop import NoOpPreCheck
 from app.precheck.rule_based import RuleBasedPreCheck
@@ -78,6 +80,11 @@ LLM_REGISTRY: dict[str, Callable[[Settings], LLMProvider]] = {
     ),
 }
 
+REPOSITORY_REGISTRY: dict[str, Callable[[Settings], Repository]] = {
+    "memory": lambda s: MemoryRepository(s.max_kept_runs),
+    "file": lambda s: FileRepository(s.database_dir),
+}
+
 PRECHECK_REGISTRY: dict[str, Callable[[Settings], PreCheck]] = {
     "noop": lambda s: NoOpPreCheck(),
     "rules": lambda s: RuleBasedPreCheck(load_rules(s.precheck_rules_path)),
@@ -112,7 +119,9 @@ def build_service(settings: Settings) -> AnalyzerService:
 
     return AnalyzerService(
         settings=settings,
-        repository=FileRepository(settings.database_dir),
+        repository=_select(REPOSITORY_REGISTRY, settings.repository_provider, "repository")(
+            settings
+        ),
         source=_select(SOURCE_REGISTRY, settings.source_provider, "source")(settings),
         extractor=EvidenceExtractor(EvidenceRegistry()),
         prompt_builder=prompt_builder,
