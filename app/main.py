@@ -150,7 +150,7 @@ def _version() -> str:
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """App factory (also used by tests with isolated settings)."""
+    """App factory — builds the whole chain from one Settings object."""
     settings = settings or get_settings()
     service = build_service(settings)
 

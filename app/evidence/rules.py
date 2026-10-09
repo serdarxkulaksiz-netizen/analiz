@@ -60,6 +60,13 @@ class KeepScenarioSection(Rule):
         self._end = self.DEFAULT_END if end is None else end
 
     def apply(self, text: str, ctx: RuleContext) -> str:
+        # TODO: the LAST scenario has no next opening line, so its section runs
+        # to the end of the file and swallows the run-level tail — the runner's
+        # `Failed scenarios:` list (which names OTHER scenarios), the build
+        # tool's summary, the post-build output. Reproduced: five scenarios cut
+        # clean, the sixth carried three foreign scenario names. The fix needs
+        # `end` to accept several markers ("whichever comes first"), and the
+        # markers have to be read off a sample build.log, not guessed.
         start = self._start.format(scenario_name=ctx.scenario_name)
         index = text.find(start)
         if index == -1:
@@ -149,6 +156,11 @@ class StripTags(Rule):
         self._tags = lowered - {"comment"}
 
     def apply(self, text: str, ctx: RuleContext) -> str:
+        # TODO: this is an HTML parser, and it lower-cases closing tags:
+        # `<ScrollView>...</ScrollView>` comes back as `<ScrollView>...</scrollview>`.
+        # Harmless for HTML, wrong for the mobile UI tree, which is XML and
+        # case-sensitive. No profile sends XML through this rule today; one that
+        # does needs a case-preserving path first.
         parser = _TagStripper(self._tags, self._drop_comments)
         parser.feed(text)
         parser.close()
