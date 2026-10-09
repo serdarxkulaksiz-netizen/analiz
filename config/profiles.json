@@ -48,6 +48,17 @@
   "job_failed": {
     "prompt": "buildlog",
     "extra_context": "",
-    "evidence": []
+    "evidence": [
+      {
+        "name": "BuildLogEvidence",
+        "rules": [
+          {
+            "type": "keep_last_lines",
+            "count": 200
+          }
+        ]
+      }
+    ],
+    "_not": "build.log tamamı değil SONU gider: koşumun kendisi çöktüğünde senaryo bölümü olmayabilir, sebebi anlatan özet dosyanın sonundadır. count DOĞRULANMADI — gerçek bir FAILED koşum logu görülünce ayarlanacak."
   }
 }
