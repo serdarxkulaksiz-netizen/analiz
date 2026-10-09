@@ -46,7 +46,6 @@
     ]
   },
   "job_failed": {
-    "_not": "KIRPMA KURALI YAZILMADI. BuildLogEvidence listede, ama `rules` boş: kural yazılana kadar logun TAMAMI modele gider. Örnek bir build.log dosyasına bakılarak doldurulmalı.",
     "prompt": "buildlog",
     "extra_context": "",
     "evidence": [
