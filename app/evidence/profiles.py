@@ -1,4 +1,4 @@
-"""Analysis profiles — job-based customization, driven by config."""
+"""Analysis profiles — the caller names one per request, config says what it does."""
 
 import json
 from pathlib import Path
@@ -6,8 +6,6 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from app.evidence.rules import Rule, RuleContext, build_rule
-
-DEFAULT_PROFILE_NAME = "default_web"
 
 JOB_FAILED_PROFILE_NAME = "job_failed"
 
@@ -17,7 +15,6 @@ class ProfileConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    job_ids: list[str] = []
     evidence_to_llm: list[str] = []
     evidence_to_store: list[str] = []
     rules: dict[str, list[dict]] = {}
@@ -36,7 +33,6 @@ class Profile:
                 "indirilmeyen kanıt prompt'a giremez."
             )
         self.name = name
-        self.job_ids = config.job_ids
         self.evidence_to_llm = config.evidence_to_llm
         self.evidence_to_store = config.evidence_to_store
         self.prompt = config.prompt
@@ -62,7 +58,6 @@ class ProfileRegistry:
     def __init__(self, config_path: Path) -> None:
         data = json.loads(config_path.read_text(encoding="utf-8"))
         self._profiles: dict[str, Profile] = {}
-        self._by_job_id: dict[str, Profile] = {}
 
         for name, row in data.items():
             if name.startswith("_"):
@@ -73,20 +68,11 @@ class ProfileRegistry:
             except ValueError as exc:
                 raise ValueError(f"profile {name!r}: {exc}") from exc
             self._profiles[name] = profile
-            for job_id in profile.job_ids:
-                owner = self._by_job_id.get(job_id)
-                if owner is not None:
-                    raise ValueError(
-                        f"job_id {job_id!r} is claimed by both {owner.name!r} "
-                        f"and {name!r} in {config_path}."
-                    )
-                self._by_job_id[job_id] = profile
 
-        for required in (DEFAULT_PROFILE_NAME, JOB_FAILED_PROFILE_NAME):
-            if required not in self._profiles:
-                raise ValueError(
-                    f'profiles config {config_path} must contain a "{required}" profile.'
-                )
+        if JOB_FAILED_PROFILE_NAME not in self._profiles:
+            raise ValueError(
+                f'profiles config {config_path} must contain a "{JOB_FAILED_PROFILE_NAME}" profile.'
+            )
 
     def evidence_names(self) -> set[str]:
         """Every evidence name the profiles mention (startup validation)."""
@@ -99,21 +85,21 @@ class ProfileRegistry:
         """Every prompt template name the profiles ask for (startup check)."""
         return {profile.prompt for profile in self._profiles.values()}
 
-    def get(self, job_id: str = "", forced: str = "") -> Profile:
-        """Resolve the profile for this run (see module docstring for order)."""
-        if forced:
-            profile = self._profiles.get(forced)
-            if profile is None:
-                known = ", ".join(sorted(self._profiles))
-                raise ValueError(f"Unknown profile {forced!r}. Known profiles: {known}")
-            return profile
-        if job_id and job_id in self._by_job_id:
-            return self._by_job_id[job_id]
-        return self._profiles[DEFAULT_PROFILE_NAME]
+    def selectable_names(self) -> set[str]:
+        """Profiles a caller may ask for by name (job_failed is system-only)."""
+        return set(self._profiles) - {JOB_FAILED_PROFILE_NAME}
+
+    def get(self, name: str = "", forced: str = "") -> Profile:
+        """Resolve the profile for this run; `forced` overrides the caller's choice."""
+        wanted = forced or name
+        profile = self._profiles.get(wanted)
+        if profile is None:
+            known = ", ".join(sorted(self._profiles))
+            raise ValueError(f"Unknown profile {wanted!r}. Known profiles: {known}")
+        return profile
 
 
 __all__ = [
-    "DEFAULT_PROFILE_NAME",
     "JOB_FAILED_PROFILE_NAME",
     "Profile",
     "ProfileConfig",

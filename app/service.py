@@ -112,13 +112,11 @@ class AnalyzerService:
         self._precheck = precheck
         self._run_row_lock = asyncio.Lock()
 
-    def create_run(
-        self,
-        parameter1: str,
-        job_id: str,
-        parameter2: str,
-        run_id: str = "",
-    ) -> str:
+    def selectable_profiles(self) -> set[str]:
+        """Profile names a caller may ask for (job_failed is system-only)."""
+        return self._profiles.selectable_names()
+
+    def create_run(self, profil: str, job_id: str, run_id: str = "") -> str:
         """Persist a pending run row and return its analyzer_run_id."""
         analyzer_run_id = str(uuid4())
         now = _utcnow_iso()
@@ -127,8 +125,8 @@ class AnalyzerService:
             analyzer_run_id,
             {
                 "analyzer_run_id": analyzer_run_id,
-                "parameter1": parameter1,
-                "parameter2": parameter2,
+                "profil": profil,
+                "profile_name": "",
                 "job_id": job_id,
                 "run_id": run_id,
                 "status": RunStatus.PENDING.value,
@@ -201,13 +199,12 @@ class AnalyzerService:
         )
 
         forced_profile = STATE_PROFILE_OVERRIDE.get(summary.state, "")
-        profile_job_id = job_id or summary.job_id
-
-        plan = plan_for(self._profiles, job_id=profile_job_id, forced=forced_profile)
+        plan = plan_for(self._profiles, profil=run.get("profil", ""), forced=forced_profile)
         job = await self._source.fetch_job(summary, plan)
         self._update_run(
             run,
             job_name=summary.job_name,
+            profile_name=plan.profile.name,
             raw_run_response=summary.raw,
             raw_results_response=job.raw_results_response,
             build_log_path=job.job_log.stored_path,

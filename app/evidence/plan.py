@@ -24,9 +24,9 @@ class AnalysisPlan:
         return BuildLogEvidence.evidence_name in self._wanted
 
 
-def plan_for(profiles: ProfileRegistry, *, job_id: str = "", forced: str = "") -> AnalysisPlan:
+def plan_for(profiles: ProfileRegistry, *, profil: str = "", forced: str = "") -> AnalysisPlan:
     """Resolve the profile for this run — the ONLY place that does."""
-    return AnalysisPlan(profiles.get(job_id=job_id, forced=forced))
+    return AnalysisPlan(profiles.get(name=profil, forced=forced))
 
 
 __all__ = ["AnalysisPlan", "plan_for"]
