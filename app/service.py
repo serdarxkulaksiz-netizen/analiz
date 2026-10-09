@@ -203,6 +203,7 @@ class AnalyzerService:
         job = await self._source.fetch_job(summary, plan)
         self._update_run(
             run,
+            job_id=summary.job_id,
             job_name=summary.job_name,
             profile_name=plan.profile.name,
             raw_run_response=summary.raw,
