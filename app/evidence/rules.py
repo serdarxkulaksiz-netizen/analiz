@@ -79,32 +79,6 @@ class KeepScenarioSection(Rule):
         return rest
 
 
-class KeepLastLines(Rule):
-    """Keep only the end of a log — where a run-level failure is summarised.
-
-    The counterpart of `keep_scenario_section`: when the RUN itself crashed
-    there may be no scenario sections to slice, and what explains the failure
-    (the runner's summary, the build tool's error, the post-build output) sits
-    at the end of the file. Makes no assumption about the log's internal
-    format — only that a build log ends where the build ended.
-
-    Shorter than `count` lines means the log is passed through whole.
-    """
-
-    rule_type = "keep_last_lines"
-
-    def __init__(self, count: int = 200) -> None:
-        if count <= 0:
-            raise ValueError("count must be greater than 0")
-        self._count = count
-
-    def apply(self, text: str, ctx: RuleContext) -> str:
-        lines = text.splitlines()
-        if len(lines) <= self._count:
-            return text
-        return "\n".join(lines[-self._count :])
-
-
 class CollapseWhitespace(Rule):
     """Squeeze runs of whitespace (markup dumps are mostly indentation)."""
 
@@ -185,7 +159,6 @@ RULE_REGISTRY: dict[str, type[Rule]] = {
     rule.rule_type: rule
     for rule in (
         KeepScenarioSection,
-        KeepLastLines,
         CollapseWhitespace,
         StripTags,
     )

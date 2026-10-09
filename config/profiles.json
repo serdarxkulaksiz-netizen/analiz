@@ -26,7 +26,7 @@
     ]
   },
   "mobil": {
-    "_not": "İÇERİĞİ HENÜZ BELİRLENMEDİ — iskelet otursun diye boş bırakıldı.",
+    "_not": "İÇERİĞİ BELİRLENMEDİ. Hangi kanıtın gideceği ve nasıl kırpılacağı, örnek bir mobil koşum dosyasına bakılarak doldurulmalı.",
     "prompt": "mobile",
     "extra_context": "",
     "evidence": []
@@ -46,19 +46,14 @@
     ]
   },
   "job_failed": {
+    "_not": "KIRPMA KURALI YAZILMADI. BuildLogEvidence listede, ama `rules` boş: kural yazılana kadar logun TAMAMI modele gider. Örnek bir build.log dosyasına bakılarak doldurulmalı.",
     "prompt": "buildlog",
     "extra_context": "",
     "evidence": [
       {
         "name": "BuildLogEvidence",
-        "rules": [
-          {
-            "type": "keep_last_lines",
-            "count": 200
-          }
-        ]
+        "rules": []
       }
-    ],
-    "_not": "build.log tamamı değil SONU gider: koşumun kendisi çöktüğünde senaryo bölümü olmayabilir, sebebi anlatan özet dosyanın sonundadır. count DOĞRULANMADI — gerçek bir FAILED koşum logu görülünce ayarlanacak."
+    ]
   }
 }
