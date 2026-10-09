@@ -50,6 +50,8 @@ class EvidenceReport(BaseModel):
     attachments: list[AttachmentReport] = []
     job_log: JobLogReport = JobLogReport()
     scenario_error: str = ""
+    error_text: str = ""
+    detail_fields: list[str] = []
     rule_errors: list[str] = []
     blocks: list[BlockReport] = []
 

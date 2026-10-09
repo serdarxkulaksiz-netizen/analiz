@@ -27,6 +27,7 @@ class DiagnosisView(BaseModel):
 
     status: AnalysisStatus = AnalysisStatus.OK
     failure_reason: str = ""
+    error_text: str = ""
     meta: AnalysisMeta = AnalysisMeta()
 
 

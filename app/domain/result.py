@@ -52,6 +52,9 @@ class AnalysisResult(BaseModel):
     error_signature: str = ""
 
     failure_reason: str = ""
+    #: The scenario's own error message, as the source reported it. Not the
+    #: model's words: it is what the run itself said went wrong.
+    error_text: str = ""
     profile_name: str = ""
     status: AnalysisStatus = AnalysisStatus.OK
     meta: AnalysisMeta = AnalysisMeta()

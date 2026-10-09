@@ -420,6 +420,7 @@ class AnalyzerService:
                     analyzer_run_id=analyzer_run_id,
                     scenario_name=scenario.scenario_name,
                     **analysis.model_dump(),
+                    error_text=scenario.error_text,
                     profile_name=profile_name,
                     status=AnalysisStatus.OK,
                     meta=meta,
@@ -430,6 +431,7 @@ class AnalyzerService:
                     analyzer_run_id=analyzer_run_id,
                     scenario_name=scenario.scenario_name,
                     failure_reason=failure_reason,
+                    error_text=scenario.error_text,
                     profile_name=profile_name,
                     status=(
                         AnalysisStatus.NO_EVIDENCE

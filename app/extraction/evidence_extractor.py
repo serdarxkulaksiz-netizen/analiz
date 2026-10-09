@@ -105,6 +105,8 @@ def _build_report(
     return EvidenceReport(
         attachments=attachments,
         scenario_error=scenario.fetch_error,
+        error_text=scenario.error_text,
+        detail_fields=scenario.detail_fields,
         rule_errors=rule_errors or [],
         job_log=JobLogReport(
             goes_to_llm=build_log_name in profile.evidence_to_llm,

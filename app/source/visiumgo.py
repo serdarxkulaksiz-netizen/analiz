@@ -277,6 +277,7 @@ class VisiumGoSource(Source):
             error_text=str(detail.get("errorText", "")),
             attachments=attachments,
             fetch_error=fetch_error,
+            detail_fields=sorted(detail),
         )
 
     def _save(self, run_id: str, scenario_id: str, attachment: Attachment, data: bytes) -> str:
