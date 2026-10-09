@@ -105,9 +105,8 @@ def _build_report(
         scenario_error=scenario.fetch_error,
         rule_errors=rule_errors or [],
         job_log=JobLogReport(
-            wanted=build_log_name in profile.wanted_evidence,
-            chars=len(job_log.text),
             goes_to_llm=build_log_name in profile.evidence_to_llm,
+            chars=len(job_log.text),
             stored_path=job_log.stored_path,
             error=job_log.error,
         ),

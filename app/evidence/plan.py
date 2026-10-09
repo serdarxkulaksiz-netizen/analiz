@@ -11,7 +11,7 @@ class AnalysisPlan:
 
     def __init__(self, profile: Profile) -> None:
         self.profile = profile
-        self._wanted = profile.wanted_evidence
+        self._wanted = set(profile.evidence_to_llm)
 
     def wants(self, attachment: Attachment) -> bool:
         """Should this attachment be downloaded at all?"""

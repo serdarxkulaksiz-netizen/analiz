@@ -38,9 +38,8 @@ class JobLogReport(BaseModel):
     """The job-level build log as extraction saw it."""
 
     source: str = "/api/runs/{run_id}/logs"
-    wanted: bool = False
-    chars: int = 0
     goes_to_llm: bool = False
+    chars: int = 0
     stored_path: str = ""
     error: str = ""
 

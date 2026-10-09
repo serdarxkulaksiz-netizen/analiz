@@ -1,71 +1,53 @@
 {
-  "_comment": "Profili isteği atan seçer: POST gövdesindeki `profil` alanı bu dosyadaki bir ada eşit olmalı. `job_failed` seçilemez — koşumun KENDİSİ çöktüğünde (runResult.state=FAILED) sistem onu zorlar. Profil üç şeyi söyler: evidence_to_store = inen + database'e yazılan kanıtlar (listede olmayan ek HİÇ indirilmez) · evidence_to_llm = prompt'a giren kanıtlar (evidence_to_store'un alt kümesi olmak zorunda) · rules = yalnız prompt'a giden kopyayı kırpar.",
+  "_comment": "Profili isteği atan seçer: POST gövdesindeki `profil` alanı bu dosyadaki bir ada eşit olmalı. `job_failed` seçilemez — koşumun KENDİSİ çöktüğünde (runResult.state=FAILED) sistem onu zorlar. `evidence` listesi tek şeyi söyler: LLM'e KİM gidecek ve yanındaki `rules` ile NASIL kırpılacak. Listede olmayan kanıt hiç indirilmez. Sıra, prompt'taki blok sırasıdır. Bir kanıtın NEREDEN geldiği config'in işi değil, kanıt sınıfının kimliğidir.",
   "web": {
     "prompt": "web",
     "extra_context": "",
-    "evidence_to_store": [
-      "TestLogEvidence",
-      "TestPropertiesEvidence",
-      "HtmlEvidence",
-      "MobileDomEvidence",
-      "BrowserLogEvidence",
-      "BuildLogEvidence",
-      "WebScreenshotEvidence",
-      "MobileScreenshotEvidence"
-    ],
-    "evidence_to_llm": [
-      "TestLogEvidence",
-      "HtmlEvidence"
-    ],
-    "rules": {
-      "HtmlEvidence": [
-        {
-          "type": "strip_tags",
-          "tags": [
-            "script",
-            "style",
-            "svg"
-          ]
-        },
-        {
-          "type": "collapse_whitespace"
-        }
-      ]
-    }
+    "evidence": [
+      {
+        "name": "TestLogEvidence"
+      },
+      {
+        "name": "HtmlEvidence",
+        "rules": [
+          {
+            "type": "strip_tags",
+            "tags": [
+              "script",
+              "style",
+              "svg"
+            ]
+          },
+          {
+            "type": "collapse_whitespace"
+          }
+        ]
+      }
+    ]
   },
   "mobil": {
     "_not": "İÇERİĞİ HENÜZ BELİRLENMEDİ — iskelet otursun diye boş bırakıldı.",
     "prompt": "mobile",
     "extra_context": "",
-    "evidence_to_store": [],
-    "evidence_to_llm": [],
-    "rules": {}
+    "evidence": []
   },
   "finart_regresyon": {
     "prompt": "buildlog",
     "extra_context": "",
-    "evidence_to_store": [
-      "BuildLogEvidence"
-    ],
-    "evidence_to_llm": [
-      "BuildLogEvidence"
-    ],
-    "rules": {
-      "BuildLogEvidence": [
-        {
-          "type": "keep_scenario_section"
-        }
-      ]
-    }
+    "evidence": [
+      {
+        "name": "BuildLogEvidence",
+        "rules": [
+          {
+            "type": "keep_scenario_section"
+          }
+        ]
+      }
+    ]
   },
   "job_failed": {
     "prompt": "buildlog",
     "extra_context": "",
-    "evidence_to_store": [
-      "BuildLogEvidence",
-      "TestLogEvidence"
-    ],
-    "evidence_to_llm": [],
-    "rules": {}
+    "evidence": []
   }
 }

@@ -10,14 +10,21 @@ from app.evidence.rules import Rule, RuleContext, build_rule
 JOB_FAILED_PROFILE_NAME = "job_failed"
 
 
+class EvidenceRow(BaseModel):
+    """One evidence in a profile: who goes to the LLM, and how it is shaped."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    rules: list[dict] = []
+
+
 class ProfileConfig(BaseModel):
     """Raw profile row as written in the config file."""
 
     model_config = ConfigDict(extra="forbid")
 
-    evidence_to_llm: list[str] = []
-    evidence_to_store: list[str] = []
-    rules: dict[str, list[dict]] = {}
+    evidence: list[EvidenceRow] = []
     prompt: str
     extra_context: str = ""
 
@@ -26,30 +33,24 @@ class Profile:
     """A compiled profile: config plus ready-to-run rule objects."""
 
     def __init__(self, name: str, config: ProfileConfig) -> None:
-        missing = sorted(set(config.evidence_to_llm) - set(config.evidence_to_store))
-        if missing:
+        names = [row.name for row in config.evidence]
+        repeated = sorted({row for row in names if names.count(row) > 1})
+        if repeated:
             raise ValueError(
-                f"evidence_to_llm içindeki {', '.join(missing)} evidence_to_store'da yok — "
-                "indirilmeyen kanıt prompt'a giremez."
+                f"{', '.join(repeated)} listede birden fazla kez geçiyor — "
+                "aynı kanıt prompt'a iki blok olarak girerdi."
             )
         self.name = name
-        self.evidence_to_llm = config.evidence_to_llm
-        self.evidence_to_store = config.evidence_to_store
+        self.evidence_to_llm = names
         self.prompt = config.prompt
         self.extra_context = config.extra_context
         self._rules: dict[str, list[Rule]] = {
-            evidence_name: [build_rule(row) for row in rows]
-            for evidence_name, rows in config.rules.items()
+            row.name: [build_rule(entry) for entry in row.rules] for row in config.evidence
         }
 
     def rules_for(self, evidence_name: str) -> list[Rule]:
         """Content rules for one evidence type (empty = passthrough)."""
         return self._rules.get(evidence_name, [])
-
-    @property
-    def wanted_evidence(self) -> set[str]:
-        """Evidence this profile needs at all — i.e. what is worth downloading."""
-        return set(self.evidence_to_llm) | set(self.evidence_to_store)
 
 
 class ProfileRegistry:
@@ -78,7 +79,7 @@ class ProfileRegistry:
         """Every evidence name the profiles mention (startup validation)."""
         names: set[str] = set()
         for profile in self._profiles.values():
-            names |= profile.wanted_evidence
+            names |= set(profile.evidence_to_llm)
         return names
 
     def prompt_names(self) -> set[str]:
@@ -102,6 +103,7 @@ class ProfileRegistry:
 __all__ = [
     "JOB_FAILED_PROFILE_NAME",
     "Profile",
+    "EvidenceRow",
     "ProfileConfig",
     "ProfileRegistry",
     "RuleContext",
