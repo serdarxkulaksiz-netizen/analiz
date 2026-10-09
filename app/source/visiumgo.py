@@ -88,7 +88,7 @@ class VisiumGoSource(Source):
     def __init__(
         self,
         client: VisiumGoClient,
-        attachments_dir: Path,
+        attachments_dir: Path | None = None,
         build_logs_dir: Path | None = None,
         build_log_entry: str = "build.log",
     ) -> None:
@@ -152,10 +152,10 @@ class VisiumGoSource(Source):
             if is_text:
                 text = await self._client.get_text(path)
                 stored = self._save(run_id, scenario_id, attachment, text.encode("utf-8"))
-                return attachment.model_copy(update={"content": text, "stored_path": str(stored)})
+                return attachment.model_copy(update={"content": text, "stored_path": stored})
             data = await self._client.get_bytes(path)
             stored = self._save(run_id, scenario_id, attachment, data)
-            return attachment.model_copy(update={"stored_path": str(stored)})
+            return attachment.model_copy(update={"stored_path": stored})
         except Exception as exc:
             reason = f"{path}: {type(exc).__name__}: {exc}"
             return attachment.model_copy(update={"download_error": reason[:_FETCH_ERROR_MAX_CHARS]})
@@ -268,6 +268,8 @@ class VisiumGoSource(Source):
             fetch_error=fetch_error,
         )
 
-    def _save(self, run_id: str, scenario_id: str, attachment: Attachment, data: bytes) -> Path:
-        """Write one attachment under the shared naming rule (see `storage`)."""
-        return save_attachment(self._attachments_dir, run_id, scenario_id, attachment, data)
+    def _save(self, run_id: str, scenario_id: str, attachment: Attachment, data: bytes) -> str:
+        """Write one attachment, or nothing at all when evidence is not kept."""
+        if self._attachments_dir is None:
+            return ""
+        return str(save_attachment(self._attachments_dir, run_id, scenario_id, attachment, data))

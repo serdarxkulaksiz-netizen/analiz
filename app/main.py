@@ -1,6 +1,7 @@
 """FastAPI app — async start/poll API."""
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import TypeVar
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
@@ -44,12 +45,17 @@ class AnalyzeRequest(BaseModel):
         return self
 
 
-def _attachments_dir(settings: Settings):
+def _attachments_dir(settings: Settings) -> Path | None:
+    """Where downloaded attachments land, or None when nothing is kept."""
+    if settings.repository_provider != "file":
+        return None
     return settings.database_dir / "attachments"
 
 
-def _build_logs_dir(settings: Settings):
-    """Where the job-level build log is written — one file per run."""
+def _build_logs_dir(settings: Settings) -> Path | None:
+    """Where the job-level build log is written, or None when nothing is kept."""
+    if settings.repository_provider != "file":
+        return None
     return settings.database_dir / "build_logs"
 
 
