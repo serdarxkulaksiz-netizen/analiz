@@ -1,6 +1,9 @@
 """FastAPI app — async start/poll API."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
 from typing import TypeVar
 
@@ -70,6 +73,7 @@ SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
         _attachments_dir(s),
         _build_logs_dir(s),
         build_log_entry=s.visiumgo_build_log_entry,
+        max_parallel=s.max_concurrency,
     ),
 }
 
@@ -87,13 +91,13 @@ LLM_REGISTRY: dict[str, Callable[[Settings], LLMProvider]] = {
 }
 
 REPOSITORY_REGISTRY: dict[str, Callable[[Settings], Repository]] = {
-    "memory": lambda s: MemoryRepository(s.max_kept_runs),
+    "memory": lambda s: MemoryRepository(s.max_kept_runs, s.table_runs),
     "file": lambda s: FileRepository(s.database_dir),
 }
 
 PRECHECK_REGISTRY: dict[str, Callable[[Settings], PreCheck]] = {
     "noop": lambda s: NoOpPreCheck(),
-    "rules": lambda s: RuleBasedPreCheck(load_rules(s.precheck_rules_path)),
+    "rules": lambda s: RuleBasedPreCheck(load_rules(s.precheck_rules_path, s.confidence_buckets)),
 }
 
 
@@ -137,12 +141,25 @@ def build_service(settings: Settings) -> AnalyzerService:
     )
 
 
+def _version() -> str:
+    """The package's own version — never a second number kept by hand."""
+    try:
+        return package_version("visiumgo-test-analyzer")
+    except PackageNotFoundError:
+        return "0"
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """App factory (also used by tests with isolated settings)."""
     settings = settings or get_settings()
     service = build_service(settings)
 
-    app = FastAPI(title="VisiumGo Test Analyzer", version="0.3.0")
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        await service.aclose()
+
+    app = FastAPI(title="VisiumGo Test Analyzer", version=_version(), lifespan=lifespan)
     app.state.service = service
 
     @app.post("/analyze/visiumgo")

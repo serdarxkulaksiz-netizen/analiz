@@ -37,13 +37,16 @@ class FileRepository(Repository):
             return None
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def list(self, table: str) -> list[dict[str, Any]]:
+    def list(self, table: str, where: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         table_dir = self._table_dir(table)
         if not table_dir.is_dir():
             return []
         rows: list[dict[str, Any]] = []
         for path in sorted(table_dir.glob("*.json")):
-            rows.append(json.loads(path.read_text(encoding="utf-8")))
+            row = json.loads(path.read_text(encoding="utf-8"))
+            if where and any(row.get(k) != v for k, v in where.items()):
+                continue
+            rows.append(row)
         return rows
 
     def exists(self, table: str, row_id: str) -> bool:

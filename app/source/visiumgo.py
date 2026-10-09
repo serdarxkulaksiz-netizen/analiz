@@ -1,5 +1,6 @@
 """VisiumGoSource — real VisiumGo API client."""
 
+import asyncio
 import io
 import zipfile
 from pathlib import Path
@@ -91,11 +92,17 @@ class VisiumGoSource(Source):
         attachments_dir: Path | None = None,
         build_logs_dir: Path | None = None,
         build_log_entry: str = "build.log",
+        max_parallel: int = 2,
     ) -> None:
         self._client = client
         self._attachments_dir = attachments_dir
         self._build_logs_dir = build_logs_dir
         self._build_log_entry = build_log_entry
+        self._max_parallel = max_parallel
+
+    async def aclose(self) -> None:
+        """Close the pooled HTTP connections."""
+        await self._client.aclose()
 
     async def get_run(self, run_id: str) -> dict[str, Any]:
         """`GET /api/runs/{run_id}` — one run."""
@@ -213,9 +220,13 @@ class VisiumGoSource(Source):
         results = await self.get_results(run.run_id)
         failed = [r for r in results if r.get("resultType") == "FAILED"]
 
-        scenarios: list[RawScenario] = []
-        for record in failed:
-            scenarios.append(await self._build_scenario(run.run_id, record, plan))
+        semaphore = asyncio.Semaphore(self._max_parallel)
+
+        async def one(record: dict[str, Any]) -> RawScenario:
+            async with semaphore:
+                return await self._build_scenario(run.run_id, record, plan)
+
+        scenarios = list(await asyncio.gather(*(one(record) for record in failed)))
 
         total = run.run_result.get("totalScenarios", 0)
         return JobData(

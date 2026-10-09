@@ -16,8 +16,8 @@ class Repository(ABC):
         """Return the row, or None if it does not exist."""
 
     @abstractmethod
-    def list(self, table: str) -> list[dict[str, Any]]:
-        """Return all rows of `table` (empty list if the table is empty/missing)."""
+    def list(self, table: str, where: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Return the rows of `table`, optionally only those matching `where`."""
 
     @abstractmethod
     def exists(self, table: str, row_id: str) -> bool:

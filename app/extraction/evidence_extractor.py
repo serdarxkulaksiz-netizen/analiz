@@ -85,20 +85,22 @@ def _build_report(
     rule_errors: list[str] | None = None,
 ) -> EvidenceReport:
     """Record what arrived and what reached the prompt."""
-    attachments = [
-        AttachmentReport(
-            file_name=attachment.file_name,
-            mime_type=attachment.mime_type,
-            device_id=attachment.device_id,
-            evidence_name=evidence_name_for(attachment),
-            goes_to_llm=evidence_name_for(attachment) in profile.evidence_to_llm,
-            download_skipped=attachment.download_skipped,
-            download_error=attachment.download_error,
-            chars=len(attachment.content),
-            stored_path=attachment.stored_path,
+    attachments = []
+    for attachment in scenario.attachments:
+        evidence_name = evidence_name_for(attachment)
+        attachments.append(
+            AttachmentReport(
+                file_name=attachment.file_name,
+                mime_type=attachment.mime_type,
+                device_id=attachment.device_id,
+                evidence_name=evidence_name,
+                goes_to_llm=evidence_name in profile.evidence_to_llm,
+                download_skipped=attachment.download_skipped,
+                download_error=attachment.download_error,
+                chars=len(attachment.content),
+                stored_path=attachment.stored_path,
+            )
         )
-        for attachment in scenario.attachments
-    ]
     build_log_name = BuildLogEvidence.evidence_name
     return EvidenceReport(
         attachments=attachments,

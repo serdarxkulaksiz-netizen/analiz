@@ -34,6 +34,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         self._max_tokens = max_tokens
         self._verify_ssl = verify_ssl
         self._transport = transport
+        self._client: httpx.AsyncClient | None = None
 
     def _headers(self) -> dict[str, str]:
         headers = {"accept": "application/json"}
@@ -54,16 +55,10 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             "max_tokens": self._max_tokens,
         }
 
-        client_kwargs: dict[str, Any] = {"timeout": self._timeout_seconds}
-        if self._transport is not None:
-            client_kwargs["transport"] = self._transport
-        else:
-            client_kwargs["verify"] = self._verify_ssl
-
         started = time.perf_counter()
         try:
-            async with httpx.AsyncClient(**client_kwargs) as client:
-                response = await client.post(self._url, json=payload, headers=self._headers())
+            client = self._pooled()
+            response = await client.post(self._url, json=payload, headers=self._headers())
         except Exception as exc:
             raise LLMError(f"{type(exc).__name__}: {exc}") from exc
 
@@ -81,6 +76,23 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             output_tokens=output_tokens,
             duration_ms=duration_ms,
         )
+
+    def _pooled(self) -> httpx.AsyncClient:
+        """One client for the whole process — the model is called per scenario."""
+        if self._client is None:
+            kwargs: dict[str, Any] = {"timeout": self._timeout_seconds}
+            if self._transport is not None:
+                kwargs["transport"] = self._transport
+            else:
+                kwargs["verify"] = self._verify_ssl
+            self._client = httpx.AsyncClient(**kwargs)
+        return self._client
+
+    async def aclose(self) -> None:
+        """Close the pooled connections (called on app shutdown)."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     def _extract(
         self, response: httpx.Response, raw_response: str

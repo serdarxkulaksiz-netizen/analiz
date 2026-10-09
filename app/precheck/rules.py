@@ -6,8 +6,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, field_validator
 
-_CONFIDENCE_BUCKETS = {0.1, 0.25, 0.5, 0.75, 0.99}
-
 
 class PreCheckRule(BaseModel):
     """One shortcut: if `match` is found, answer with these fields."""
@@ -41,15 +39,6 @@ class PreCheckRule(BaseModel):
             raise ValueError(f"invalid regex: {exc}") from exc
         return value
 
-    @field_validator("confidence")
-    @classmethod
-    def _known_bucket(cls, value: float) -> float:
-        if value not in _CONFIDENCE_BUCKETS:
-            raise ValueError(
-                f"confidence must be one of {sorted(_CONFIDENCE_BUCKETS)}, got {value}"
-            )
-        return value
-
     @field_validator("verdict")
     @classmethod
     def _known_verdict(cls, value: str) -> str:
@@ -67,15 +56,27 @@ class PreCheckRule(BaseModel):
         return re.search(self.match, evidence_text) is not None
 
 
-def load_rules(config_path: Path) -> list[PreCheckRule]:
-    """Load and validate the rule list; raises on bad config (fail fast)."""
+def load_rules(config_path: Path, confidence_buckets: list[float]) -> list[PreCheckRule]:
+    """Load and validate the rule list; raises on bad config (fail fast).
+
+    `confidence` is checked against the CONFIGURED buckets, not a copy of them:
+    the prompt tells the model one set of values, and a precheck answer that
+    used a different set would be the same field with two meanings.
+    """
     data = json.loads(config_path.read_text(encoding="utf-8"))
     if not isinstance(data, list):
         raise ValueError(f"{config_path} must contain a JSON list of rules.")
+    allowed = set(confidence_buckets)
     rules: list[PreCheckRule] = []
     for index, row in enumerate(data):
         try:
-            rules.append(PreCheckRule.model_validate(row))
+            rule = PreCheckRule.model_validate(row)
         except ValueError as exc:
             raise ValueError(f"{config_path} rule #{index}: {exc}") from exc
+        if rule.confidence not in allowed:
+            raise ValueError(
+                f"{config_path} rule #{index}: confidence {rule.confidence} "
+                f"CONFIDENCE_BUCKETS içinde yok (geçerli: {sorted(allowed)})"
+            )
+        rules.append(rule)
     return rules

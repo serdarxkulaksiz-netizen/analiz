@@ -29,3 +29,7 @@ class Source(ABC):
     @abstractmethod
     async def fetch_job(self, run: RunSummary, plan: DownloadPlan) -> JobData:
         """Return the job report and raw evidence for every failed scenario."""
+
+    @abstractmethod
+    async def aclose(self) -> None:
+        """Release whatever this source holds open (pooled connections)."""

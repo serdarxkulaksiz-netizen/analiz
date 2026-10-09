@@ -31,6 +31,7 @@ class VisiumGoClient:
         self._timeout = timeout_seconds
         self._verify_ssl = verify_ssl
         self._transport = transport
+        self._client_instance: httpx.AsyncClient | None = None
 
     def _headers(self) -> dict[str, str]:
         headers = {}
@@ -39,40 +40,50 @@ class VisiumGoClient:
         return headers
 
     def _client(self) -> httpx.AsyncClient:
-        kwargs: dict[str, Any] = {
-            "base_url": self._base_url,
-            "headers": self._headers(),
-            "timeout": self._timeout,
-        }
-        if self._transport is not None:
-            kwargs["transport"] = self._transport
-        else:
-            kwargs["verify"] = self._verify_ssl
-        return httpx.AsyncClient(**kwargs)
+        """The one pooled client — a run makes dozens of calls to one host.
+
+        A fresh client per request meant a fresh TCP + TLS handshake per
+        request; one run of 40 scenarios paid for eighty of them.
+        """
+        if self._client_instance is None:
+            kwargs: dict[str, Any] = {
+                "base_url": self._base_url,
+                "headers": self._headers(),
+                "timeout": self._timeout,
+            }
+            if self._transport is not None:
+                kwargs["transport"] = self._transport
+            else:
+                kwargs["verify"] = self._verify_ssl
+            self._client_instance = httpx.AsyncClient(**kwargs)
+        return self._client_instance
+
+    async def aclose(self) -> None:
+        """Close the pooled connections (called on app shutdown)."""
+        if self._client_instance is not None:
+            await self._client_instance.aclose()
+            self._client_instance = None
 
     async def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """GET and decode JSON — naming the body when it is not JSON."""
-        async with self._client() as client:
-            response = await client.get(path, params=params)
-            response.raise_for_status()
-            try:
-                return response.json()
-            except ValueError as exc:
-                body = response.text[:_BODY_SAMPLE_CHARS]
-                raise ValueError(
-                    f"{path}: cevap JSON değil "
-                    f"(content-type: {response.headers.get('content-type', '?')}) — "
-                    f"gelen: {body!r}"
-                ) from exc
+        response = await self._client().get(path, params=params)
+        response.raise_for_status()
+        try:
+            return response.json()
+        except ValueError as exc:
+            body = response.text[:_BODY_SAMPLE_CHARS]
+            raise ValueError(
+                f"{path}: cevap JSON değil "
+                f"(content-type: {response.headers.get('content-type', '?')}) — "
+                f"gelen: {body!r}"
+            ) from exc
 
     async def get_text(self, path: str) -> str:
-        async with self._client() as client:
-            response = await client.get(path)
-            response.raise_for_status()
-            return response.text
+        response = await self._client().get(path)
+        response.raise_for_status()
+        return response.text
 
     async def get_bytes(self, path: str) -> bytes:
-        async with self._client() as client:
-            response = await client.get(path)
-            response.raise_for_status()
-            return response.content
+        response = await self._client().get(path)
+        response.raise_for_status()
+        return response.content

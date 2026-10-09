@@ -14,9 +14,13 @@ class AnalysisPlan:
         self._wanted = set(profile.evidence_to_llm)
 
     def wants(self, attachment: Attachment) -> bool:
-        """Should this attachment be downloaded at all?"""
-        name = evidence_name_for(attachment)
-        return name in self._wanted if name else True
+        """Should this attachment be downloaded at all?
+
+        A file that maps to no evidence class is not downloaded either: nothing
+        would read it, and the profile's list is the whole answer to "what do we
+        fetch". It is still reported, flagged as skipped.
+        """
+        return evidence_name_for(attachment) in self._wanted
 
     @property
     def wants_build_log(self) -> bool:

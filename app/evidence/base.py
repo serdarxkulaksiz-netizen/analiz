@@ -70,6 +70,7 @@ class TextEvidence(Evidence):
         self._file_label = file_label
         self._rules = rules or []
         self._ctx = ctx or RuleContext()
+        self._selected: str | None = None
 
     @property
     def block_label(self) -> str:
@@ -83,11 +84,18 @@ class TextEvidence(Evidence):
         return bool(self._content.strip())
 
     def select_content(self) -> str:
-        """Content selector: applies the profile's rules, in order."""
-        text = self._content
-        for rule in self._rules:
-            text = rule.apply(text, self._ctx)
-        return text
+        """Content selector: applies the profile's rules, in order (once).
+
+        The result is kept: `to_block` and `was_trimmed` both ask for it, and
+        running a whole job log through the rules twice per scenario is work
+        nobody reads.
+        """
+        if self._selected is None:
+            text = self._content
+            for rule in self._rules:
+                text = rule.apply(text, self._ctx)
+            self._selected = text
+        return self._selected
 
     @property
     def was_trimmed(self) -> bool:

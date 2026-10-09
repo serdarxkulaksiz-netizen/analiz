@@ -26,17 +26,26 @@ STATE_PROFILE_OVERRIDE: dict[str, str] = {RunState.FAILED.value: JOB_FAILED_PROF
 
 
 def _skipped_reason(
-    prompt: str, findings: Findings | None, no_evidence: bool, answered_by: str
+    prompt: str,
+    findings: Findings | None,
+    no_evidence: bool,
+    answered_by: str,
+    error_detail: str = "",
 ) -> str:
-    """Why no prompt was built for this scenario ("" when one was)."""
+    """Why no prompt was built for this scenario ("" when one was).
+
+    The reason carries the error itself, not a pointer to a stored row: with
+    `REPOSITORY_PROVIDER=memory` nothing is written down, so a reason that says
+    "look at the trace" names a place the caller cannot reach.
+    """
     if prompt:
         return ""
     if answered_by == "precheck":
         return "precheck kuralı cevapladı — LLM çağrılmadı"
     if findings is None:
-        return "kanıt çıkarımı hata verdi — prompt kurulamadı"
+        return f"kanıt çıkarımı hata verdi — prompt kurulamadı ({error_detail})".replace(" ()", "")
     if not no_evidence:
-        return "prompt kurulamadı — hata ayrıntısı llm_responses.raw_response satırında"
+        return f"prompt kurulamadı — {error_detail or 'sebep bildirilmedi'}"
 
     report = findings.evidence_report
     if report.scenario_error:
@@ -112,6 +121,11 @@ class AnalyzerService:
         self._precheck = precheck
         self._run_row_lock = asyncio.Lock()
 
+    async def aclose(self) -> None:
+        """Release the HTTP connections held by the source and the model."""
+        await self._source.aclose()
+        await self._llm.aclose()
+
     def selectable_profiles(self) -> set[str]:
         """Profile names a caller may ask for (job_failed is system-only)."""
         return self._profiles.selectable_names()
@@ -147,15 +161,14 @@ class AnalyzerService:
         return analyzer_run_id
 
     def get_run(self, analyzer_run_id: str) -> dict[str, Any] | None:
-        """Read run status + finished diagnoses from disk (never from memory)."""
+        """Return the run row plus the diagnoses finished so far."""
         run = self._repo.get(self._settings.table_runs, analyzer_run_id)
         if run is None:
             return None
-        results = [
-            row
-            for row in self._repo.list(self._settings.table_analysis_results)
-            if row.get("analyzer_run_id") == analyzer_run_id
-        ]
+        results = self._repo.list(
+            self._settings.table_analysis_results,
+            where={"analyzer_run_id": analyzer_run_id},
+        )
         run["results"] = sorted(results, key=lambda row: row.get("scenario_name", ""))
         return run
 
@@ -257,7 +270,7 @@ class AnalyzerService:
             kinds = ", ".join(sorted({f"{type(e).__name__}: {e}" for e in escaped}))
             notes.append(
                 f"{len(escaped)}/{len(job.failed_scenarios)} senaryo kaydedilemedi "
-                f"({kinds}) — bu senaryoların sonucu diskte yok"
+                f"({kinds}) — bu senaryoların sonucu yok"
             )
         self._update_run(run, status=RunStatus.DONE.value, note=" · ".join(notes))
 
@@ -285,6 +298,7 @@ class AnalyzerService:
             findings: Findings | None = None
             skipped_no_evidence = False
             rule_failure = ""
+            error_detail = ""
 
             try:
                 findings = self._extractor.extract(
@@ -335,18 +349,25 @@ class AnalyzerService:
             except _RuleFailure as exc:
                 rule_failure = str(exc)
             except Exception as exc:
+                error_detail = f"{type(exc).__name__}: {exc}"
                 if not raw_response:
-                    raw_response = f"<no response — {type(exc).__name__}: {exc}>"
+                    raw_response = f"<no response — {error_detail}>"
 
             failure_reason = (
                 rule_failure
                 if rule_failure
-                else _skipped_reason(prompt, findings, skipped_no_evidence, meta.answered_by)
+                else _skipped_reason(
+                    prompt, findings, skipped_no_evidence, meta.answered_by, error_detail
+                )
                 if analysis is None
                 else ""
             )
             if analysis is None and not failure_reason:
-                failure_reason = "LLM cevabı alınamadı ya da ayrıştırılamadı — ham cevap saklandı"
+                failure_reason = (
+                    f"model HTTP {http_status} döndü"
+                    if http_status and http_status >= 400
+                    else "model cevabı beklenen JSON şemasına uymadı"
+                )
 
             profile_name = findings.profile_name if findings else ""
 

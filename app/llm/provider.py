@@ -28,3 +28,7 @@ class LLMProvider(ABC):
     @abstractmethod
     async def complete(self, prompt: str) -> LLMResponse:
         """Send a single prompt, return the single raw completion."""
+
+    @abstractmethod
+    async def aclose(self) -> None:
+        """Release whatever this provider holds open (pooled connections)."""
