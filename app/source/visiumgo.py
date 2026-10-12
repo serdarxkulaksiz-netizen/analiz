@@ -48,11 +48,12 @@ def _as_dict(value: Any, path: str) -> dict[str, Any]:
 
 PATH_SCENARIO_DETAIL = "/api/runs/{run_id}/results/{scenario_id}"
 
-# TODO: this key is NOT confirmed against a real VisiumGo response. The scenario
-# detail is already fetched, so the failing step costs nothing extra IF it is in
-# there under this name. `EvidenceReport.detail_fields` records what the endpoint
-# actually returns — read it off one real run and correct this line.
-DETAIL_FAILED_STEP_KEY = "failedStepName"
+#: Where the failing step is in a scenario detail: `properties["failedStep.name"]`,
+#: read off a real response. `properties` also carries `failedStep.line` and
+#: `failedStep.location` (`<feature dosyası>:<satır>`), and the same step shows up
+#: in `stepResults` as the entry whose `resultType` is FAILED.
+DETAIL_PROPERTIES_KEY = "properties"
+FAILED_STEP_PROPERTY = "failedStep.name"
 
 _FETCH_ERROR_MAX_CHARS = 500
 
@@ -71,6 +72,14 @@ def _run_order_key(record: dict[str, Any]) -> tuple[int, int, str]:
         return (1, int(raw), "")
     except ValueError:
         return (0, 0, raw)
+
+
+def _failed_step_of(detail: dict[str, Any]) -> str:
+    """The step the scenario died on, "" when the source did not say."""
+    properties = detail.get(DETAIL_PROPERTIES_KEY) or {}
+    if not isinstance(properties, dict):
+        return ""
+    return str(properties.get(FAILED_STEP_PROPERTY, ""))
 
 
 def _summary_from(record: dict[str, Any], *, job_id: str = "", note: str = "") -> RunSummary:
@@ -270,7 +279,7 @@ class VisiumGoSource(Source):
             scenario_name=str(record.get("name", "")),
             scenario_id=scenario_id,
             error_text=str(detail.get("errorText", "")),
-            failed_step=str(detail.get(DETAIL_FAILED_STEP_KEY, "")),
+            failed_step=_failed_step_of(detail),
             attachments=attachments,
             fetch_error=fetch_error,
             detail_fields=sorted(detail),

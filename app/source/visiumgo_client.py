@@ -9,8 +9,15 @@ _BODY_SAMPLE_CHARS = 200
 
 
 def encode_segment(segment: str) -> str:
-    """Percent-encode a value going into a single URL path segment."""
-    return quote(segment, safe="")
+    """Percent-encode a value going into the URL path, keeping `/` and `:`.
+
+    VisiumGo's ids are not single segments: a scenario id reads
+    `1:Bireysel/Hesaplarim/Dekont.feature:218_1250072694:0` and an attachment
+    name reads `-302288740/test.properties`. Its own UI sends those slashes and
+    colons raw; percent-encoding them (`%2F`) produces a different URL, and web
+    servers commonly reject or rewrite an encoded slash in a path.
+    """
+    return quote(segment, safe="/:")
 
 
 class VisiumGoClient:
