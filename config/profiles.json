@@ -8,6 +8,9 @@
         "name": "TestLogEvidence"
       },
       {
+        "name": "BrowserLogEvidence"
+      },
+      {
         "name": "HtmlEvidence",
         "rules": [
           {
