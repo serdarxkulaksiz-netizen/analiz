@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,6 +51,18 @@ class Settings(BaseSettings):
     llm_verify_ssl: bool = False
 
     max_concurrency: int = Field(default=2, ge=1)
+
+    @field_validator("trace_dir", mode="before")
+    @classmethod
+    def _blank_means_off(cls, value: object) -> object:
+        """`TRACE_DIR=` is OFF, not the current directory.
+
+        An empty string would otherwise become `Path("")`, which is `.` — and
+        every prompt would land in whatever folder the app was started from.
+        """
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
 @lru_cache
