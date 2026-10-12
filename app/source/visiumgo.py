@@ -48,12 +48,18 @@ def _as_dict(value: Any, path: str) -> dict[str, Any]:
 
 PATH_SCENARIO_DETAIL = "/api/runs/{run_id}/results/{scenario_id}"
 
-#: Where the failing step is in a scenario detail: `properties["failedStep.name"]`,
-#: read off a real response. `properties` also carries `failedStep.line` and
-#: `failedStep.location` (`<feature dosyası>:<satır>`), and the same step shows up
-#: in `stepResults` as the entry whose `resultType` is FAILED.
+#: VisiumGo reports the failing step TWICE, and in a real response the two agree
+#: word for word: `properties["failedStep.name"]` and the `stepResults` entry
+#: whose `resultType` is FAILED (its `line`). Both are read — see
+#: `_failed_step_of`. What is deliberately NOT read: `failedStep.line`,
+#: `failedStep.location` and `duration`. A feature file edit shifts the line and
+#: every run has its own duration; the BDD sentence is what stays the same, and
+#: that is what two scenarios have to share to be called the same failure.
 DETAIL_PROPERTIES_KEY = "properties"
 FAILED_STEP_PROPERTY = "failedStep.name"
+DETAIL_STEPS_KEY = "stepResults"
+STEP_SENTENCE_KEY = "line"
+RESULT_FAILED = "FAILED"
 
 _FETCH_ERROR_MAX_CHARS = 500
 
@@ -75,11 +81,22 @@ def _run_order_key(record: dict[str, Any]) -> tuple[int, int, str]:
 
 
 def _failed_step_of(detail: dict[str, Any]) -> str:
-    """The step the scenario died on, "" when the source did not say."""
+    """The BDD sentence of the step that failed, "" when the source did not say.
+
+    The property is read first because there it is STATED; the step list is the
+    fallback, where it is derived from whichever entry failed. A response that
+    carries one and not the other still answers.
+    """
     properties = detail.get(DETAIL_PROPERTIES_KEY) or {}
-    if not isinstance(properties, dict):
-        return ""
-    return str(properties.get(FAILED_STEP_PROPERTY, ""))
+    if isinstance(properties, dict):
+        stated = str(properties.get(FAILED_STEP_PROPERTY, "")).strip()
+        if stated:
+            return stated
+
+    for step in detail.get(DETAIL_STEPS_KEY) or []:
+        if isinstance(step, dict) and str(step.get("resultType", "")) == RESULT_FAILED:
+            return str(step.get(STEP_SENTENCE_KEY, "")).strip()
+    return ""
 
 
 def _summary_from(record: dict[str, Any], *, job_id: str = "", note: str = "") -> RunSummary:
@@ -222,7 +239,7 @@ class VisiumGoSource(Source):
             job_log = JobLog(text=text, error=error)
 
         results = await self.get_results(run.run_id)
-        failed = [r for r in results if r.get("resultType") == "FAILED"]
+        failed = [r for r in results if r.get("resultType") == RESULT_FAILED]
 
         semaphore = asyncio.Semaphore(self._max_parallel)
 
