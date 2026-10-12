@@ -18,8 +18,15 @@
             "tags": [
               "script",
               "style",
-              "svg"
+              "svg",
+              "comment"
             ]
+          },
+          {
+            "type": "keep_attributes"
+          },
+          {
+            "type": "strip_base64"
           },
           {
             "type": "collapse_whitespace"

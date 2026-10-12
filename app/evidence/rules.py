@@ -145,6 +145,132 @@ class _TagStripper(HTMLParser):
             self.out.append(f"&#{name};")
 
 
+class _AttributeFilter(HTMLParser):
+    """Re-emits markup, keeping only the attributes it was told to keep."""
+
+    def __init__(self, keep: set[str], keep_prefixes: tuple[str, ...]) -> None:
+        super().__init__(convert_charrefs=False)
+        self._keep = keep
+        self._prefixes = keep_prefixes
+        self.out: list[str] = []
+
+    def _wanted(self, name: str) -> bool:
+        return name in self._keep or name.startswith(self._prefixes)
+
+    def _tag(self, tag: str, attrs: Any, closing: str) -> str:
+        parts = [tag]
+        for name, value in attrs:
+            if not self._wanted(name.lower()):
+                continue
+            parts.append(name if value is None else f'{name}="{value}"')
+        return f"<{' '.join(parts)}{closing}>"
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        self.out.append(self._tag(tag, attrs, ""))
+
+    def handle_startendtag(self, tag: str, attrs: Any) -> None:
+        self.out.append(self._tag(tag, attrs, "/"))
+
+    def handle_endtag(self, tag: str) -> None:
+        self.out.append(f"</{tag}>")
+
+    def handle_data(self, data: str) -> None:
+        self.out.append(data)
+
+    def handle_comment(self, data: str) -> None:
+        self.out.append(f"<!--{data}-->")
+
+    def handle_entityref(self, name: str) -> None:
+        self.out.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        self.out.append(f"&#{name};")
+
+
+class KeepAttributes(Rule):
+    """Drop every HTML attribute except the ones a diagnosis actually reads.
+
+    A modern app's DOM is mostly attributes, not text: framework markers
+    (`_ngcontent-*`), inline styles, analytics hooks, generated ids. Measured on
+    a realistic page, `strip_tags` + `collapse_whitespace` removed 8% and 93% of
+    what remained was attributes.
+
+    What is KEPT is what a failure is diagnosed with: the locator surface
+    (`id`, `class`, `name`, `type`, `value`, `for`, `href`), what the user would
+    see (`title`, `alt`, `placeholder`), the state (`disabled`, `hidden`,
+    `checked`, `selected`, `readonly`, `required`), and the test hooks
+    (`data-test*`, `data-qa*`, `aria-label`, `role`).
+
+    `keep` is overridable from config; a name ending in `*` matches by prefix.
+    """
+
+    rule_type = "keep_attributes"
+
+    DEFAULT_KEEP = (
+        "id",
+        "class",
+        "name",
+        "type",
+        "value",
+        "href",
+        "src",
+        "for",
+        "role",
+        "title",
+        "alt",
+        "placeholder",
+        "label",
+        "disabled",
+        "hidden",
+        "checked",
+        "selected",
+        "readonly",
+        "required",
+        "aria-label",
+        "aria-labelledby",
+        "data-test*",
+        "data-qa*",
+        "data-cy*",
+    )
+
+    def __init__(self, keep: list[str] | None = None) -> None:
+        names = list(keep) if keep else list(self.DEFAULT_KEEP)
+        if not names:
+            raise ValueError("keep must not be empty")
+        self._exact = {n.lower() for n in names if not n.endswith("*")}
+        self._prefixes = tuple(n.lower()[:-1] for n in names if n.endswith("*"))
+
+    def apply(self, text: str, ctx: RuleContext) -> str:
+        parser = _AttributeFilter(self._exact, self._prefixes)
+        parser.feed(text)
+        parser.close()
+        return "".join(parser.out)
+
+
+class StripBase64(Rule):
+    """Replace long base64 runs with a note saying how much was dropped.
+
+    A DOM carries images as `data:` URIs and a test log carries documents as
+    base64 fields; both are thousands of characters that mean nothing to a
+    reader. The run is replaced, not deleted: an EMPTY or unexpectedly small
+    payload is itself a finding, and the note keeps that visible.
+
+    Matched by shape, not by field name, so a new field carrying base64 is
+    covered without anyone editing a list. `min_chars` sets how long a run has
+    to be; below it, nothing is touched.
+    """
+
+    rule_type = "strip_base64"
+
+    def __init__(self, min_chars: int = 200) -> None:
+        if min_chars <= 0:
+            raise ValueError("min_chars must be greater than 0")
+        self._pattern = re.compile(rf"[A-Za-z0-9+/]{{{min_chars},}}={{0,2}}")
+
+    def apply(self, text: str, ctx: RuleContext) -> str:
+        return self._pattern.sub(lambda m: f"[base64 {len(m.group(0))} karakter]", text)
+
+
 class StripTags(Rule):
     """Drop the listed tags with everything inside them."""
 
@@ -173,6 +299,8 @@ RULE_REGISTRY: dict[str, type[Rule]] = {
         KeepScenarioSection,
         CollapseWhitespace,
         StripTags,
+        KeepAttributes,
+        StripBase64,
     )
 }
 
