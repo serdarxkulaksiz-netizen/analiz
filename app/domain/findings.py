@@ -50,7 +50,6 @@ class EvidenceReport(BaseModel):
     scenario_error: str = ""
     error_text: str = ""
     failed_step: str = ""
-    detail_fields: list[str] = []
     rule_errors: list[str] = []
     blocks: list[BlockReport] = []
 

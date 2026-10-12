@@ -36,9 +36,6 @@ class RawScenario(BaseModel):
     failed_step: str = ""
     attachments: list[Attachment] = []
     fetch_error: str = ""
-    #: Field names the detail endpoint actually returned — so a grouping key can
-    #: be chosen from data that is already fetched, not guessed.
-    detail_fields: list[str] = []
 
 
 class RunSummary(BaseModel):

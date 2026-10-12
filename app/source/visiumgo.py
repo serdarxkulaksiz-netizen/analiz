@@ -173,20 +173,24 @@ class VisiumGoSource(Source):
     async def download_attachment(
         self, run_id: str, meta: dict[str, Any], scenario_id: str = ""
     ) -> Attachment:
-        """Adım D: download one attachment (URL-encoded) and save it to disk."""
+        """Adım D: read one attachment into memory. Nothing is written to disk.
+
+        Only text is read. A binary attachment (a screenshot) has nowhere to go
+        now that evidence is never stored: its bytes would be fetched, held and
+        dropped. It is reported as skipped instead of paid for.
+        """
         attachment = self.describe_attachment(meta)
         file_name = attachment.file_name
         path = f"/api/runs/{encode_segment(run_id)}/attachments/{encode_segment(file_name)}"
         is_text = (
             attachment.mime_type.startswith("text/") or attachment.extension in _TEXT_EXTENSIONS
         )
+        if not is_text:
+            return attachment.model_copy(update={"download_skipped": True})
 
         try:
-            if is_text:
-                text = await self._client.get_text(path)
-                return attachment.model_copy(update={"content": text})
-            await self._client.get_bytes(path)
-            return attachment
+            text = await self._client.get_text(path)
+            return attachment.model_copy(update={"content": text})
         except Exception as exc:
             reason = f"{path}: {type(exc).__name__}: {exc}"
             return attachment.model_copy(update={"download_error": reason[:_FETCH_ERROR_MAX_CHARS]})
@@ -299,5 +303,4 @@ class VisiumGoSource(Source):
             failed_step=_failed_step_of(detail),
             attachments=attachments,
             fetch_error=fetch_error,
-            detail_fields=sorted(detail),
         )

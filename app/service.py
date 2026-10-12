@@ -124,6 +124,21 @@ def _grouped_note(groups: list[list[RawScenario]], total: int) -> str:
     )
 
 
+def _shared_failure_reason(source: AnalysisResult) -> str:
+    """The representative's failure, retold as what it is for a group member.
+
+    Copying the sentence as it stands would make the row say the model answered
+    (or failed) for THIS scenario, and it never did. The reason names whose call
+    it was and why this one was not made.
+    """
+    if not source.failure_reason:
+        return ""
+    return (
+        f"{source.scenario_name!r} senaryosunda: {source.failure_reason}. "
+        "Aynı adım ve aynı hata mesajı olduğu için bu senaryo ayrıca sorulmadı."
+    )
+
+
 def _utcnow_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -334,6 +349,7 @@ class AnalyzerService:
                 "error_text": scenario.error_text,
                 "failed_step": scenario.failed_step,
                 "grouped_with": source.scenario_name,
+                "failure_reason": _shared_failure_reason(source),
                 "meta": meta,
             }
         )
