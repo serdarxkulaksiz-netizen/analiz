@@ -197,9 +197,17 @@ class KeepAttributes(Rule):
 
     What is KEPT is what a failure is diagnosed with: the locator surface
     (`id`, `class`, `name`, `type`, `value`, `for`, `href`), what the user would
-    see (`title`, `alt`, `placeholder`), the state (`disabled`, `hidden`,
-    `checked`, `selected`, `readonly`, `required`), and the test hooks
-    (`data-test*`, `data-qa*`, `aria-label`, `role`).
+    see (`title`, `alt`, `placeholder`), the native state (`disabled`, `hidden`,
+    `checked`, `selected`, `readonly`, `required`, `open`, `inert`), the test
+    hooks (`data-test*`, `data-qa*`, `data-cy*`) and EVERY `aria-*`.
+
+    All of ARIA is kept on purpose: those attributes are the page's own account
+    of what a person would perceive, which is the question a failed interaction
+    asks. Dropping them does not merely lose detail, it MISLEADS — an
+    `aria-hidden="true"` dialog reads as present and visible once the attribute
+    is gone, and the diagnosis becomes "the element was there, so the locator is
+    fine". Component libraries carry the same state in `data-state` and
+    `data-disabled`, so those two are kept by name.
 
     `keep` is overridable from config; a name ending in `*` matches by prefix.
     """
@@ -226,8 +234,11 @@ class KeepAttributes(Rule):
         "selected",
         "readonly",
         "required",
-        "aria-label",
-        "aria-labelledby",
+        "open",
+        "inert",
+        "aria-*",
+        "data-state",
+        "data-disabled",
         "data-test*",
         "data-qa*",
         "data-cy*",
