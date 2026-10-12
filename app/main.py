@@ -4,7 +4,6 @@ from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
-from pathlib import Path
 from typing import TypeVar
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
@@ -18,10 +17,10 @@ from app.evidence.registry import EvidenceRegistry, known_evidence_names
 from app.extraction.evidence_extractor import EvidenceExtractor
 from app.llm.openai_compatible import OpenAICompatibleLLMProvider
 from app.llm.provider import LLMProvider
-from app.persistence.file_repository import FileRepository
 from app.persistence.memory_repository import MemoryRepository
-from app.persistence.repository import Repository
+from app.persistence.trace import TraceWriter
 from app.precheck.base import PreCheck
+from app.precheck.known_errors import KnownErrorsPreCheck, load_known_errors
 from app.precheck.noop import NoOpPreCheck
 from app.precheck.rule_based import RuleBasedPreCheck
 from app.precheck.rules import load_rules
@@ -48,20 +47,6 @@ class AnalyzeRequest(BaseModel):
         return self
 
 
-def _attachments_dir(settings: Settings) -> Path | None:
-    """Where downloaded attachments land, or None when nothing is kept."""
-    if settings.repository_provider != "file":
-        return None
-    return settings.database_dir / "attachments"
-
-
-def _build_logs_dir(settings: Settings) -> Path | None:
-    """Where the job-level build log is written, or None when nothing is kept."""
-    if settings.repository_provider != "file":
-        return None
-    return settings.database_dir / "build_logs"
-
-
 SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
     "visiumgo": lambda s: VisiumGoSource(
         VisiumGoClient(
@@ -70,8 +55,6 @@ SOURCE_REGISTRY: dict[str, Callable[[Settings], Source]] = {
             s.visiumgo_timeout_seconds,
             verify_ssl=s.visiumgo_verify_ssl,
         ),
-        _attachments_dir(s),
-        _build_logs_dir(s),
         build_log_entry=s.visiumgo_build_log_entry,
         max_parallel=s.max_concurrency,
     ),
@@ -90,14 +73,12 @@ LLM_REGISTRY: dict[str, Callable[[Settings], LLMProvider]] = {
     ),
 }
 
-REPOSITORY_REGISTRY: dict[str, Callable[[Settings], Repository]] = {
-    "memory": lambda s: MemoryRepository(s.max_kept_runs, s.table_runs),
-    "file": lambda s: FileRepository(s.database_dir),
-}
-
 PRECHECK_REGISTRY: dict[str, Callable[[Settings], PreCheck]] = {
     "noop": lambda s: NoOpPreCheck(),
     "rules": lambda s: RuleBasedPreCheck(load_rules(s.precheck_rules_path, s.confidence_buckets)),
+    "known_errors": lambda s: KnownErrorsPreCheck(
+        load_known_errors(s.known_errors_path, s.confidence_buckets)
+    ),
 }
 
 
@@ -129,9 +110,8 @@ def build_service(settings: Settings) -> AnalyzerService:
 
     return AnalyzerService(
         settings=settings,
-        repository=_select(REPOSITORY_REGISTRY, settings.repository_provider, "repository")(
-            settings
-        ),
+        repository=MemoryRepository(settings.max_kept_runs, settings.table_runs),
+        trace=TraceWriter(settings.trace_dir),
         source=_select(SOURCE_REGISTRY, settings.source_provider, "source")(settings),
         extractor=EvidenceExtractor(EvidenceRegistry()),
         prompt_builder=prompt_builder,

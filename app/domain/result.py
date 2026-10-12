@@ -55,6 +55,11 @@ class AnalysisResult(BaseModel):
     #: The scenario's own error message, as the source reported it. Not the
     #: model's words: it is what the run itself said went wrong.
     error_text: str = ""
+    #: The step the scenario died on — the other half of the grouping key.
+    failed_step: str = ""
+    #: Set when this diagnosis was produced for ANOTHER scenario with the same
+    #: step and error, and copied here. Empty means this scenario was analyzed.
+    grouped_with: str = ""
     profile_name: str = ""
     status: AnalysisStatus = AnalysisStatus.OK
     meta: AnalysisMeta = AnalysisMeta()

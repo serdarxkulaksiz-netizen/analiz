@@ -3,13 +3,11 @@
 import asyncio
 import io
 import zipfile
-from pathlib import Path
 from typing import Any
 
 from app.domain.enums import ANALYZABLE_RUN_STATES, RunState
 from app.source.base import DownloadPlan, Source
 from app.source.models import Attachment, JobData, JobLog, RawScenario, RunSummary
-from app.source.storage import save_attachment, save_build_log
 from app.source.visiumgo_client import VisiumGoClient, encode_segment
 
 _BUILD_LOG_ERROR_MAX_CHARS = 500
@@ -50,6 +48,12 @@ def _as_dict(value: Any, path: str) -> dict[str, Any]:
 
 PATH_SCENARIO_DETAIL = "/api/runs/{run_id}/results/{scenario_id}"
 
+# TODO: this key is NOT confirmed against a real VisiumGo response. The scenario
+# detail is already fetched, so the failing step costs nothing extra IF it is in
+# there under this name. `EvidenceReport.detail_fields` records what the endpoint
+# actually returns — read it off one real run and correct this line.
+DETAIL_FAILED_STEP_KEY = "failedStepName"
+
 _FETCH_ERROR_MAX_CHARS = 500
 
 _TEXT_EXTENSIONS = frozenset({".log", ".properties", ".html", ".xml"})
@@ -89,14 +93,10 @@ class VisiumGoSource(Source):
     def __init__(
         self,
         client: VisiumGoClient,
-        attachments_dir: Path | None = None,
-        build_logs_dir: Path | None = None,
         build_log_entry: str = "build.log",
         max_parallel: int = 2,
     ) -> None:
         self._client = client
-        self._attachments_dir = attachments_dir
-        self._build_logs_dir = build_logs_dir
         self._build_log_entry = build_log_entry
         self._max_parallel = max_parallel
 
@@ -158,11 +158,9 @@ class VisiumGoSource(Source):
         try:
             if is_text:
                 text = await self._client.get_text(path)
-                stored = self._save(run_id, scenario_id, attachment, text.encode("utf-8"))
-                return attachment.model_copy(update={"content": text, "stored_path": stored})
-            data = await self._client.get_bytes(path)
-            stored = self._save(run_id, scenario_id, attachment, data)
-            return attachment.model_copy(update={"stored_path": stored})
+                return attachment.model_copy(update={"content": text})
+            await self._client.get_bytes(path)
+            return attachment
         except Exception as exc:
             reason = f"{path}: {type(exc).__name__}: {exc}"
             return attachment.model_copy(update={"download_error": reason[:_FETCH_ERROR_MAX_CHARS]})
@@ -212,10 +210,7 @@ class VisiumGoSource(Source):
         job_log = JobLog()
         if plan.wants_build_log:
             text, error = await self.fetch_build_log(run.run_id)
-            stored = ""
-            if text and self._build_logs_dir is not None:
-                stored = str(save_build_log(self._build_logs_dir, run.run_id, text))
-            job_log = JobLog(text=text, stored_path=stored, error=error)
+            job_log = JobLog(text=text, error=error)
 
         results = await self.get_results(run.run_id)
         failed = [r for r in results if r.get("resultType") == "FAILED"]
@@ -275,13 +270,8 @@ class VisiumGoSource(Source):
             scenario_name=str(record.get("name", "")),
             scenario_id=scenario_id,
             error_text=str(detail.get("errorText", "")),
+            failed_step=str(detail.get(DETAIL_FAILED_STEP_KEY, "")),
             attachments=attachments,
             fetch_error=fetch_error,
             detail_fields=sorted(detail),
         )
-
-    def _save(self, run_id: str, scenario_id: str, attachment: Attachment, data: bytes) -> str:
-        """Write one attachment, or nothing at all when evidence is not kept."""
-        if self._attachments_dir is None:
-            return ""
-        return str(save_attachment(self._attachments_dir, run_id, scenario_id, attachment, data))

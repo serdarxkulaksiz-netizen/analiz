@@ -12,7 +12,6 @@ class Attachment(BaseModel):
     mime_type: str
     device_id: str
     content: str = ""
-    stored_path: str = ""
     download_skipped: bool = False
     download_error: str = ""
 
@@ -33,6 +32,8 @@ class RawScenario(BaseModel):
     scenario_name: str
     scenario_id: str = ""
     error_text: str = ""
+    #: The step the scenario died on, as the source named it.
+    failed_step: str = ""
     attachments: list[Attachment] = []
     fetch_error: str = ""
     #: Field names the detail endpoint actually returned — so a grouping key can
@@ -56,7 +57,6 @@ class JobLog(BaseModel):
     """The job-level build log: one log for the whole run, own endpoint."""
 
     text: str = ""
-    stored_path: str = ""
     error: str = ""
 
 

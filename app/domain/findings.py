@@ -22,7 +22,6 @@ class AttachmentReport(BaseModel):
     download_skipped: bool = False
     download_error: str = ""
     chars: int = 0
-    stored_path: str = ""
 
 
 class BlockReport(BaseModel):
@@ -40,7 +39,6 @@ class JobLogReport(BaseModel):
     source: str = "/api/runs/{run_id}/logs"
     goes_to_llm: bool = False
     chars: int = 0
-    stored_path: str = ""
     error: str = ""
 
 
@@ -51,6 +49,7 @@ class EvidenceReport(BaseModel):
     job_log: JobLogReport = JobLogReport()
     scenario_error: str = ""
     error_text: str = ""
+    failed_step: str = ""
     detail_fields: list[str] = []
     rule_errors: list[str] = []
     blocks: list[BlockReport] = []

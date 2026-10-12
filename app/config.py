@@ -16,14 +16,12 @@ class Settings(BaseSettings):
         extra="forbid",
     )
 
-    repository_provider: str = "memory"
     max_kept_runs: int = Field(default=20, ge=0)
-    database_dir: Path = Path("database")
     table_runs: str = "runs"
     table_analysis_results: str = "analysis_results"
-    table_evidence: str = "evidence"
-    table_prompts: str = "prompts"
-    table_llm_responses: str = "llm_responses"
+    #: Empty = nothing is ever written to disk. A path turns on the prompt /
+    #: response trace and nothing else.
+    trace_dir: Path | None = None
 
     source_provider: str = "visiumgo"
 
@@ -37,6 +35,7 @@ class Settings(BaseSettings):
 
     precheck_provider: str = "noop"
     precheck_rules_path: Path = Path("config") / "precheck_rules.json"
+    known_errors_path: Path = Path("config") / "known_errors.json"
 
     prompts_dir: Path = Path("config") / "prompts"
     confidence_buckets: list[float] = [0.1, 0.25, 0.5, 0.75, 0.99]

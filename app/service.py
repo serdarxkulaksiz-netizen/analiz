@@ -17,6 +17,7 @@ from app.extraction.base import Extractor
 from app.llm.provider import LLMProvider
 from app.parsing.json_parser import try_json
 from app.persistence.repository import Repository
+from app.persistence.trace import TraceWriter
 from app.precheck.base import PreCheck
 from app.prompting.builder import PromptBuilder
 from app.source.base import Source
@@ -40,8 +41,8 @@ def _skipped_reason(
     """
     if prompt:
         return ""
-    if answered_by == "precheck":
-        return "precheck kuralı cevapladı — LLM çağrılmadı"
+    if answered_by and answered_by != "llm":
+        return f"{answered_by} cevapladı — LLM çağrılmadı"
     if findings is None:
         return f"kanıt çıkarımı hata verdi — prompt kurulamadı ({error_detail})".replace(" ()", "")
     if not no_evidence:
@@ -93,6 +94,36 @@ def _forced_note(profile_name: str) -> str:
     return f"'{profile_name}' profili kullanıldı (job durumu FAILED)"
 
 
+def _group_scenarios(scenarios: list[RawScenario]) -> list[list[RawScenario]]:
+    """Scenarios that died the same way, grouped so the model is asked once.
+
+    The key is the failing step plus the error message, both exactly as the
+    source reported them. A key with an empty half never groups: a scenario the
+    source said nothing about would otherwise be merged with every other silent
+    one and inherit a diagnosis nobody produced for it.
+    """
+    groups: dict[tuple[str, str], list[RawScenario]] = {}
+    alone: list[list[RawScenario]] = []
+    for scenario in scenarios:
+        key = (scenario.failed_step.strip(), scenario.error_text.strip())
+        if not all(key):
+            alone.append([scenario])
+            continue
+        groups.setdefault(key, []).append(scenario)
+    return [*groups.values(), *alone]
+
+
+def _grouped_note(groups: list[list[RawScenario]], total: int) -> str:
+    """Say it when scenarios shared an answer ("" when each got its own)."""
+    asked = len(groups)
+    if asked == total:
+        return ""
+    return (
+        f"{total} senaryo {asked} gruba indi (aynı adım + aynı hata mesajı); "
+        f"modele {asked} kez soruldu, teşhis grubun tamamına yazıldı"
+    )
+
+
 def _utcnow_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -104,6 +135,7 @@ class AnalyzerService:
         self,
         settings: Settings,
         repository: Repository,
+        trace: TraceWriter,
         source: Source,
         extractor: Extractor,
         prompt_builder: PromptBuilder,
@@ -113,6 +145,7 @@ class AnalyzerService:
     ) -> None:
         self._settings = settings
         self._repo = repository
+        self._trace = trace
         self._source = source
         self._extractor = extractor
         self._profiles = profiles
@@ -150,7 +183,6 @@ class AnalyzerService:
                 "job_name": "",
                 "raw_run_response": {},
                 "raw_results_response": [],
-                "build_log_path": "",
                 "build_log_chars": 0,
                 "build_log_error": "",
                 "note": "",
@@ -221,13 +253,13 @@ class AnalyzerService:
             profile_name=plan.profile.name,
             raw_run_response=summary.raw,
             raw_results_response=job.raw_results_response,
-            build_log_path=job.job_log.stored_path,
             build_log_chars=len(job.job_log.text),
             build_log_error=job.job_log.error,
             scenario_count=len(job.failed_scenarios),
             total_scenario_count=job.total_scenario_count,
         )
 
+        groups = _group_scenarios(job.failed_scenarios)
         run_notes = [
             note
             for note in (
@@ -235,6 +267,7 @@ class AnalyzerService:
                 running_note,
                 _forced_note(forced_profile),
                 _total_scenarios_note(summary.run_result),
+                _grouped_note(groups, len(job.failed_scenarios)),
             )
             if note
         ]
@@ -252,17 +285,22 @@ class AnalyzerService:
             *(
                 self._analyze_scenario(
                     run["analyzer_run_id"],
-                    scenario,
+                    group[0],
                     profile=plan.profile,
                     job_log=job.job_log,
                     semaphore=semaphore,
                 )
-                for scenario in job.failed_scenarios
+                for group in groups
             ),
             return_exceptions=True,
         )
 
         escaped = [o for o in outcomes if isinstance(o, BaseException)]
+
+        for group, outcome in zip(groups, outcomes, strict=True):
+            if isinstance(outcome, AnalysisResult):
+                for scenario in group[1:]:
+                    await self._save_shared_result(outcome, scenario)
 
         run = self._repo.get(settings.table_runs, run["analyzer_run_id"]) or run
         notes = list(run_notes)
@@ -274,6 +312,38 @@ class AnalyzerService:
             )
         self._update_run(run, status=RunStatus.DONE.value, note=" · ".join(notes))
 
+    async def _save_shared_result(self, source: AnalysisResult, scenario: RawScenario) -> None:
+        """Write one scenario's row from the diagnosis produced for another.
+
+        The scenario keeps its own identity and its own error; only the answer
+        is shared, and `grouped_with` names where it came from. Token counts and
+        the call duration are NOT copied: they belong to the one call that was
+        actually made.
+        """
+        meta = AnalysisMeta(
+            answered_by="group",
+            llm_model=source.meta.llm_model,
+            prompt_template=source.meta.prompt_template,
+            prompt_version=source.meta.prompt_version,
+            analyzed_at=_utcnow_iso(),
+        )
+        result = source.model_copy(
+            update={
+                "result_id": str(uuid4()),
+                "scenario_name": scenario.scenario_name,
+                "error_text": scenario.error_text,
+                "failed_step": scenario.failed_step,
+                "grouped_with": source.scenario_name,
+                "meta": meta,
+            }
+        )
+        self._repo.save(
+            self._settings.table_analysis_results,
+            result.result_id,
+            result.model_dump(mode="json"),
+        )
+        await self._increment_completed(result.analyzer_run_id)
+
     async def _analyze_scenario(
         self,
         analyzer_run_id: str,
@@ -282,7 +352,7 @@ class AnalyzerService:
         profile: Profile,
         job_log: JobLog,
         semaphore: asyncio.Semaphore,
-    ) -> None:
+    ) -> AnalysisResult:
         """Analyze one failed scenario; never raises."""
         async with semaphore:
             settings = self._settings
@@ -315,7 +385,10 @@ class AnalyzerService:
                 if precheck_result is not None:
                     analysis = precheck_result
                     raw_response = ""
-                    meta = AnalysisMeta(answered_by="precheck", analyzed_at=_utcnow_iso())
+                    meta = AnalysisMeta(
+                        answered_by=type(self._precheck).answered_by,
+                        analyzed_at=_utcnow_iso(),
+                    )
                 elif not findings.has_evidence_for_llm:
                     skipped_no_evidence = True
                     meta = AnalysisMeta(analyzed_at=_utcnow_iso())
@@ -371,43 +444,16 @@ class AnalyzerService:
 
             profile_name = findings.profile_name if findings else ""
 
-            self._repo.save(
-                settings.table_evidence,
-                result_id,
-                {
-                    "result_id": result_id,
-                    "analyzer_run_id": analyzer_run_id,
-                    "scenario_name": scenario.scenario_name,
-                    "evidence_report": (findings.evidence_report.model_dump() if findings else {}),
-                },
-            )
-
-            self._repo.save(
-                settings.table_prompts,
-                result_id,
-                {
-                    "result_id": result_id,
-                    "analyzer_run_id": analyzer_run_id,
-                    "scenario_name": scenario.scenario_name,
-                    "prompt": prompt,
-                    "prompt_chars": len(prompt),
-                    "skipped_reason": failure_reason,
-                    "request": llm_request,
-                },
-            )
-
-            self._repo.save(
-                settings.table_llm_responses,
-                result_id,
-                {
-                    "result_id": result_id,
-                    "analyzer_run_id": analyzer_run_id,
-                    "scenario_name": scenario.scenario_name,
+            self._trace.write(
+                analyzer_run_id,
+                scenario.scenario_name,
+                prompt=prompt,
+                response={
                     "raw_response": raw_response,
                     "content": llm_content,
-                    "answered_by": meta.answered_by,
-                    "model": meta.llm_model,
                     "http_status": http_status,
+                    "model": meta.llm_model,
+                    "request": llm_request,
                     "input_tokens": meta.input_tokens,
                     "output_tokens": meta.output_tokens,
                     "duration_ms": meta.duration_ms,
@@ -421,6 +467,7 @@ class AnalyzerService:
                     scenario_name=scenario.scenario_name,
                     **analysis.model_dump(),
                     error_text=scenario.error_text,
+                    failed_step=scenario.failed_step,
                     profile_name=profile_name,
                     status=AnalysisStatus.OK,
                     meta=meta,
@@ -432,6 +479,7 @@ class AnalyzerService:
                     scenario_name=scenario.scenario_name,
                     failure_reason=failure_reason,
                     error_text=scenario.error_text,
+                    failed_step=scenario.failed_step,
                     profile_name=profile_name,
                     status=(
                         AnalysisStatus.NO_EVIDENCE
@@ -447,3 +495,4 @@ class AnalyzerService:
                 result.model_dump(mode="json"),
             )
             await self._increment_completed(analyzer_run_id)
+            return result

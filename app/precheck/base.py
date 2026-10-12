@@ -1,6 +1,7 @@
 """PreCheck interface."""
 
 from abc import ABC, abstractmethod
+from typing import ClassVar
 
 from app.domain.findings import Findings
 from app.domain.result import LLMAnalysis
@@ -8,6 +9,10 @@ from app.domain.result import LLMAnalysis
 
 class PreCheck(ABC):
     """Optional short-circuit evaluated before the LLM call."""
+
+    #: What goes into `meta.answered_by` when this implementation answers, so a
+    #: stored row names the thing that actually produced the diagnosis.
+    answered_by: ClassVar[str] = "precheck"
 
     @abstractmethod
     def check(self, findings: Findings) -> LLMAnalysis | None:

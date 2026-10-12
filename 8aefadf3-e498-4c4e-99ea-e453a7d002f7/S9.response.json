@@ -1,0 +1,15 @@
+{
+  "raw_response": "{\"choices\":[{\"message\":{\"content\":\"{\\\"root_cause\\\": \\\"r\\\", \\\"error_type\\\": \\\"e\\\", \\\"verdict\\\": \\\"application_bug\\\", \\\"explanation\\\": \\\"a\\\", \\\"suggestion\\\": \\\"b\\\", \\\"confidence\\\": 0.75, \\\"confidence_reason\\\": \\\"c\\\", \\\"summary\\\": \\\"d\\\", \\\"most_relevant_log_lines\\\": [], \\\"error_signature\\\": \\\"s\\\"}\"}}],\"model\":\"qwen\"}",
+  "content": "{\"root_cause\": \"r\", \"error_type\": \"e\", \"verdict\": \"application_bug\", \"explanation\": \"a\", \"suggestion\": \"b\", \"confidence\": 0.75, \"confidence_reason\": \"c\", \"summary\": \"d\", \"most_relevant_log_lines\": [], \"error_signature\": \"s\"}",
+  "http_status": 200,
+  "model": "qwen",
+  "request": {
+    "url": "https://m.local/api/v1/send",
+    "model": "qwen3-coder-next",
+    "temperature": 0.0,
+    "max_tokens": 8000
+  },
+  "input_tokens": null,
+  "output_tokens": null,
+  "duration_ms": 0
+}

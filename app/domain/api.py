@@ -28,6 +28,8 @@ class DiagnosisView(BaseModel):
     status: AnalysisStatus = AnalysisStatus.OK
     failure_reason: str = ""
     error_text: str = ""
+    failed_step: str = ""
+    grouped_with: str = ""
     meta: AnalysisMeta = AnalysisMeta()
 
 
