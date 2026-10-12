@@ -8,10 +8,24 @@ Senaryo: $scenario_name
 
 $evidence_blocks
 
-WEB BAĞLAMI: "element bulunamadı" tipi bir hata web'de genelde iki şeyden birine işaret eder:
-locator eskimiştir (test bakımı) ya da sayfa beklenen hâle hiç gelmemiştir (uygulama/ortam).
-DOM'da elementin gerçekten olup olmadığına, sayfanın hangi ekranda kaldığına bak.
-Yukarıda görmediğin bir kanıt bu koşumda üretilmemiştir; bu normaldir, teşhisi elindeki
-kanıtlarla üret.
+KANITLARI NASIL OKUYACAKSIN:
+- test.log: koşumun adım akışı. Satırlar `STEP <adım cümlesi> | PASSED/FAILED/SKIPPED` biçimindedir.
+  FAILED olan satır senaryonun patladığı adımdır; ondan SONRAKİ adımlar SKIPPED'dır, onlar hata
+  değildir.
+- browser.default.log: tarayıcının konsol çıktısı. Ağ hataları (404, 401, 500), JS istisnaları
+  burada görünür. Hata anına en yakın satırlar en değerlidir.
+- browser.default.html: sayfanın HATA ANINDAKİ hâli. Aranan element DOM'da gerçekten var mı,
+  sayfa hangi ekranda kalmış, tıklamayı engelleyen bir yükleniyor/overlay katmanı var mı —
+  buradan bakılır.
+
+WEB'DE SIK GÖRÜLEN KALIPLAR (yol gösterici, kural değil — kanıt başka bir şey söylüyorsa kanıta uy):
+- DOM'da element yok ama sayfa doğru ekranda ve konsolda hata yok -> locator eskimiş olabilir
+  (test_maintenance).
+- Konsolda 401/403 ya da oturum/yetki hatası -> environment_error.
+- Konsolda 5xx, ya da sayfada uygulama hata ekranı -> application_bug.
+- Sayfa beklenen ekrana hiç gelmemiş, DOM başka bir sayfada kalmış -> uygulama ya da ortam;
+  hangisi olduğunu konsol söyler.
+- Tıklamayı engelleyen bir yükleniyor/spinner/overlay katmanı -> çoğunlukla zamanlama sorunu;
+  uygulamanın yavaşlığı mı testin beklemesizliği mi, kanıta bak.
 
 $extra_context
