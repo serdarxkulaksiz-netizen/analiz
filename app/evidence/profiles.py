@@ -7,7 +7,10 @@ from pydantic import BaseModel, ConfigDict
 
 from app.evidence.rules import Rule, build_rule
 
-JOB_FAILED_PROFILE_NAME = "job_failed"
+#: The profile for a run that crashed at the job level. The caller MAY ask for
+#: it by name; the system also forces it when VisiumGo reports the run itself
+#: as FAILED.
+ERROR_PROFILE_NAME = "error"
 
 
 class EvidenceRow(BaseModel):
@@ -70,9 +73,9 @@ class ProfileRegistry:
                 raise ValueError(f"profile {name!r}: {exc}") from exc
             self._profiles[name] = profile
 
-        if JOB_FAILED_PROFILE_NAME not in self._profiles:
+        if ERROR_PROFILE_NAME not in self._profiles:
             raise ValueError(
-                f'profiles config {config_path} must contain a "{JOB_FAILED_PROFILE_NAME}" profile.'
+                f'profiles config {config_path} must contain an "{ERROR_PROFILE_NAME}" profile.'
             )
 
     def evidence_names(self) -> set[str]:
@@ -87,8 +90,8 @@ class ProfileRegistry:
         return {profile.prompt for profile in self._profiles.values()}
 
     def selectable_names(self) -> set[str]:
-        """Profiles a caller may ask for by name (job_failed is system-only)."""
-        return set(self._profiles) - {JOB_FAILED_PROFILE_NAME}
+        """Profiles a caller may ask for by name."""
+        return set(self._profiles)
 
     def get(self, name: str = "", forced: str = "") -> Profile:
         """Resolve the profile for this run; `forced` overrides the caller's choice."""
@@ -101,7 +104,7 @@ class ProfileRegistry:
 
 
 __all__ = [
-    "JOB_FAILED_PROFILE_NAME",
+    "ERROR_PROFILE_NAME",
     "Profile",
     "EvidenceRow",
     "ProfileConfig",

@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from app.config import Settings, get_settings
 from app.domain.api import RunView, build_run_view
 from app.domain.enums import RunStatus
-from app.evidence.profiles import JOB_FAILED_PROFILE_NAME, ProfileRegistry
+from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry, known_evidence_names
 from app.extraction.evidence_extractor import EvidenceExtractor
 from app.llm.openai_compatible import OpenAICompatibleLLMProvider
@@ -170,13 +170,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         selectable = service.selectable_profiles()
         if request.profil not in selectable:
             known = ", ".join(sorted(selectable))
-            reason = (
-                f"{request.profil!r} seçilemez — koşumun kendisi FAILED olduğunda sistem onu "
-                "zaten uygular."
-                if request.profil == JOB_FAILED_PROFILE_NAME
-                else f"Bilinmeyen profil {request.profil!r}."
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bilinmeyen profil {request.profil!r}. Geçerli profiller: {known}.",
             )
-            raise HTTPException(status_code=400, detail=f"{reason} Geçerli profiller: {known}.")
         analyzer_run_id = service.create_run(request.profil, request.job_id, request.run_id)
         background_tasks.add_task(service.run_analysis, analyzer_run_id)
         return {

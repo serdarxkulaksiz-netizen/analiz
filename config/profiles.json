@@ -1,5 +1,5 @@
 {
-  "_comment": "Profili isteği atan seçer: POST gövdesindeki `profil` alanı bu dosyadaki bir ada eşit olmalı. `job_failed` seçilemez — koşumun KENDİSİ çöktüğünde (runResult.state=FAILED) sistem onu zorlar. `evidence` listesi tek şeyi söyler: LLM'e KİM gidecek ve yanındaki `rules` ile NASIL kırpılacak. Listede olmayan kanıt hiç indirilmez. Sıra, prompt'taki blok sırasıdır. Bir kanıtın NEREDEN geldiği config'in işi değil, kanıt sınıfının kimliğidir.",
+  "_comment": "Profili isteği atan seçer: POST gövdesindeki `profil` alanı bu dosyadaki bir ada eşit olmalı. `error` elle de seçilebilir, ayrıca koşumun KENDİSİ çöktüğünde (runResult.state=FAILED) sistem onu zorlar. `evidence` listesi tek şeyi söyler: LLM'e KİM gidecek ve yanındaki `rules` ile NASIL kırpılacak. Listede olmayan kanıt hiç indirilmez. Sıra, prompt'taki blok sırasıdır. Bir kanıtın NEREDEN geldiği config'in işi değil, kanıt sınıfının kimliğidir.",
   "web": {
     "prompt": "web",
     "extra_context": "",
@@ -63,7 +63,7 @@
     ]
   },
   "finart": {
-    "prompt": "buildlog",
+    "prompt": "finart",
     "extra_context": "",
     "evidence": [
       {
@@ -76,8 +76,8 @@
       }
     ]
   },
-  "job_failed": {
-    "prompt": "buildlog",
+  "error": {
+    "prompt": "error",
     "extra_context": "",
     "evidence": [
       {

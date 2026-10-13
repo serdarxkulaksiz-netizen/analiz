@@ -12,7 +12,7 @@ from app.domain.enums import AnalysisStatus, RunState, RunStatus
 from app.domain.findings import EvidenceReport, Findings
 from app.domain.result import AnalysisMeta, AnalysisResult, LLMAnalysis
 from app.evidence.plan import AnalysisPlan, plan_for
-from app.evidence.profiles import JOB_FAILED_PROFILE_NAME, Profile, ProfileRegistry
+from app.evidence.profiles import ERROR_PROFILE_NAME, Profile, ProfileRegistry
 from app.extraction.base import Extractor
 from app.llm.provider import LLMProvider
 from app.parsing.json_parser import try_json
@@ -23,7 +23,7 @@ from app.prompting.builder import PromptBuilder
 from app.source.base import Source
 from app.source.models import JobLog, RawScenario
 
-STATE_PROFILE_OVERRIDE: dict[str, str] = {RunState.FAILED.value: JOB_FAILED_PROFILE_NAME}
+STATE_PROFILE_OVERRIDE: dict[str, str] = {RunState.FAILED.value: ERROR_PROFILE_NAME}
 
 #: How many times a run may be picked up again WITHOUT FINISHING A SINGLE
 #: SCENARIO in between. Counting plain restarts would be wrong: two deploys in
@@ -231,7 +231,7 @@ class AnalyzerService:
         await self._llm.aclose()
 
     def selectable_profiles(self) -> set[str]:
-        """Profile names a caller may ask for (job_failed is system-only)."""
+        """Profile names a caller may ask for."""
         return self._profiles.selectable_names()
 
     def create_run(self, profil: str, job_id: str, run_id: str = "") -> str:
