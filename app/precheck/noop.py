@@ -1,4 +1,4 @@
-"""NoOpPreCheck — the only implementation today."""
+"""NoOpPreCheck — the way to turn the precheck off."""
 
 from app.domain.findings import Findings
 from app.domain.result import LLMAnalysis

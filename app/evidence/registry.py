@@ -32,22 +32,19 @@ def known_evidence_names() -> set[str]:
     return {cls.evidence_name for cls in _EVIDENCE_CLASSES}
 
 
+def evidence_class_for(attachment: Attachment) -> type[Evidence] | None:
+    """Evidence class that handles this attachment, or None if none does."""
+    return next((cls for cls in _EVIDENCE_CLASSES if cls.matches(attachment)), None)
+
+
 def evidence_name_for(attachment: Attachment) -> str:
     """Evidence type this attachment maps to, or "" if none matches."""
-    for cls in _EVIDENCE_CLASSES:
-        if cls.matches(attachment):
-            return cls.evidence_name
-    return ""
+    cls = evidence_class_for(attachment)
+    return cls.evidence_name if cls is not None else ""
 
 
 class EvidenceRegistry:
     """Builds Evidence instances for a scenario, flagged and ruled by profile."""
-
-    def _class_for(self, attachment: Attachment) -> type[Evidence] | None:
-        for cls in _EVIDENCE_CLASSES:
-            if cls.matches(attachment):
-                return cls
-        return None
 
     def build_job_log(
         self,
@@ -81,7 +78,7 @@ class EvidenceRegistry:
         context = ctx or RuleContext(scenario_name=scenario.scenario_name)
         evidences: list[Evidence] = []
         for attachment in scenario.attachments:
-            cls = self._class_for(attachment)
+            cls = evidence_class_for(attachment)
             if cls is None:
                 continue
             evidences.append(

@@ -21,10 +21,6 @@ class TraceWriter:
     def __init__(self, root: Path | None = None) -> None:
         self._root = root
 
-    @property
-    def enabled(self) -> bool:
-        return self._root is not None
-
     def write(
         self,
         analyzer_run_id: str,

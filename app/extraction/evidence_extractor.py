@@ -2,7 +2,6 @@
 
 from app.domain.findings import (
     AttachmentReport,
-    BlockReport,
     EvidenceBlock,
     EvidenceReport,
     Findings,
@@ -38,20 +37,16 @@ class EvidenceExtractor(Extractor):
             evidences.append(log_evidence)
 
         evidence_blocks: list[EvidenceBlock] = []
-        trimmed_labels: set[str] = set()
         rule_errors: list[str] = []
         for evidence in evidences:
             name = type(evidence).evidence_name
             try:
                 block = evidence.to_block()
-                was_trimmed = evidence.was_trimmed
             except RuleError as exc:
                 rule_errors.append(f"{name}: {exc}")
-                block, was_trimmed = None, False
+                block = None
             if block is not None:
                 evidence_blocks.append(block)
-                if was_trimmed:
-                    trimmed_labels.add(block.label)
 
         order = {name: index for index, name in enumerate(profile.evidence_to_llm)}
         evidence_blocks.sort(key=lambda block: order.get(block.evidence_name, len(order)))
@@ -59,8 +54,6 @@ class EvidenceExtractor(Extractor):
         report = _build_report(
             scenario,
             profile,
-            evidence_blocks,
-            trimmed_labels,
             job_log=job_log,
             rule_errors=rule_errors,
         )
@@ -78,8 +71,6 @@ class EvidenceExtractor(Extractor):
 def _build_report(
     scenario: RawScenario,
     profile: Profile,
-    blocks: list[EvidenceBlock],
-    trimmed_labels: set[str],
     *,
     job_log: JobLog,
     rule_errors: list[str] | None = None,
@@ -91,11 +82,8 @@ def _build_report(
         attachments.append(
             AttachmentReport(
                 file_name=attachment.file_name,
-                mime_type=attachment.mime_type,
-                device_id=attachment.device_id,
                 evidence_name=evidence_name,
                 goes_to_llm=evidence_name in profile.evidence_to_llm,
-                download_skipped=attachment.download_skipped,
                 download_error=attachment.download_error,
                 chars=len(attachment.content),
             )
@@ -112,13 +100,4 @@ def _build_report(
             chars=len(job_log.text),
             error=job_log.error,
         ),
-        blocks=[
-            BlockReport(
-                label=block.label,
-                chars=len(block.content),
-                available=bool(block.content),
-                trimmed=block.label in trimmed_labels,
-            )
-            for block in blocks
-        ],
     )

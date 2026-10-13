@@ -12,7 +12,6 @@ class Attachment(BaseModel):
     mime_type: str
     device_id: str
     content: str = ""
-    download_skipped: bool = False
     download_error: str = ""
 
     @property

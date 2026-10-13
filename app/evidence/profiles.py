@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from app.evidence.rules import Rule, RuleContext, build_rule
+from app.evidence.rules import Rule, build_rule
 
 JOB_FAILED_PROFILE_NAME = "job_failed"
 
@@ -106,5 +106,4 @@ __all__ = [
     "EvidenceRow",
     "ProfileConfig",
     "ProfileRegistry",
-    "RuleContext",
 ]

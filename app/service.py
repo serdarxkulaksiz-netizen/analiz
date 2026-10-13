@@ -35,9 +35,9 @@ def _skipped_reason(
 ) -> str:
     """Why no prompt was built for this scenario ("" when one was).
 
-    The reason carries the error itself, not a pointer to a stored row: with
-    `REPOSITORY_PROVIDER=memory` nothing is written down, so a reason that says
-    "look at the trace" names a place the caller cannot reach.
+    The reason carries the error itself, not a pointer to somewhere else: the
+    diagnosis row the caller reads is the only place this is written down, so a
+    reason that says "look it up" names a place the caller cannot reach.
     """
     if prompt:
         return ""
@@ -120,7 +120,7 @@ def _grouped_note(groups: list[list[RawScenario]], total: int) -> str:
         return ""
     return (
         f"{total} senaryo {asked} gruba indi (aynı adım + aynı hata mesajı); "
-        f"modele {asked} kez soruldu, teşhis grubun tamamına yazıldı"
+        f"her grup için tek cevap üretildi, teşhis grubun tamamına yazıldı"
     )
 
 
@@ -325,19 +325,24 @@ class AnalyzerService:
             return_exceptions=True,
         )
 
-        escaped = [o for o in outcomes if isinstance(o, BaseException)]
-
+        escaped: list[BaseException] = []
+        lost = 0
         for group, outcome in zip(groups, outcomes, strict=True):
             if isinstance(outcome, AnalysisResult):
                 for scenario in group[1:]:
                     await self._save_shared_result(outcome, scenario)
+            elif isinstance(outcome, BaseException):
+                # The whole group is lost, not just its representative: the
+                # others were never analyzed, they were waiting for its answer.
+                escaped.append(outcome)
+                lost += len(group)
 
         run = self._repo.get(settings.table_runs, run["analyzer_run_id"]) or run
         notes = list(run_notes)
         if escaped:
             kinds = ", ".join(sorted({f"{type(e).__name__}: {e}" for e in escaped}))
             notes.append(
-                f"{len(escaped)}/{len(job.failed_scenarios)} senaryo kaydedilemedi "
+                f"{lost}/{len(job.failed_scenarios)} senaryo kaydedilemedi "
                 f"({kinds}) — bu senaryoların sonucu yok"
             )
         self._update_run(run, status=RunStatus.DONE.value, note=" · ".join(notes))
@@ -432,7 +437,9 @@ class AnalyzerService:
                         meta = AnalysisMeta(analyzed_at=_utcnow_iso())
                         raise _RuleFailure(" · ".join(findings.evidence_report.rule_errors))
 
-                    precheck_result = self._precheck.check(findings)
+                    precheck_result = (
+                        self._precheck.check(findings) if precheck.needs_evidence else None
+                    )
                     if precheck_result is not None:
                         analysis = precheck_result
                         raw_response = ""

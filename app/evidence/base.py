@@ -33,11 +33,6 @@ class Evidence(ABC):
         """LLM-facing labeled block, or None when this evidence has none."""
         return None
 
-    @property
-    def was_trimmed(self) -> bool:
-        """True if content rules actually changed this evidence's content."""
-        return False
-
     @classmethod
     @abstractmethod
     def from_attachment(
@@ -86,9 +81,8 @@ class TextEvidence(Evidence):
     def select_content(self) -> str:
         """Content selector: applies the profile's rules, in order (once).
 
-        The result is kept: `to_block` and `was_trimmed` both ask for it, and
-        running a whole job log through the rules twice per scenario is work
-        nobody reads.
+        The result is kept: a whole job log run through the rules twice per
+        scenario is work nobody reads.
         """
         if self._selected is None:
             text = self._content
@@ -96,10 +90,6 @@ class TextEvidence(Evidence):
                 text = rule.apply(text, self._ctx)
             self._selected = text
         return self._selected
-
-    @property
-    def was_trimmed(self) -> bool:
-        return bool(self._rules) and self.select_content() != self._content
 
     def to_block(self) -> EvidenceBlock | None:
         if self.goes_to_llm and self._is_present:

@@ -174,7 +174,7 @@ class VisiumGoSource(Source):
 
         Only text is read. A binary attachment (a screenshot) has nowhere to go
         now that evidence is never stored: its bytes would be fetched, held and
-        dropped. It is reported as skipped instead of paid for.
+        dropped. It is returned unread instead of paid for.
         """
         file_name = attachment.file_name
         path = f"/api/runs/{encode_segment(run_id)}/attachments/{encode_segment(file_name)}"
@@ -182,7 +182,7 @@ class VisiumGoSource(Source):
             attachment.mime_type.startswith("text/") or attachment.extension in _TEXT_EXTENSIONS
         )
         if not is_text:
-            return attachment.model_copy(update={"download_skipped": True})
+            return attachment
 
         try:
             text = await self._client.get_text(path)
@@ -249,7 +249,7 @@ class VisiumGoSource(Source):
 
         scenarios = list(await asyncio.gather(*(one(record) for record in failed)))
 
-        total = run.run_result.get("totalScenarios", 0)
+        total = run.run_result.get("totalScenarios") or 0
         return JobData(
             total_scenario_count=total,
             failed_scenarios=scenarios,
@@ -275,12 +275,10 @@ class VisiumGoSource(Source):
         Called for the scenarios that are actually analyzed. A scenario that
         shares another's diagnosis never gets here, so its files are never read.
         """
-        attachments: list[Attachment] = []
-        for attachment in scenario.attachments:
-            if not plan.wants(attachment):
-                attachments.append(attachment.model_copy(update={"download_skipped": True}))
-                continue
-            attachments.append(await self.read_attachment(run_id, attachment))
+        attachments: list[Attachment] = [
+            await self.read_attachment(run_id, attachment) if plan.wants(attachment) else attachment
+            for attachment in scenario.attachments
+        ]
         return scenario.model_copy(update={"attachments": attachments})
 
     async def _describe_scenario(self, run_id: str, record: dict[str, Any]) -> RawScenario:
@@ -302,6 +300,6 @@ class VisiumGoSource(Source):
             scenario_id=scenario_id,
             error_text=str(detail.get("errorText", "")),
             failed_step=_failed_step_of(detail),
-            attachments=[self.describe_attachment(m) for m in detail.get("attachments", [])],
+            attachments=[self.describe_attachment(m) for m in detail.get("attachments") or []],
             fetch_error=fetch_error,
         )

@@ -4,8 +4,8 @@ KURALLAR (UYULMASI ZORUNLU):
 3. Hangi kanıtların üretildiği koşuma göre DEĞİŞİR; yukarıda gördüğün bloklar o koşumda
    üretilmiş olanlardır. Bir bloğun bulunmaması, verdict'i "unknown" veya "inconclusive" yapmak
    için TEK BAŞINA gerekçe DEĞİLDİR; yalnızca confidence'ı bir kademe düşürmek için gerekçe
-   olabilir. Test adımları ve hata metni ayrı bölümler olarak verilmez — ikisi de test log'un
-   içindedir, oradan oku.
+   olabilir. Test adımları ve hata metni ayrı bölümler olarak verilmez — ikisi de yukarıdaki
+   log bloklarının içindedir, oradan oku.
 4. explanation ve summary'nin ana konusu "kanıt eksik" OLMAMALIDIR; teşhise odaklan. Eksik
    kanıttan yalnızca confidence_reason içinde gerekçe olarak söz edebilirsin.
 5. confidence alanı YALNIZCA şu değerlerden biri olabilir: $confidence_buckets

@@ -33,8 +33,7 @@ class Settings(BaseSettings):
 
     profiles_config_path: Path = Path("config") / "profiles.json"
 
-    precheck_provider: str = "noop"
-    precheck_rules_path: Path = Path("config") / "precheck_rules.json"
+    precheck_provider: str = "known_errors"
     known_errors_path: Path = Path("config") / "known_errors.json"
 
     prompts_dir: Path = Path("config") / "prompts"
