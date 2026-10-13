@@ -154,6 +154,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         for task in list(resumed):
             task.cancel()
+        if resumed:
+            # Awaited before the HTTP clients close, or a cancelled task wakes
+            # up into a provider that is already shut down.
+            await asyncio.gather(*resumed, return_exceptions=True)
         await service.aclose()
 
     app = FastAPI(title="VisiumGo Test Analyzer", version=_version(), lifespan=lifespan)

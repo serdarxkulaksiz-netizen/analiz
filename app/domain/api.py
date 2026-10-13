@@ -14,6 +14,7 @@ class DiagnosisView(BaseModel):
     result_id: str = ""
 
     scenario_name: str = ""
+    scenario_id: str = ""
     root_cause: str = ""
     error_type: str = ""
     verdict: Verdict | None = None

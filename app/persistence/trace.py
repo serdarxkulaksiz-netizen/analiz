@@ -25,16 +25,23 @@ class TraceWriter:
         self,
         analyzer_run_id: str,
         scenario_name: str,
+        scenario_id: str = "",
         *,
         prompt: str,
         response: dict[str, Any],
     ) -> None:
-        """Write this scenario's prompt and response; no prompt, no files."""
+        """Write this scenario's prompt and response; no prompt, no files.
+
+        The id goes in the file name after the readable name: two scenarios can
+        share a name, and then one trace would silently overwrite the other.
+        """
         if self._root is None or not prompt:
             return
         folder = self._root / safe_path_part(analyzer_run_id)
         folder.mkdir(parents=True, exist_ok=True)
         name = safe_path_part(scenario_name) or "scenario"
+        if scenario_id:
+            name = f"{name}__{safe_path_part(scenario_id)}"
         (folder / f"{name}.prompt.txt").write_text(prompt, encoding="utf-8")
         (folder / f"{name}.response.json").write_text(
             json.dumps(response, ensure_ascii=False, indent=2), encoding="utf-8"

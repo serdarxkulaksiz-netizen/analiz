@@ -12,7 +12,16 @@ RUN_KEY = "analyzer_run_id"
 
 
 def _read(path: Path) -> dict[str, Any]:
-    data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    """Read one stored row, saying WHICH file is broken when one is.
+
+    Not skipped: a row that cannot be read is a row that is missing, and a run
+    that quietly comes back short is the failure mode this whole layer exists
+    to avoid. The caller is told the path so the one bad file can be dealt with.
+    """
+    try:
+        data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{path}: bozuk JSON satırı — {exc}") from exc
     return data
 
 

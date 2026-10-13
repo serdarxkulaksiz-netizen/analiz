@@ -40,6 +40,10 @@ class AnalysisResult(BaseModel):
     analyzer_run_id: str
 
     scenario_name: str = ""
+    #: VisiumGo's own id for this scenario. The NAME is not an identity: two
+    #: examples of one Scenario Outline carry the same name, and matching rows
+    #: by name would treat them as one scenario.
+    scenario_id: str = ""
     root_cause: str = ""
     error_type: str = ""
     verdict: Verdict | None = None

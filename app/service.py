@@ -104,6 +104,17 @@ def _forced_note(profile_name: str) -> str:
     return f"'{profile_name}' profili kullanıldı (job durumu FAILED)"
 
 
+def _identity(scenario_id: str, scenario_name: str) -> str:
+    """What makes a scenario THIS scenario when rows are matched up.
+
+    The source's own id, because the name is not unique: two examples of one
+    Scenario Outline carry the same name, and matching by name would let one
+    stand in for the other. The name is the fallback for a scenario whose
+    `/results` row carried no id at all — there it is all we were given.
+    """
+    return scenario_id or scenario_name
+
+
 def _group_scenarios(scenarios: list[RawScenario]) -> list[list[RawScenario]]:
     """Scenarios that died the same way, grouped so the model is asked once.
 
@@ -363,7 +374,7 @@ class AnalyzerService:
         # never produced twice: the model was asked once and paid for once, and
         # a second row for the same scenario would be a duplicate answer.
         done = {
-            str(row.get("scenario_name", "")): row
+            _identity(str(row.get("scenario_id", "")), str(row.get("scenario_name", ""))): row
             for row in self._repo.list(
                 settings.table_analysis_results,
                 where={"analyzer_run_id": run["analyzer_run_id"]},
@@ -393,7 +404,11 @@ class AnalyzerService:
             )
             return
 
-        pending = [group for group in groups if group[0].scenario_name not in done]
+        pending = [
+            group
+            for group in groups
+            if _identity(group[0].scenario_id, group[0].scenario_name) not in done
+        ]
         trace_errors: list[str] = []
         outcomes = await asyncio.gather(
             *(
@@ -424,7 +439,7 @@ class AnalyzerService:
         # Groups whose representative was answered before the process died, but
         # whose other members never got their copy.
         for group in groups:
-            answered = done.get(group[0].scenario_name)
+            answered = done.get(_identity(group[0].scenario_id, group[0].scenario_name))
             if answered is not None and len(group) > 1:
                 await self._share_with_group(AnalysisResult(**answered), group[1:], done)
 
@@ -452,7 +467,7 @@ class AnalyzerService:
     ) -> None:
         """Give the group's answer to the members that do not have it yet."""
         for scenario in members:
-            if scenario.scenario_name in done:
+            if _identity(scenario.scenario_id, scenario.scenario_name) in done:
                 continue
             await self._save_shared_result(source, scenario)
 
@@ -477,6 +492,7 @@ class AnalyzerService:
             update={
                 "result_id": str(uuid4()),
                 "scenario_name": scenario.scenario_name,
+                "scenario_id": scenario.scenario_id,
                 "error_text": scenario.error_text,
                 "failed_step": scenario.failed_step,
                 "grouped_with": source.scenario_name,
@@ -617,6 +633,7 @@ class AnalyzerService:
                     result_id=result_id,
                     analyzer_run_id=analyzer_run_id,
                     scenario_name=scenario.scenario_name,
+                    scenario_id=scenario.scenario_id,
                     **analysis.model_dump(),
                     error_text=scenario.error_text,
                     failed_step=scenario.failed_step,
@@ -628,6 +645,7 @@ class AnalyzerService:
                     result_id=result_id,
                     analyzer_run_id=analyzer_run_id,
                     scenario_name=scenario.scenario_name,
+                    scenario_id=scenario.scenario_id,
                     failure_reason=failure_reason,
                     error_text=scenario.error_text,
                     failed_step=scenario.failed_step,
@@ -653,6 +671,7 @@ class AnalyzerService:
                 self._trace.write(
                     analyzer_run_id,
                     scenario.scenario_name,
+                    scenario.scenario_id,
                     prompt=prompt,
                     response={
                         "raw_response": raw_response,
