@@ -41,10 +41,26 @@
     ]
   },
   "mobil": {
-    "_not": "İÇERİĞİ BELİRLENMEDİ. Hangi kanıtın gideceği ve nasıl kırpılacağı, örnek bir mobil koşum dosyasına bakılarak doldurulmalı.",
     "prompt": "mobile",
     "extra_context": "",
-    "evidence": []
+    "evidence": [
+      {
+        "name": "TestLogEvidence",
+        "rules": [
+          {
+            "type": "strip_base64"
+          }
+        ]
+      },
+      {
+        "name": "MobileDomEvidence",
+        "rules": [
+          {
+            "type": "strip_base64"
+          }
+        ]
+      }
+    ]
   },
   "finart": {
     "prompt": "buildlog",
