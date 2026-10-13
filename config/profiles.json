@@ -5,7 +5,12 @@
     "extra_context": "",
     "evidence": [
       {
-        "name": "TestLogEvidence"
+        "name": "TestLogEvidence",
+        "rules": [
+          {
+            "type": "strip_base64"
+          }
+        ]
       },
       {
         "name": "BrowserLogEvidence"
