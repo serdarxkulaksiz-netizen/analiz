@@ -39,9 +39,6 @@ class MemoryRepository(Repository):
             rows = [row for row in rows if all(row.get(k) == v for k, v in where.items())]
         return [deepcopy(row) for row in rows]
 
-    def exists(self, table: str, row_id: str) -> bool:
-        return row_id in self._tables.get(table, {})
-
     def _known(self, analyzer_run_id: str) -> bool:
         return self._max_runs <= 0 or analyzer_run_id in self._run_order
 

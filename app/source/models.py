@@ -46,7 +46,6 @@ class RunSummary(BaseModel):
     job_name: str = ""
     state: str = ""
     run_result: dict = {}
-    raw: dict = {}
     note: str = ""
 
 
@@ -63,4 +62,3 @@ class JobData(BaseModel):
     total_scenario_count: int = 0
     failed_scenarios: list[RawScenario] = []
     job_log: JobLog = JobLog()
-    raw_results_response: list = []

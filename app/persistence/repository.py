@@ -18,7 +18,3 @@ class Repository(ABC):
     @abstractmethod
     def list(self, table: str, where: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Return the rows of `table`, optionally only those matching `where`."""
-
-    @abstractmethod
-    def exists(self, table: str, row_id: str) -> bool:
-        """Return True if the row exists."""

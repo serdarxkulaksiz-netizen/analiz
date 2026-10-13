@@ -108,7 +108,6 @@ def _summary_from(record: dict[str, Any], *, job_id: str = "", note: str = "") -
         job_name=str(record.get("jobName", "")),
         state=_state_of(record),
         run_result=run_result,
-        raw=record,
         note=note,
     )
 
@@ -255,7 +254,6 @@ class VisiumGoSource(Source):
             total_scenario_count=total,
             failed_scenarios=scenarios,
             job_log=job_log,
-            raw_results_response=results,
         )
 
     def _extract_log(self, archive: bytes) -> str:

@@ -59,11 +59,6 @@ class PromptBuilder:
 
         self._confidence_buckets = confidence_buckets
 
-    @property
-    def template_names(self) -> set[str]:
-        """Templates available to profiles."""
-        return set(self._templates)
-
     def version_of(self, name: str) -> str:
         """Short hash of a template's exact text (template + contract)."""
         return self._versions.get(name, "")

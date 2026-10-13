@@ -60,6 +60,5 @@ class AnalysisResult(BaseModel):
     #: Set when this diagnosis was produced for ANOTHER scenario with the same
     #: step and error, and copied here. Empty means this scenario was analyzed.
     grouped_with: str = ""
-    profile_name: str = ""
     status: AnalysisStatus = AnalysisStatus.OK
     meta: AnalysisMeta = AnalysisMeta()

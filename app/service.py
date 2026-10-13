@@ -216,9 +216,6 @@ class AnalyzerService:
                 "completed_count": 0,
                 "total_scenario_count": 0,
                 "job_name": "",
-                "raw_run_response": {},
-                "raw_results_response": [],
-                "build_log_chars": 0,
                 "build_log_error": "",
                 "note": "",
                 "created_at": now,
@@ -286,9 +283,6 @@ class AnalyzerService:
             job_id=summary.job_id,
             job_name=summary.job_name,
             profile_name=plan.profile.name,
-            raw_run_response=summary.raw,
-            raw_results_response=job.raw_results_response,
-            build_log_chars=len(job.job_log.text),
             build_log_error=job.job_log.error,
             scenario_count=len(job.failed_scenarios),
             total_scenario_count=job.total_scenario_count,
@@ -499,8 +493,6 @@ class AnalyzerService:
                     else "model cevabı beklenen JSON şemasına uymadı"
                 )
 
-            profile_name = plan.profile.name
-
             self._trace.write(
                 analyzer_run_id,
                 scenario.scenario_name,
@@ -525,7 +517,6 @@ class AnalyzerService:
                     **analysis.model_dump(),
                     error_text=scenario.error_text,
                     failed_step=scenario.failed_step,
-                    profile_name=profile_name,
                     status=AnalysisStatus.OK,
                     meta=meta,
                 )
@@ -537,7 +528,6 @@ class AnalyzerService:
                     failure_reason=failure_reason,
                     error_text=scenario.error_text,
                     failed_step=scenario.failed_step,
-                    profile_name=profile_name,
                     status=(
                         AnalysisStatus.NO_EVIDENCE
                         if skipped_no_evidence
