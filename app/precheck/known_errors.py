@@ -50,6 +50,7 @@ class KnownErrorsPreCheck(PreCheck):
     """Answers a scenario from the catalogue instead of calling the model."""
 
     answered_by = ANSWERED_BY
+    needs_evidence = False
 
     def __init__(self, known: list[KnownError]) -> None:
         self._by_key = {row.key: row for row in known}

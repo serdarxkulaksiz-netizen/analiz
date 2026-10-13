@@ -9,10 +9,10 @@ from pydantic import ValidationError
 
 from app.config import Settings
 from app.domain.enums import AnalysisStatus, RunState, RunStatus
-from app.domain.findings import Findings
+from app.domain.findings import EvidenceReport, Findings
 from app.domain.result import AnalysisMeta, AnalysisResult, LLMAnalysis
 from app.evidence.plan import AnalysisPlan, plan_for
-from app.evidence.profiles import JOB_FAILED_PROFILE_NAME, ProfileRegistry
+from app.evidence.profiles import JOB_FAILED_PROFILE_NAME, Profile, ProfileRegistry
 from app.extraction.base import Extractor
 from app.llm.provider import LLMProvider
 from app.parsing.json_parser import try_json
@@ -64,6 +64,10 @@ def _skipped_reason(
         f"prompt'a girecek kanıt yok — profil {findings.profile_name!r} "
         f"{len(findings.evidence_blocks)} blok üretti{detail}"
     )
+
+
+class _Answered(Exception):
+    """A check answered before any evidence was fetched; nothing else to do."""
 
 
 class _RuleFailure(Exception):
@@ -121,6 +125,26 @@ def _grouped_note(groups: list[list[RawScenario]], total: int) -> str:
     return (
         f"{total} senaryo {asked} gruba indi (aynı adım + aynı hata mesajı); "
         f"modele {asked} kez soruldu, teşhis grubun tamamına yazıldı"
+    )
+
+
+def _scenario_facts(scenario: RawScenario, profile: Profile) -> Findings:
+    """What is known about a scenario before a single file has been read.
+
+    Its own identity and what the source said went wrong — the failing step and
+    the error message. Enough for a check that answers from a catalogue, and it
+    costs nothing to produce.
+    """
+    return Findings(
+        scenario_name=scenario.scenario_name,
+        profile_name=profile.name,
+        prompt_template=profile.prompt,
+        extra_context=profile.extra_context,
+        evidence_report=EvidenceReport(
+            error_text=scenario.error_text,
+            failed_step=scenario.failed_step,
+            scenario_error=scenario.fetch_error,
+        ),
     )
 
 
@@ -394,7 +418,18 @@ class AnalyzerService:
             rule_failure = ""
             error_detail = ""
 
+            precheck = type(self._precheck)
             try:
+                # A check that needs no evidence runs FIRST: a catalogued failure
+                # is answered without reading one file. Its key is the step and
+                # the error, and both are already here.
+                if not precheck.needs_evidence:
+                    analysis = self._precheck.check(_scenario_facts(scenario, plan.profile))
+
+                if analysis is not None:
+                    meta = AnalysisMeta(answered_by=precheck.answered_by, analyzed_at=_utcnow_iso())
+                    raise _Answered
+
                 scenario = await self._source.load_attachments(run_id, scenario, plan)
                 findings = self._extractor.extract(
                     scenario,
@@ -411,7 +446,7 @@ class AnalyzerService:
                     analysis = precheck_result
                     raw_response = ""
                     meta = AnalysisMeta(
-                        answered_by=type(self._precheck).answered_by,
+                        answered_by=precheck.answered_by,
                         analyzed_at=_utcnow_iso(),
                     )
                 elif not findings.has_evidence_for_llm:
@@ -444,6 +479,8 @@ class AnalyzerService:
                             analysis = LLMAnalysis.model_validate(parsed)
                         except ValidationError:
                             analysis = None
+            except _Answered:
+                pass
             except _RuleFailure as exc:
                 rule_failure = str(exc)
             except Exception as exc:
@@ -467,7 +504,7 @@ class AnalyzerService:
                     else "model cevabı beklenen JSON şemasına uymadı"
                 )
 
-            profile_name = findings.profile_name if findings else ""
+            profile_name = plan.profile.name
 
             self._trace.write(
                 analyzer_run_id,

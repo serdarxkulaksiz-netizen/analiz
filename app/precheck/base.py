@@ -14,6 +14,12 @@ class PreCheck(ABC):
     #: stored row names the thing that actually produced the diagnosis.
     answered_by: ClassVar[str] = "precheck"
 
+    #: True when the check reads the evidence TEXT, so it can only run after the
+    #: files have been read. False when the scenario's own facts are enough —
+    #: then it runs BEFORE anything is fetched, and a match costs no traffic at
+    #: all. Default True: a new implementation has to say it is cheap.
+    needs_evidence: ClassVar[bool] = True
+
     @abstractmethod
     def check(self, findings: Findings) -> LLMAnalysis | None:
         """Return a ready analysis to skip the LLM, or None to proceed."""
