@@ -8,7 +8,5 @@ from app.precheck.base import PreCheck
 class NoOpPreCheck(PreCheck):
     """Never short-circuits; always defers to the LLM."""
 
-    needs_evidence = False
-
     def check(self, findings: Findings) -> LLMAnalysis | None:
         return None

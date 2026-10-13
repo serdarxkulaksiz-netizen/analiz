@@ -66,10 +66,6 @@ def _skipped_reason(
     )
 
 
-class _Answered(Exception):
-    """A check answered before any evidence was fetched; nothing else to do."""
-
-
 class _RuleFailure(Exception):
     """A content rule failed — this scenario stops, the run does not."""
 
@@ -425,62 +421,61 @@ class AnalyzerService:
                 # the error, and both are already here.
                 if not precheck.needs_evidence:
                     analysis = self._precheck.check(_scenario_facts(scenario, plan.profile))
+                    if analysis is not None:
+                        meta = AnalysisMeta(
+                            answered_by=precheck.answered_by, analyzed_at=_utcnow_iso()
+                        )
 
-                if analysis is not None:
-                    meta = AnalysisMeta(answered_by=precheck.answered_by, analyzed_at=_utcnow_iso())
-                    raise _Answered
-
-                scenario = await self._source.load_attachments(run_id, scenario, plan)
-                findings = self._extractor.extract(
-                    scenario,
-                    profile=plan.profile,
-                    job_log=job_log,
-                )
-
-                if findings.evidence_report.rule_errors:
-                    meta = AnalysisMeta(analyzed_at=_utcnow_iso())
-                    raise _RuleFailure(" · ".join(findings.evidence_report.rule_errors))
-
-                precheck_result = self._precheck.check(findings)
-                if precheck_result is not None:
-                    analysis = precheck_result
-                    raw_response = ""
-                    meta = AnalysisMeta(
-                        answered_by=precheck.answered_by,
-                        analyzed_at=_utcnow_iso(),
+                if analysis is None:
+                    scenario = await self._source.load_attachments(run_id, scenario, plan)
+                    findings = self._extractor.extract(
+                        scenario,
+                        profile=plan.profile,
+                        job_log=job_log,
                     )
-                elif not findings.has_evidence_for_llm:
-                    skipped_no_evidence = True
-                    meta = AnalysisMeta(analyzed_at=_utcnow_iso())
-                else:
-                    prompt = self._builder.build(findings)
-                    meta = AnalysisMeta(
-                        prompt_template=findings.prompt_template,
-                        prompt_version=self._builder.version_of(findings.prompt_template),
-                        analyzed_at=_utcnow_iso(),
-                    )
-                    response = await self._llm.complete(prompt)
-                    llm_request = response.request
-                    llm_content = response.content
-                    http_status = response.http_status
-                    raw_response = response.raw_response or response.content
-                    meta = meta.model_copy(
-                        update={
-                            "answered_by": "llm",
-                            "llm_model": response.model,
-                            "input_tokens": response.input_tokens,
-                            "output_tokens": response.output_tokens,
-                            "duration_ms": response.duration_ms,
-                        }
-                    )
-                    parsed = try_json(response.content)
-                    if parsed is not None:
-                        try:
-                            analysis = LLMAnalysis.model_validate(parsed)
-                        except ValidationError:
-                            analysis = None
-            except _Answered:
-                pass
+
+                    if findings.evidence_report.rule_errors:
+                        meta = AnalysisMeta(analyzed_at=_utcnow_iso())
+                        raise _RuleFailure(" · ".join(findings.evidence_report.rule_errors))
+
+                    precheck_result = self._precheck.check(findings)
+                    if precheck_result is not None:
+                        analysis = precheck_result
+                        raw_response = ""
+                        meta = AnalysisMeta(
+                            answered_by=precheck.answered_by,
+                            analyzed_at=_utcnow_iso(),
+                        )
+                    elif not findings.has_evidence_for_llm:
+                        skipped_no_evidence = True
+                        meta = AnalysisMeta(analyzed_at=_utcnow_iso())
+                    else:
+                        prompt = self._builder.build(findings)
+                        meta = AnalysisMeta(
+                            prompt_template=findings.prompt_template,
+                            prompt_version=self._builder.version_of(findings.prompt_template),
+                            analyzed_at=_utcnow_iso(),
+                        )
+                        response = await self._llm.complete(prompt)
+                        llm_request = response.request
+                        llm_content = response.content
+                        http_status = response.http_status
+                        raw_response = response.raw_response or response.content
+                        meta = meta.model_copy(
+                            update={
+                                "answered_by": "llm",
+                                "llm_model": response.model,
+                                "input_tokens": response.input_tokens,
+                                "output_tokens": response.output_tokens,
+                                "duration_ms": response.duration_ms,
+                            }
+                        )
+                        parsed = try_json(response.content)
+                        if parsed is not None:
+                            try:
+                                analysis = LLMAnalysis.model_validate(parsed)
+                            except ValidationError:
+                                analysis = None
             except _RuleFailure as exc:
                 rule_failure = str(exc)
             except Exception as exc:
