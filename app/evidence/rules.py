@@ -49,7 +49,16 @@ class Rule(ABC):
 
 
 class KeepScenarioSection(Rule):
-    """Keep only this scenario's part of a job-level log."""
+    """Keep only this scenario's part of a job-level log.
+
+    The section is located by the scenario's NAME, which is the only thing the
+    log gives us — and a name is not an identity: two examples of one Scenario
+    Outline open two sections under the same name. Then there is no way to tell
+    which one belongs to the scenario being analyzed, so nothing is cut and the
+    rule says so. Sending the first section to both would hand one scenario
+    another one's log, quietly, and that is the one thing this rule exists to
+    prevent.
+    """
 
     rule_type = "keep_scenario_section"
 
@@ -74,6 +83,13 @@ class KeepScenarioSection(Rule):
             raise RuleError(
                 f"{self.rule_type}: başlangıç işareti bulunamadı ({start!r}). "
                 f"Log {len(text)} karakter; bu senaryonun bölümü ayrılamadı."
+            )
+        found = text.count(start)
+        if found > 1:
+            raise RuleError(
+                f"{self.rule_type}: aynı başlangıç işaretiyle {found} bölüm var "
+                f"({start!r}). Hangisinin bu senaryoya ait olduğu logdan "
+                "belirlenemiyor; başka bir senaryonun logunu göndermemek için kesilmedi."
             )
         rest = text[index:]
         if self._end:
