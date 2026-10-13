@@ -16,6 +16,10 @@ class Settings(BaseSettings):
         extra="forbid",
     )
 
+    #: Yalnız REPOSITORY_PROVIDER=memory için: bellekte kaç koşum tutulsun.
+    #: Dosya modunda hiçbir koşum silinmez, bu ayar okunmaz.
+    repository_provider: str = "file"
+    database_dir: Path = Path("database")
     max_kept_runs: int = Field(default=20, ge=0)
     table_runs: str = "runs"
     table_analysis_results: str = "analysis_results"

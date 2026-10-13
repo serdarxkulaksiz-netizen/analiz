@@ -17,7 +17,9 @@ from app.evidence.registry import EvidenceRegistry, known_evidence_names
 from app.extraction.evidence_extractor import EvidenceExtractor
 from app.llm.openai_compatible import OpenAICompatibleLLMProvider
 from app.llm.provider import LLMProvider
+from app.persistence.file_repository import FileRepository
 from app.persistence.memory_repository import MemoryRepository
+from app.persistence.repository import Repository
 from app.persistence.trace import TraceWriter
 from app.precheck.base import PreCheck
 from app.precheck.known_errors import KnownErrorsPreCheck, load_known_errors
@@ -71,6 +73,11 @@ LLM_REGISTRY: dict[str, Callable[[Settings], LLMProvider]] = {
     ),
 }
 
+REPOSITORY_REGISTRY: dict[str, Callable[[Settings], Repository]] = {
+    "file": lambda s: FileRepository(s.database_dir),
+    "memory": lambda s: MemoryRepository(s.max_kept_runs, s.table_runs),
+}
+
 PRECHECK_REGISTRY: dict[str, Callable[[Settings], PreCheck]] = {
     "noop": lambda s: NoOpPreCheck(),
     "known_errors": lambda s: KnownErrorsPreCheck(
@@ -107,7 +114,9 @@ def build_service(settings: Settings) -> AnalyzerService:
 
     return AnalyzerService(
         settings=settings,
-        repository=MemoryRepository(settings.max_kept_runs, settings.table_runs),
+        repository=_select(REPOSITORY_REGISTRY, settings.repository_provider, "repository")(
+            settings
+        ),
         trace=TraceWriter(settings.trace_dir),
         source=_select(SOURCE_REGISTRY, settings.source_provider, "source")(settings),
         extractor=EvidenceExtractor(EvidenceRegistry()),
