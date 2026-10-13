@@ -40,6 +40,7 @@ class Evidence(ABC):
         attachment: Attachment,
         *,
         goes_to_llm: bool,
+        description: str = "",
         rules: list[Rule] | None = None,
         ctx: RuleContext | None = None,
     ) -> "Evidence":
@@ -57,21 +58,32 @@ class TextEvidence(Evidence):
         *,
         goes_to_llm: bool,
         file_label: str = "",
+        description: str = "",
         rules: list[Rule] | None = None,
         ctx: RuleContext | None = None,
     ) -> None:
         super().__init__(goes_to_llm=goes_to_llm)
         self._content = content or ""
         self._file_label = file_label
+        self._description = description
         self._rules = rules or []
         self._ctx = ctx or RuleContext()
         self._selected: str | None = None
 
     @property
     def block_label(self) -> str:
-        """`<dosya adı> · <ne olduğu>` — the header this evidence renders under."""
-        name = self._file_label or type(self).evidence_name
-        return f"{name} · {type(self).description}" if type(self).description else name
+        """The file name this evidence renders under."""
+        return self._file_label or type(self).evidence_name
+
+    @property
+    def block_description(self) -> str:
+        """What this evidence is, in one sentence, for the prompt.
+
+        The profile may override it: one evidence class can carry two different
+        things — `finart` sends one scenario's slice of the build log, `error`
+        sends the whole run's — and a single sentence would lie to one of them.
+        """
+        return self._description or type(self).description
 
     @property
     def _is_present(self) -> bool:
@@ -95,6 +107,7 @@ class TextEvidence(Evidence):
         if self.goes_to_llm and self._is_present:
             return EvidenceBlock(
                 label=self.block_label,
+                description=self.block_description,
                 content=self.select_content(),
                 evidence_name=type(self).evidence_name,
             )
@@ -106,6 +119,7 @@ class TextEvidence(Evidence):
         attachment: Attachment,
         *,
         goes_to_llm: bool,
+        description: str = "",
         rules: list[Rule] | None = None,
         ctx: RuleContext | None = None,
     ) -> "TextEvidence":
@@ -113,6 +127,7 @@ class TextEvidence(Evidence):
             attachment.content,
             goes_to_llm=goes_to_llm,
             file_label=attachment.label,
+            description=description,
             rules=rules,
             ctx=ctx,
         )
@@ -127,6 +142,7 @@ class ScreenshotEvidence(Evidence):
         attachment: Attachment,
         *,
         goes_to_llm: bool,
+        description: str = "",
         rules: list[Rule] | None = None,
         ctx: RuleContext | None = None,
     ) -> "ScreenshotEvidence":

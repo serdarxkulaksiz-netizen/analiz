@@ -6,12 +6,9 @@ hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa 
 
 Senaryo: $scenario_name
 
-$evidence_blocks
+KANITLAR AŞAĞIDA. Her bloğun başında o bloğun ne olduğu ve nasıl okunacağı yazıyor.
 
-KANITLARI NASIL OKUYACAKSIN:
-- build.log: bu senaryonun koşum logu. Adımlar ve sonuçları, hata satırları (`Fail reason:`),
-  exception ve stack trace, servis çağrılarının istek/cevap dökümü burada. En değerli satırlar
-  etiketsizdir. Hatanın HANGİ ADIMDAN SONRA geldiğine bak.
+$evidence_blocks
 
 WEB'DE SIK GÖRÜLEN KALIPLAR (yol gösterici, kural değil — kanıt başka bir şey söylüyorsa kanıta uy):
 - Element bulunamadı / zaman aşımı, ama logda uygulama hatası yok -> locator eskimiş olabilir

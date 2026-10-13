@@ -14,9 +14,17 @@ TEMPLATE_SUFFIX = ".txt"
 _BLANK_RUN = re.compile(r"\n{3,}")
 
 
-def _section(label: str, content: str) -> str:
-    """`=== LABEL ===` + content, or "" when there is no content."""
-    return f"=== {label} ===\n{content}" if content.strip() else ""
+def _section(label: str, description: str, content: str) -> str:
+    """One evidence block: header, what it is, then the content itself.
+
+    Empty content renders nothing at all — header and description included.
+    That is the point: a run where this evidence never arrived must not carry
+    a sentence telling the model how to read it.
+    """
+    if not content.strip():
+        return ""
+    head = f"=== {label} ==="
+    return f"{head}\n{description}\n\n{content}" if description else f"{head}\n{content}"
 
 
 KNOWN_PLACEHOLDERS = frozenset(
@@ -83,7 +91,7 @@ class PromptBuilder:
             )
 
         evidence_text = "\n\n".join(
-            _section(block.label, block.content)
+            _section(block.label, block.description, block.content)
             for block in findings.evidence_blocks
             if block.content.strip()
         )

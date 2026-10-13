@@ -64,6 +64,7 @@ class EvidenceRegistry:
             build_log,
             goes_to_llm=name in profile.evidence_to_llm,
             file_label=f"{BuildLogEvidence.device_id}{BuildLogEvidence.extension}",
+            description=profile.description_for(name),
             rules=profile.rules_for(name),
             ctx=ctx,
         )
@@ -85,6 +86,7 @@ class EvidenceRegistry:
                 cls.from_attachment(
                     attachment,
                     goes_to_llm=cls.evidence_name in profile.evidence_to_llm,
+                    description=profile.description_for(cls.evidence_name),
                     rules=profile.rules_for(cls.evidence_name),
                     ctx=context,
                 )

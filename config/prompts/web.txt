@@ -6,14 +6,9 @@ hata testin kendisinden mi, uygulamadan mı, ortamdan mı kaynaklanıyor, yoksa 
 
 Senaryo: $scenario_name
 
-$evidence_blocks
+KANITLAR AŞAĞIDA. Her bloğun başında o bloğun ne olduğu ve nasıl okunacağı yazıyor.
 
-KANITLARI NASIL OKUYACAKSIN:
-- browser.default.log: tarayıcının konsol çıktısı. Ağ hataları (404, 401, 500), JS istisnaları
-  burada görünür. Hata anına en yakın satırlar en değerlidir.
-- browser.default.html: sayfanın HATA ANINDAKİ hâli. Aranan element DOM'da gerçekten var mı,
-  sayfa hangi ekranda kalmış, tıklamayı engelleyen bir yükleniyor/overlay katmanı var mı —
-  buradan bakılır.
+$evidence_blocks
 
 WEB'DE SIK GÖRÜLEN KALIPLAR (yol gösterici, kural değil — kanıt başka bir şey söylüyorsa kanıta uy):
 - DOM'da element yok ama sayfa doğru ekranda ve konsolda hata yok -> locator eskimiş olabilir

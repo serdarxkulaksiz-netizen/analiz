@@ -4,9 +4,16 @@ from pydantic import BaseModel
 
 
 class EvidenceBlock(BaseModel):
-    """One evidence, rendered as `=== <label> ===` + content in the prompt."""
+    """One evidence as it is rendered in the prompt: header, what it is, content.
+
+    The description travels WITH the block, not with the template: a template
+    that describes an evidence separately keeps describing it on the runs where
+    that evidence never arrived, and the model reads how to read something it
+    does not have.
+    """
 
     label: str
+    description: str = ""
     content: str
     evidence_name: str = ""
 

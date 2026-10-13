@@ -19,6 +19,9 @@ class EvidenceRow(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    #: Overrides the evidence class's own sentence in the prompt. Needed when
+    #: one class carries different things in different profiles.
+    description: str = ""
     rules: list[dict] = []
 
 
@@ -50,10 +53,17 @@ class Profile:
         self._rules: dict[str, list[Rule]] = {
             row.name: [build_rule(entry) for entry in row.rules] for row in config.evidence
         }
+        self._descriptions: dict[str, str] = {
+            row.name: row.description for row in config.evidence if row.description
+        }
 
     def rules_for(self, evidence_name: str) -> list[Rule]:
         """Content rules for one evidence type (empty = passthrough)."""
         return self._rules.get(evidence_name, [])
+
+    def description_for(self, evidence_name: str) -> str:
+        """This profile's own sentence for an evidence ("" = use the class's)."""
+        return self._descriptions.get(evidence_name, "")
 
 
 class ProfileRegistry:

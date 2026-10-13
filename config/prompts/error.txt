@@ -6,14 +6,9 @@ Senaryolar koşmamış, koşum job seviyesinde çökmüştür. Aşağıda o koş
 
 Senaryo: $scenario_name
 
-$evidence_blocks
+KANITLAR AŞAĞIDA. Her bloğun başında o bloğun ne olduğu ve nasıl okunacağı yazıyor.
 
-KANITLARI NASIL OKUYACAKSIN:
-- build.log: koşumun TAMAMINA ait job log'u — tek bir senaryonun değil. Koşumun başladığı
-  yerden çöktüğü yere kadar her şey burada. Çökmeye en yakın hata satırları, exception ve
-  stack trace en değerli olanlardır.
-- Senaryo bazlı dosya (test logu, DOM, tarayıcı logu) bu koşumda yoktur; senaryolar hiç
-  koşmadı. Bu bir bulgu değildir ve "kanıt yok" deme gerekçesi hiç değildir.
+$evidence_blocks
 
 KOŞUM BAŞLAYAMADIĞINDA SIK GÖRÜLEN KALIPLAR (yol gösterici, kural değil — kanıta uy):
 - Sürücü/oturum açılamamış, cihaz ya da tarayıcı ayağa kalkmamış -> environment_error.

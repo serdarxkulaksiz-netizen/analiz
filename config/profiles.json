@@ -72,7 +72,8 @@
           {
             "type": "keep_scenario_section"
           }
-        ]
+        ],
+        "description": "Aşağıda bu senaryonun koşum logu var: adımlar ve sonuçları, hata satırları (`Fail reason:`), exception ve stack trace, servis çağrılarının istek/cevap dökümü. En değerli satırlar etiketsizdir; hatanın HANGİ ADIMDAN SONRA geldiğine bak."
       }
     ]
   },
@@ -82,7 +83,8 @@
     "evidence": [
       {
         "name": "BuildLogEvidence",
-        "rules": []
+        "rules": [],
+        "description": "Aşağıda koşumun TAMAMINA ait job log'u var — tek bir senaryonun değil. Koşumun başladığı yerden çöktüğü yere kadar her şey burada; çökmeye en yakın hata satırları, exception ve stack trace en değerlidir."
       }
     ]
   }

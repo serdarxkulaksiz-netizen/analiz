@@ -9,7 +9,10 @@ class TestLogEvidence(TextEvidence):
     evidence_name = "TestLogEvidence"
     device_id = "test"
     extension = ".log"
-    description = "koşum logu: build çıktısı, adımlar ve sonuçları"
+    description = (
+        "Aşağıda koşum logu var: adımlar ve sonuçları, hata satırları, exception ve "
+        "stack trace, servis çağrılarının istek/cevap dökümü."
+    )
 
 
 class TestPropertiesEvidence(TextEvidence):
@@ -27,7 +30,10 @@ class BrowserLogEvidence(TextEvidence):
     evidence_name = "BrowserLogEvidence"
     device_id = "browser.default"
     extension = ".log"
-    description = "tarayıcı konsol logu"
+    description = (
+        "Aşağıda tarayıcının konsol çıktısı var: ağ hataları (404, 401, 500) ve JS "
+        "istisnaları burada görünür; hata anına en yakın satırlar en değerlidir."
+    )
 
 
 class BuildLogEvidence(TextEvidence):
@@ -36,7 +42,9 @@ class BuildLogEvidence(TextEvidence):
     evidence_name = "BuildLogEvidence"
     device_id = "build"
     extension = ".log"
-    description = "job build logu"
+    #: Deliberately short: what this log IS depends on the profile (one
+    #: scenario's slice, or the whole run), so the profile writes the sentence.
+    description = "Aşağıda koşumun build log'u var."
 
 
 class HtmlEvidence(TextEvidence):
@@ -45,7 +53,11 @@ class HtmlEvidence(TextEvidence):
     evidence_name = "HtmlEvidence"
     device_id = "browser.default"
     extension = ".html"
-    description = "hata anındaki sayfa DOM'u"
+    description = (
+        "Aşağıda sayfanın HATA ANINDAKİ hâli var (kırpılmış DOM): aranan element "
+        "gerçekten var mı, sayfa hangi ekranda kalmış, tıklamayı engelleyen bir "
+        "yükleniyor/overlay katmanı var mı — buradan bakılır."
+    )
 
 
 class MobileDomEvidence(TextEvidence):
@@ -54,7 +66,11 @@ class MobileDomEvidence(TextEvidence):
     evidence_name = "MobileDomEvidence"
     device_id = "mobile"
     extension = ".xml"
-    description = "cihazdaki arayüz ağacı"
+    description = (
+        "Aşağıda cihazın HATA ANINDAKİ arayüz ağacı var: aranan element ağaçta "
+        "gerçekten var mı, uygulama hangi ekranda kalmış, element var ama erişilebilir "
+        "durumda değil mi — buradan bakılır."
+    )
 
 
 class WebScreenshotEvidence(ScreenshotEvidence):
