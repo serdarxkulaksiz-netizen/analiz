@@ -1,5 +1,6 @@
 """FastAPI app — async start/poll API."""
 
+import asyncio
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError
@@ -142,7 +143,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # A run left half-analyzed by a process death is picked up here, before
+        # the first request. The task set is held on purpose: a task nobody
+        # references can be garbage collected while it is still running.
+        resumed: set[asyncio.Task[None]] = set()
+        for analyzer_run_id in service.recover_interrupted():
+            task = asyncio.create_task(service.run_analysis(analyzer_run_id))
+            resumed.add(task)
+            task.add_done_callback(resumed.discard)
         yield
+        for task in list(resumed):
+            task.cancel()
         await service.aclose()
 
     app = FastAPI(title="VisiumGo Test Analyzer", version=_version(), lifespan=lifespan)

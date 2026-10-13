@@ -43,6 +43,7 @@ class RunView(BaseModel):
     job_name: str = ""
     profil: str = ""
     profile_name: str = ""
+    resume_count: int = 0
     scenario_count: int = 0
     completed_count: int = 0
     total_scenario_count: int = 0

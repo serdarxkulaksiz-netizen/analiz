@@ -25,6 +25,16 @@ from app.source.models import JobLog, RawScenario
 
 STATE_PROFILE_OVERRIDE: dict[str, str] = {RunState.FAILED.value: JOB_FAILED_PROFILE_NAME}
 
+#: How many times a run may be picked up again WITHOUT FINISHING A SINGLE
+#: SCENARIO in between. Counting plain restarts would be wrong: two deploys in
+#: an afternoon would close a run that was progressing fine. What must not
+#: repeat forever is a run that kills the process before it produces anything —
+#: that one is the cause, and resuming it would restart the crash at every boot.
+#: A run that completed even one more diagnosis has its counter cleared.
+MAX_RESUMES = 1
+
+UNFINISHED_STATUSES = frozenset({RunStatus.PENDING.value, RunStatus.RUNNING.value})
+
 
 def _skipped_reason(
     prompt: str,
@@ -159,6 +169,17 @@ def _shared_failure_reason(source: AnalysisResult) -> str:
     )
 
 
+def _resumed_note(resume_count: int, reused: int) -> str:
+    """Say it when this run had already been started before ("" when fresh)."""
+    if not resume_count:
+        return ""
+    return (
+        f"bu koşum yarıda kalmıştı, süreç yeniden başlayınca devam edildi "
+        f"({resume_count}. deneme); önceden tamamlanan {reused} teşhis korundu, "
+        "model bunlar için yeniden çağrılmadı"
+    )
+
+
 def _utcnow_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -216,6 +237,8 @@ class AnalyzerService:
                 "job_id": job_id,
                 "run_id": run_id,
                 "status": RunStatus.PENDING.value,
+                "resume_count": 0,
+                "resume_mark": 0,
                 "scenario_count": 0,
                 "completed_count": 0,
                 "total_scenario_count": 0,
@@ -227,6 +250,48 @@ class AnalyzerService:
             },
         )
         return analyzer_run_id
+
+    def recover_interrupted(self) -> list[str]:
+        """Settle the runs a process death left hanging; return the ones to resume.
+
+        A run that is still `pending` or `running` in the store cannot be
+        running anywhere: this process has just started. Either it is picked up
+        again — its finished diagnoses are kept and only the rest is asked — or,
+        if picking it up produced nothing last time, it is closed as failed so
+        the caller polling it gets an answer instead of a row that says
+        "running" forever.
+
+        `resume_mark` is how many diagnoses existed when it was last picked up;
+        more than that today means the run is progressing and the give-up
+        counter does not apply to it.
+        """
+        resume: list[str] = []
+        for row in self._repo.list(self._settings.table_runs):
+            if row.get("status") not in UNFINISHED_STATUSES:
+                continue
+            completed = int(row.get("completed_count", 0))
+            attempts = int(row.get("resume_count", 0))
+            if attempts and completed > int(row.get("resume_mark", 0)):
+                attempts = 0
+            if attempts >= MAX_RESUMES:
+                self._update_run(
+                    row,
+                    status=RunStatus.FAILED.value,
+                    note=" · ".join(
+                        note
+                        for note in (
+                            row.get("note", ""),
+                            "süreç bu koşum analiz edilirken yine öldü ve bu kez hiçbir "
+                            "senaryo tamamlanmadı — devam edilmedi, daha önce tamamlanan "
+                            "teşhisler duruyor",
+                        )
+                        if note
+                    ),
+                )
+                continue
+            self._update_run(row, resume_count=attempts + 1, resume_mark=completed)
+            resume.append(str(row["analyzer_run_id"]))
+        return resume
 
     def get_run(self, analyzer_run_id: str) -> dict[str, Any] | None:
         """Return the run row plus the diagnoses finished so far."""
@@ -293,6 +358,20 @@ class AnalyzerService:
         )
 
         groups = _group_scenarios(job.failed_scenarios)
+
+        # What a previous attempt already finished. A diagnosis that exists is
+        # never produced twice: the model was asked once and paid for once, and
+        # a second row for the same scenario would be a duplicate answer.
+        done = {
+            str(row.get("scenario_name", "")): row
+            for row in self._repo.list(
+                settings.table_analysis_results,
+                where={"analyzer_run_id": run["analyzer_run_id"]},
+            )
+        }
+        resume_count = int(run.get("resume_count", 0))
+        self._update_run(run, completed_count=len(done))
+
         run_notes = [
             note
             for note in (
@@ -301,6 +380,7 @@ class AnalyzerService:
                 _forced_note(forced_profile),
                 _total_scenarios_note(summary.run_result),
                 _grouped_note(groups, len(job.failed_scenarios)),
+                _resumed_note(resume_count, len(done)),
             )
             if note
         ]
@@ -313,6 +393,7 @@ class AnalyzerService:
             )
             return
 
+        pending = [group for group in groups if group[0].scenario_name not in done]
         trace_errors: list[str] = []
         outcomes = await asyncio.gather(
             *(
@@ -324,22 +405,28 @@ class AnalyzerService:
                     job_log=job.job_log,
                     trace_errors=trace_errors,
                 )
-                for group in groups
+                for group in pending
             ),
             return_exceptions=True,
         )
 
         escaped: list[BaseException] = []
         lost = 0
-        for group, outcome in zip(groups, outcomes, strict=True):
+        for group, outcome in zip(pending, outcomes, strict=True):
             if isinstance(outcome, AnalysisResult):
-                for scenario in group[1:]:
-                    await self._save_shared_result(outcome, scenario)
+                await self._share_with_group(outcome, group[1:], done)
             elif isinstance(outcome, BaseException):
                 # The whole group is lost, not just its representative: the
                 # others were never analyzed, they were waiting for its answer.
                 escaped.append(outcome)
                 lost += len(group)
+
+        # Groups whose representative was answered before the process died, but
+        # whose other members never got their copy.
+        for group in groups:
+            answered = done.get(group[0].scenario_name)
+            if answered is not None and len(group) > 1:
+                await self._share_with_group(AnalysisResult(**answered), group[1:], done)
 
         run = self._repo.get(settings.table_runs, run["analyzer_run_id"]) or run
         notes = list(run_notes)
@@ -356,6 +443,18 @@ class AnalyzerService:
                 f"({kinds}) — bu senaryoların sonucu yok"
             )
         self._update_run(run, status=RunStatus.DONE.value, note=" · ".join(notes))
+
+    async def _share_with_group(
+        self,
+        source: AnalysisResult,
+        members: list[RawScenario],
+        done: dict[str, dict[str, Any]],
+    ) -> None:
+        """Give the group's answer to the members that do not have it yet."""
+        for scenario in members:
+            if scenario.scenario_name in done:
+                continue
+            await self._save_shared_result(source, scenario)
 
     async def _save_shared_result(self, source: AnalysisResult, scenario: RawScenario) -> None:
         """Write one scenario's row from the diagnosis produced for another.
