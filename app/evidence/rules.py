@@ -290,12 +290,16 @@ class StripBase64(Rule):
 
     Matched by shape, not by field name, so a new field carrying base64 is
     covered without anyone editing a list. `min_chars` sets how long a run has
-    to be; below it, nothing is touched.
+    to be; below it, nothing is touched. At the default, a long JWT's payload
+    segment is replaced too — it is a token, not something a diagnosis reads.
+    Measured at this threshold with no false positive on URLs, feature paths,
+    xpath and CSS selectors, 64-character hex ids, Java stack frames, Android
+    resource ids or HTTP status lines.
     """
 
     rule_type = "strip_base64"
 
-    def __init__(self, min_chars: int = 200) -> None:
+    def __init__(self, min_chars: int = 100) -> None:
         if min_chars <= 0:
             raise ValueError("min_chars must be greater than 0")
         self._pattern = re.compile(rf"[A-Za-z0-9+/]{{{min_chars},}}={{0,2}}")
