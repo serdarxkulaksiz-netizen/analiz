@@ -235,13 +235,16 @@ class VisiumGoSource(Source):
 
     async def fetch_job(self, run: RunSummary, plan: DownloadPlan) -> JobData:
         """Adım B-D: evidence for an already-resolved run."""
-        job_log = JobLog()
-        if plan.wants_build_log:
-            text, error = await self.fetch_build_log(run.run_id)
-            job_log = JobLog(text=text, error=error)
-
         results = await self.get_results(run.run_id)
         failed = [r for r in results if r.get("resultType") == RESULT_FAILED]
+
+        # The job log is fetched only when something failed: it is one download
+        # for the whole run, and a run with nothing to analyze has nothing to
+        # read it for.
+        job_log = JobLog()
+        if failed and plan.wants_build_log:
+            text, error = await self.fetch_build_log(run.run_id)
+            job_log = JobLog(text=text, error=error)
 
         async def one(record: dict[str, Any]) -> RawScenario:
             async with self._detail_slots:

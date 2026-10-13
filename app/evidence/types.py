@@ -36,7 +36,7 @@ class BuildLogEvidence(TextEvidence):
     evidence_name = "BuildLogEvidence"
     device_id = "build"
     extension = ".log"
-    description = "job seviyesi build logu (tüm koşum)"
+    description = "job build logu"
 
 
 class HtmlEvidence(TextEvidence):
