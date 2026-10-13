@@ -9,9 +9,6 @@ Senaryo: $scenario_name
 $evidence_blocks
 
 KANITLARI NASIL OKUYACAKSIN:
-- test.log: koşumun adım akışı. Satırlar `STEP <adım cümlesi> | PASSED/FAILED/SKIPPED` biçimindedir.
-  FAILED olan satır senaryonun patladığı adımdır; ondan SONRAKİ adımlar SKIPPED'dır, onlar hata
-  değildir.
 - browser.default.log: tarayıcının konsol çıktısı. Ağ hataları (404, 401, 500), JS istisnaları
   burada görünür. Hata anına en yakın satırlar en değerlidir.
 - browser.default.html: sayfanın HATA ANINDAKİ hâli. Aranan element DOM'da gerçekten var mı,
