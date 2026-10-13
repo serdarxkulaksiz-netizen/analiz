@@ -170,16 +170,13 @@ class VisiumGoSource(Source):
             device_id=str(meta.get("deviceId", "")),
         )
 
-    async def download_attachment(
-        self, run_id: str, meta: dict[str, Any], scenario_id: str = ""
-    ) -> Attachment:
-        """Adım D: read one attachment into memory. Nothing is written to disk.
+    async def read_attachment(self, run_id: str, attachment: Attachment) -> Attachment:
+        """Read one attachment into memory. Nothing is written to disk.
 
         Only text is read. A binary attachment (a screenshot) has nowhere to go
         now that evidence is never stored: its bytes would be fetched, held and
         dropped. It is reported as skipped instead of paid for.
         """
-        attachment = self.describe_attachment(meta)
         file_name = attachment.file_name
         path = f"/api/runs/{encode_segment(run_id)}/attachments/{encode_segment(file_name)}"
         is_text = (
@@ -249,7 +246,7 @@ class VisiumGoSource(Source):
 
         async def one(record: dict[str, Any]) -> RawScenario:
             async with semaphore:
-                return await self._build_scenario(run.run_id, record, plan)
+                return await self._describe_scenario(run.run_id, record)
 
         scenarios = list(await asyncio.gather(*(one(record) for record in failed)))
 
@@ -272,10 +269,24 @@ class VisiumGoSource(Source):
                 )
             return bundle.read(wanted).decode("utf-8", errors="replace")
 
-    async def _build_scenario(
-        self, run_id: str, record: dict[str, Any], plan: DownloadPlan
+    async def load_attachments(
+        self, run_id: str, scenario: RawScenario, plan: DownloadPlan
     ) -> RawScenario:
-        """Adım C: fetch scenario detail and its attachments."""
+        """Adım D: read the attachments this profile asked for.
+
+        Called for the scenarios that are actually analyzed. A scenario that
+        shares another's diagnosis never gets here, so its files are never read.
+        """
+        attachments: list[Attachment] = []
+        for attachment in scenario.attachments:
+            if not plan.wants(attachment):
+                attachments.append(attachment.model_copy(update={"download_skipped": True}))
+                continue
+            attachments.append(await self.read_attachment(run_id, attachment))
+        return scenario.model_copy(update={"attachments": attachments})
+
+    async def _describe_scenario(self, run_id: str, record: dict[str, Any]) -> RawScenario:
+        """Adım C: the scenario's detail — what failed and where. No file bytes."""
         scenario_id = str(record.get("id", ""))
         detail: dict[str, Any] = {}
         fetch_error = ""
@@ -288,19 +299,11 @@ class VisiumGoSource(Source):
                 fetch_error = f"{PATH_SCENARIO_DETAIL}: {type(exc).__name__}: {exc}"
         fetch_error = fetch_error[:_FETCH_ERROR_MAX_CHARS]
 
-        attachments: list[Attachment] = []
-        for meta in detail.get("attachments", []):
-            described = self.describe_attachment(meta)
-            if not plan.wants(described):
-                attachments.append(described.model_copy(update={"download_skipped": True}))
-                continue
-            attachments.append(await self.download_attachment(run_id, meta, scenario_id))
-
         return RawScenario(
             scenario_name=str(record.get("name", "")),
             scenario_id=scenario_id,
             error_text=str(detail.get("errorText", "")),
             failed_step=_failed_step_of(detail),
-            attachments=attachments,
+            attachments=[self.describe_attachment(m) for m in detail.get("attachments", [])],
             fetch_error=fetch_error,
         )

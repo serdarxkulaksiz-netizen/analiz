@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Protocol
 
-from app.source.models import Attachment, JobData, RunSummary
+from app.source.models import Attachment, JobData, RawScenario, RunSummary
 
 
 class DownloadPlan(Protocol):
@@ -28,7 +28,18 @@ class Source(ABC):
 
     @abstractmethod
     async def fetch_job(self, run: RunSummary, plan: DownloadPlan) -> JobData:
-        """Return the job report and raw evidence for every failed scenario."""
+        """Which scenarios failed and what each one says — WITHOUT file contents.
+
+        Cheap on purpose: every failed scenario is described (name, error, step)
+        but no attachment is read. Those facts are what the caller groups by, and
+        grouping decides which scenarios are worth reading files for.
+        """
+
+    @abstractmethod
+    async def load_attachments(
+        self, run_id: str, scenario: RawScenario, plan: DownloadPlan
+    ) -> RawScenario:
+        """Read this scenario's attachments, returning it with their contents."""
 
     @abstractmethod
     async def aclose(self) -> None:

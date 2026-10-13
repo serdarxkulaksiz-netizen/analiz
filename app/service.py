@@ -11,8 +11,8 @@ from app.config import Settings
 from app.domain.enums import AnalysisStatus, RunState, RunStatus
 from app.domain.findings import Findings
 from app.domain.result import AnalysisMeta, AnalysisResult, LLMAnalysis
-from app.evidence.plan import plan_for
-from app.evidence.profiles import JOB_FAILED_PROFILE_NAME, Profile, ProfileRegistry
+from app.evidence.plan import AnalysisPlan, plan_for
+from app.evidence.profiles import JOB_FAILED_PROFILE_NAME, ProfileRegistry
 from app.extraction.base import Extractor
 from app.llm.provider import LLMProvider
 from app.parsing.json_parser import try_json
@@ -301,7 +301,8 @@ class AnalyzerService:
                 self._analyze_scenario(
                     run["analyzer_run_id"],
                     group[0],
-                    profile=plan.profile,
+                    run_id=summary.run_id,
+                    plan=plan,
                     job_log=job.job_log,
                     semaphore=semaphore,
                 )
@@ -365,11 +366,18 @@ class AnalyzerService:
         analyzer_run_id: str,
         scenario: RawScenario,
         *,
-        profile: Profile,
+        run_id: str,
+        plan: AnalysisPlan,
         job_log: JobLog,
         semaphore: asyncio.Semaphore,
     ) -> AnalysisResult:
-        """Analyze one failed scenario; never raises."""
+        """Analyze one failed scenario; never raises.
+
+        Its attachments are read HERE, not when the job was fetched: only a
+        scenario that is actually analyzed is worth reading files for. A
+        scenario that shares another's diagnosis never reaches this method, so
+        nothing is fetched on its behalf.
+        """
         async with semaphore:
             settings = self._settings
             result_id = str(uuid4())
@@ -387,9 +395,10 @@ class AnalyzerService:
             error_detail = ""
 
             try:
+                scenario = await self._source.load_attachments(run_id, scenario, plan)
                 findings = self._extractor.extract(
                     scenario,
-                    profile=profile,
+                    profile=plan.profile,
                     job_log=job_log,
                 )
 
