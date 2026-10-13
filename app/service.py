@@ -188,6 +188,10 @@ class AnalyzerService:
         self._llm = llm_provider
         self._precheck = precheck
         self._run_row_lock = asyncio.Lock()
+        #: One gate for the whole process, not one per run: the model is shared,
+        #: and three overlapping analyses must still make `max_concurrency`
+        #: calls in total, not that many each.
+        self._llm_slots = asyncio.Semaphore(settings.max_concurrency)
 
     async def aclose(self) -> None:
         """Release the HTTP connections held by the source and the model."""
@@ -309,7 +313,7 @@ class AnalyzerService:
             )
             return
 
-        semaphore = asyncio.Semaphore(settings.max_concurrency)
+        trace_errors: list[str] = []
         outcomes = await asyncio.gather(
             *(
                 self._analyze_scenario(
@@ -318,7 +322,7 @@ class AnalyzerService:
                     run_id=summary.run_id,
                     plan=plan,
                     job_log=job.job_log,
-                    semaphore=semaphore,
+                    trace_errors=trace_errors,
                 )
                 for group in groups
             ),
@@ -339,6 +343,12 @@ class AnalyzerService:
 
         run = self._repo.get(settings.table_runs, run["analyzer_run_id"]) or run
         notes = list(run_notes)
+        if trace_errors:
+            kinds = ", ".join(sorted(set(trace_errors)))
+            notes.append(
+                f"{len(trace_errors)} senaryonun izi yazılamadı ({kinds}) — "
+                "teşhisler kaydedildi, yalnız prompt/cevap dosyası yok"
+            )
         if escaped:
             kinds = ", ".join(sorted({f"{type(e).__name__}: {e}" for e in escaped}))
             notes.append(
@@ -353,7 +363,9 @@ class AnalyzerService:
         The scenario keeps its own identity and its own error; only the answer
         is shared, and `grouped_with` names where it came from. Token counts and
         the call duration are NOT copied: they belong to the one call that was
-        actually made.
+        actually made. Neither are the quoted log lines — they were read out of
+        ANOTHER scenario's log, and a row that quotes them would be claiming
+        lines its own run never printed.
         """
         meta = AnalysisMeta(
             answered_by="group",
@@ -370,6 +382,7 @@ class AnalyzerService:
                 "failed_step": scenario.failed_step,
                 "grouped_with": source.scenario_name,
                 "failure_reason": _shared_failure_reason(source),
+                "most_relevant_log_lines": [],
                 "meta": meta,
             }
         )
@@ -388,7 +401,7 @@ class AnalyzerService:
         run_id: str,
         plan: AnalysisPlan,
         job_log: JobLog,
-        semaphore: asyncio.Semaphore,
+        trace_errors: list[str],
     ) -> AnalysisResult:
         """Analyze one failed scenario; never raises.
 
@@ -397,7 +410,7 @@ class AnalyzerService:
         scenario that shares another's diagnosis never reaches this method, so
         nothing is fetched on its behalf.
         """
-        async with semaphore:
+        async with self._llm_slots:
             settings = self._settings
             result_id = str(uuid4())
 
@@ -500,22 +513,6 @@ class AnalyzerService:
                     else "model cevabı beklenen JSON şemasına uymadı"
                 )
 
-            self._trace.write(
-                analyzer_run_id,
-                scenario.scenario_name,
-                prompt=prompt,
-                response={
-                    "raw_response": raw_response,
-                    "content": llm_content,
-                    "http_status": http_status,
-                    "model": meta.llm_model,
-                    "request": llm_request,
-                    "input_tokens": meta.input_tokens,
-                    "output_tokens": meta.output_tokens,
-                    "duration_ms": meta.duration_ms,
-                },
-            )
-
             if analysis is not None:
                 result = AnalysisResult(
                     result_id=result_id,
@@ -549,4 +546,27 @@ class AnalyzerService:
                 result.model_dump(mode="json"),
             )
             await self._increment_completed(analyzer_run_id)
+
+            # AFTER the row is stored, never before: the trace is a debugging
+            # aid, and a full disk must not throw away a diagnosis the model
+            # was already asked — and paid — for.
+            try:
+                self._trace.write(
+                    analyzer_run_id,
+                    scenario.scenario_name,
+                    prompt=prompt,
+                    response={
+                        "raw_response": raw_response,
+                        "content": llm_content,
+                        "http_status": http_status,
+                        "model": meta.llm_model,
+                        "request": llm_request,
+                        "input_tokens": meta.input_tokens,
+                        "output_tokens": meta.output_tokens,
+                        "duration_ms": meta.duration_ms,
+                    },
+                )
+            except Exception as exc:
+                trace_errors.append(f"{type(exc).__name__}: {exc}")
+
             return result

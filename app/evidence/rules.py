@@ -2,6 +2,7 @@
 
 import re
 from abc import ABC, abstractmethod
+from html import escape
 from html.parser import HTMLParser
 from typing import Any, ClassVar
 
@@ -146,7 +147,12 @@ class _TagStripper(HTMLParser):
 
 
 class _AttributeFilter(HTMLParser):
-    """Re-emits markup, keeping only the attributes it was told to keep."""
+    """Re-emits markup, keeping only the attributes it was told to keep.
+
+    The value is escaped on the way out because the parser hands it over
+    DECODED: `title="Tutar &quot;TL&quot;"` arrives as `Tutar "TL"`, and writing
+    that back raw closes the attribute in the middle and breaks the tag.
+    """
 
     def __init__(self, keep: set[str], keep_prefixes: tuple[str, ...]) -> None:
         super().__init__(convert_charrefs=False)
@@ -162,7 +168,7 @@ class _AttributeFilter(HTMLParser):
         for name, value in attrs:
             if not self._wanted(name.lower()):
                 continue
-            parts.append(name if value is None else f'{name}="{value}"')
+            parts.append(name if value is None else f'{name}="{escape(value, quote=True)}"')
         return f"<{' '.join(parts)}{closing}>"
 
     def handle_starttag(self, tag: str, attrs: Any) -> None:

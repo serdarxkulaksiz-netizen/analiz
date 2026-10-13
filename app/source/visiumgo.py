@@ -123,7 +123,9 @@ class VisiumGoSource(Source):
     ) -> None:
         self._client = client
         self._build_log_entry = build_log_entry
-        self._max_parallel = max_parallel
+        #: One gate for the whole process, not one per call: two overlapping
+        #: analyses would otherwise open twice this many connections at once.
+        self._detail_slots = asyncio.Semaphore(max_parallel)
 
     async def aclose(self) -> None:
         """Close the pooled HTTP connections."""
@@ -241,10 +243,8 @@ class VisiumGoSource(Source):
         results = await self.get_results(run.run_id)
         failed = [r for r in results if r.get("resultType") == RESULT_FAILED]
 
-        semaphore = asyncio.Semaphore(self._max_parallel)
-
         async def one(record: dict[str, Any]) -> RawScenario:
-            async with semaphore:
+            async with self._detail_slots:
                 return await self._describe_scenario(run.run_id, record)
 
         scenarios = list(await asyncio.gather(*(one(record) for record in failed)))
