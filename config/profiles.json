@@ -41,7 +41,7 @@
     "extra_context": "",
     "evidence": []
   },
-  "finart_regresyon": {
+  "finart": {
     "prompt": "buildlog",
     "extra_context": "",
     "evidence": [
