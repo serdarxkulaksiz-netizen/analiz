@@ -41,8 +41,8 @@ line-length = 100
 #   BLE (blind except) — `except Exception` at the scenario/job boundaries is
 #     the resilience design itself: one bad scenario must never
 #     kill the job. Every such site already carries a comment saying why.
-#   TRY  — wants TypeError for bad config shapes; ValueError is right here
-#     (a config file holds *values*), and `load_rules` tests assert ValueError.
+#   TRY  — wants TypeError for bad config shapes; ValueError is right here,
+#     because a config file holds *values*.
 select = ["E", "F", "I", "UP", "B", "C4"]
 # UP042 wants `StrEnum` instead of `(str, Enum)`. Skipped on purpose: the
 # current form is the widely-used idiom and switching changes how `str()` and

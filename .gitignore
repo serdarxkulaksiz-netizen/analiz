@@ -18,6 +18,6 @@ dist/
 .vscode/
 .DS_Store
 
-# DB simulation content is runtime data; keep the folder via .gitkeep
-database/*
-!database/.gitkeep
+# Çalışma zamanı verisi: koşum/teşhis kayıtları ve modele giden prompt izleri
+database/
+iz/
