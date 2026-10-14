@@ -53,10 +53,9 @@ class EvidenceRegistry:
         ctx: RuleContext | None = None,
     ) -> Evidence | None:
         """Build the job-level build log evidence — WITHOUT faking an attachment."""
-        # TODO: the `error` profile carries no trim rule yet, so a crashed
-        # run sends its WHOLE build log to the model, once per failed scenario.
-        # Write that rule against a sample build.log from a run that failed at
-        # the job level, then add it to the profile's `rules`.
+        # NOTE: the `error` profile carries no trim rule — the whole build log
+        # goes to the model, once for the run (user's decision). It is one call
+        # per run now, not one per scenario, so the cost is bounded.
         if not build_log:
             return None
         name = BuildLogEvidence.evidence_name

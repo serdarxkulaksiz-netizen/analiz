@@ -80,6 +80,7 @@
   "error": {
     "prompt": "error",
     "extra_context": "",
+    "run_level": true,
     "evidence": [
       {
         "name": "BuildLogEvidence",

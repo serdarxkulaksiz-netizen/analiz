@@ -33,6 +33,10 @@ class ProfileConfig(BaseModel):
     evidence: list[EvidenceRow] = []
     prompt: str
     extra_context: str = ""
+    #: True when the question belongs to the RUN, not to its scenarios: the run
+    #: never got as far as running them. One diagnosis is produced for the run
+    #: itself and scenario rows are not read at all.
+    run_level: bool = False
 
 
 class Profile:
@@ -50,6 +54,7 @@ class Profile:
         self.evidence_to_llm = names
         self.prompt = config.prompt
         self.extra_context = config.extra_context
+        self.run_level = config.run_level
         self._rules: dict[str, list[Rule]] = {
             row.name: [build_rule(entry) for entry in row.rules] for row in config.evidence
         }

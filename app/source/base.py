@@ -18,6 +18,11 @@ class DownloadPlan(Protocol):
         """Should the job-level log endpoint be called?"""
         ...
 
+    @property
+    def run_level(self) -> bool:
+        """Is the run itself the subject, so scenario rows are not read?"""
+        ...
+
 
 class Source(ABC):
     """Fetches a finished job's failure evidence."""

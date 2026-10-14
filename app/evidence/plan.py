@@ -27,6 +27,11 @@ class AnalysisPlan:
         """Does this run's profile need the job-level build log?"""
         return BuildLogEvidence.evidence_name in self._wanted
 
+    @property
+    def run_level(self) -> bool:
+        """Is the diagnosis about the RUN itself rather than its scenarios?"""
+        return self.profile.run_level
+
 
 def plan_for(profiles: ProfileRegistry, *, profil: str = "", forced: str = "") -> AnalysisPlan:
     """Resolve the profile for this run — the ONLY place that does."""

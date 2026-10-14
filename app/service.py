@@ -21,7 +21,7 @@ from app.persistence.trace import TraceWriter
 from app.precheck.base import PreCheck
 from app.prompting.builder import PromptBuilder
 from app.source.base import Source
-from app.source.models import JobLog, RawScenario
+from app.source.models import JobLog, RawScenario, RunSummary
 
 STATE_PROFILE_OVERRIDE: dict[str, str] = {RunState.FAILED.value: ERROR_PROFILE_NAME}
 
@@ -102,6 +102,18 @@ def _forced_note(profile_name: str) -> str:
     if not profile_name:
         return ""
     return f"'{profile_name}' profili kullanıldı (job durumu FAILED)"
+
+
+def _run_as_scenario(summary: RunSummary) -> RawScenario:
+    """The RUN itself, in the shape the rest of the chain already understands.
+
+    A run that crashed on its way up never produced a scenario, so there is
+    nothing to hang a diagnosis on. One stand-in carries the run's own name and
+    no evidence of its own: the job log is the whole of it. Everything
+    downstream — grouping, the model call, the stored row, resuming — works
+    unchanged because it is a scenario as far as that code can tell.
+    """
+    return RawScenario(scenario_name=summary.job_name or f"koşum {summary.run_id}")
 
 
 def _identity(scenario_id: str, scenario_name: str) -> str:
@@ -358,17 +370,18 @@ class AnalyzerService:
         forced_profile = STATE_PROFILE_OVERRIDE.get(summary.state, "")
         plan = plan_for(self._profiles, profil=run.get("profil", ""), forced=forced_profile)
         job = await self._source.fetch_job(summary, plan)
+        scenarios = [_run_as_scenario(summary)] if plan.run_level else job.failed_scenarios
         self._update_run(
             run,
             job_id=summary.job_id,
             job_name=summary.job_name,
             profile_name=plan.profile.name,
             build_log_error=job.job_log.error,
-            scenario_count=len(job.failed_scenarios),
+            scenario_count=len(scenarios),
             total_scenario_count=job.total_scenario_count,
         )
 
-        groups = _group_scenarios(job.failed_scenarios)
+        groups = _group_scenarios(scenarios)
 
         # What a previous attempt already finished. A diagnosis that exists is
         # never produced twice: the model was asked once and paid for once, and
@@ -390,13 +403,13 @@ class AnalyzerService:
                 running_note,
                 _forced_note(forced_profile),
                 _total_scenarios_note(summary.run_result),
-                _grouped_note(groups, len(job.failed_scenarios)),
+                _grouped_note(groups, len(scenarios)),
                 _resumed_note(resume_count, len(done)),
             )
             if note
         ]
 
-        if not job.failed_scenarios:
+        if not scenarios:
             self._update_run(
                 run,
                 status=RunStatus.DONE.value,
@@ -454,7 +467,7 @@ class AnalyzerService:
         if escaped:
             kinds = ", ".join(sorted({f"{type(e).__name__}: {e}" for e in escaped}))
             notes.append(
-                f"{lost}/{len(job.failed_scenarios)} senaryo kaydedilemedi "
+                f"{lost}/{len(scenarios)} senaryo kaydedilemedi "
                 f"({kinds}) — bu senaryoların sonucu yok"
             )
         self._update_run(run, status=RunStatus.DONE.value, note=" · ".join(notes))
