@@ -4,8 +4,6 @@ GÖREV: Jenkins üzerinden başlatılmak istenen bir otomasyon koşumu HATA ALMI
 Senaryolar koşulamamış, iş job seviyesinde kalmıştır. Aşağıda o koşumun build log'u var.
 Logu incele ve KESİN HÜKÜM DEĞİL, gerekçeli bir ÖN TEŞHİS üret: bu koşum neden yürümedi?
 
-Koşum (job): $scenario_name
-
 KANITLAR AŞAĞIDA. Her bloğun başında o bloğun ne olduğu ve nasıl okunacağı yazıyor.
 
 $evidence_blocks
