@@ -111,12 +111,15 @@ Profili **isteği atan seçer**. İçerikleri `config/profiles.json` dosyasında
 | `mobil` | `test.log` · `mobile.<os>.<cihaz>.xml` | base64 |
 | `finart` | `build.log` (yalnız o senaryonun bölümü) | senaryo bölümü kesilir |
 | `error` | `build.log` (koşumun tamamı) | yok |
+| `ornek` | `test.log` · `browser.default.html` (**prompt'a girmez**) | base64 |
 
 - **`error` koşum seviyesidir:** senaryo satırları hiç okunmaz, koşumun kendisi için
   **tek** teşhis üretilir. Jenkins'te başlatılamayan koşum için budur.
 - Koşumun kendisi çöktüğünde (`runResult.state=FAILED`) sistem, hangi profil istenirse
   istensin `error`'u uygular ve bunu koşum notuna yazar.
 - Listede olmayan kanıt **hiç indirilmez**. Ekran görüntüleri hiçbir profilde gitmez.
+- **`ornek`** üretim profili değildir: `checks` mekanizmasını çalışır hâlde göstermek için
+  duruyor (`app/checks/ornek.py`). İstemiyorsan profili, şablonunu ve o dosyayı silebilirsin.
 
 ## Hesaplanan bilgiler (checks)
 

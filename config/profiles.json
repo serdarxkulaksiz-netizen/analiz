@@ -88,5 +88,28 @@
         "description": "Aşağıda koşumun TAMAMINA ait job log'u var — tek bir senaryonun değil. Koşumun başladığı yerden çöktüğü yere kadar her şey burada; çökmeye en yakın hata satırları, exception ve stack trace en değerlidir."
       }
     ]
+  },
+  "ornek": {
+    "_not": "ÖRNEK profil: checks mekanizmasını gösterir. Üretimde kullanılmaz, silinebilir.",
+    "prompt": "ornek",
+    "extra_context": "",
+    "checks": [
+      "ornek_senaryo_ozeti",
+      "ornek_kanit_ozeti"
+    ],
+    "evidence": [
+      {
+        "name": "TestLogEvidence",
+        "rules": [
+          {
+            "type": "strip_base64"
+          }
+        ]
+      },
+      {
+        "name": "HtmlEvidence",
+        "prompt": false
+      }
+    ]
   }
 }
