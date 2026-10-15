@@ -55,14 +55,16 @@ class CheckFacts:
         return evidence.raw_content if evidence is not None else ""
 
     def shaped(self, evidence_name: str) -> str:
-        """The evidence after the profile's rules ("" when unavailable)."""
+        """The evidence after the profile's rules — what the model is shown.
+
+        "" means the evidence did not arrive. A rule that could not cut raises
+        instead of returning "": those are different states and a check that
+        cannot tell them apart would report "nothing here" for a failure that
+        had nothing to do with the page. The raised error is caught where every
+        check failure is caught, so the run says what did not happen.
+        """
         evidence = self._evidences.get(evidence_name)
-        if evidence is None:
-            return ""
-        try:
-            return evidence.select_content()
-        except Exception:
-            return ""
+        return evidence.select_content() if evidence is not None else ""
 
     def has(self, evidence_name: str) -> bool:
         """Did this evidence arrive at all?"""

@@ -152,8 +152,24 @@ konabilir — başa, ortaya, sona.
 
 `facts` içinde: `scenario_name` · `scenario_id` · `failed_step` · `error_text` ·
 `profile_name` · `job_log` · `raw(ad)` · `shaped(ad)` · `has(ad)`.
-**Arama `raw()` üzerinde yapılmalı:** `shaped()` kırpma kurallarından geçmiştir, orada
-bulunamayan şey bizim sildiğimiz için bulunamıyor olabilir.
+`raw()` ile `shaped()` **farklı metinlerdir** ve fark önemli:
+
+| | ne döndürür | ne zaman "" | kural kesemezse |
+|---|---|---|---|
+| `raw(ad)` | dosya nasıl geldiyse | kanıt hiç gelmediyse | etkilenmez |
+| `shaped(ad)` | **modelin gördüğü** hâli | kanıt hiç gelmediyse | `RuleError` fırlatır |
+
+**Arama `raw()` üzerinde yapılmalı** — `shaped()` kırpmadan geçmiştir, orada bulunamayan
+şey bizim sildiğimiz için bulunamıyor olabilir.
+
+**Ama dikkat:** `raw()` ile hesaplayıp prompt'a yazdığın bir olguyu model `shaped()`
+üzerinden doğrulayamayabilir. Kırpma o bilgiyi silmişse model "ben göremiyorum" der ve
+senin olgunla çelişir. Böyle bir durumda ya metninde bunu söyle ("kırpılmamış sayfada
+hesaplandı"), ya o kanıdın kırpma kurallarını kaldır.
+
+`shaped()` kural hatasını yutmaz: "kanıt yok" ile "kural kesemedi" farklı şeylerdir ve
+ikisini ayıramayan bir check, sayfayla ilgisi olmayan bir hata için "burada bir şey yok"
+der. Fırlayan hata, her check hatasının yakalandığı yerde yakalanır ve koşum notuna yazılır.
 
 Üç kural:
 - Dönen metne dokunulmaz, olduğu gibi girer — başlık da senin metninin parçasıdır.

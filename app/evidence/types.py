@@ -21,7 +21,10 @@ class TestPropertiesEvidence(TextEvidence):
     evidence_name = "TestPropertiesEvidence"
     device_id = "test"
     extension = ".properties"
-    description = "koşum özellikleri (cihaz, retry)"
+    description = (
+        "Aşağıda koşumun kendi özellikleri var: cihaz/tarayıcı kimliği, patlayan adımın "
+        "yeri ve kaçıncı deneme olduğu."
+    )
 
 
 class BrowserLogEvidence(TextEvidence):
