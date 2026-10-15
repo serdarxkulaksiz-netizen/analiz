@@ -216,6 +216,53 @@ devam eder: tamamlanmış teşhisler korunur, model onlar için yeniden çağrı
 
 ---
 
+## Sık yapılan işler
+
+### Yeni profil eklemek
+1. `config/profiles.json`'a satır ekle: `prompt`, `evidence`, varsa `rules` ve `checks`.
+2. `config/prompts/<prompt adı>.txt` dosyasını yaz.
+3. Bitti — kod değişmez. Uygulama açılışta doğrular: olmayan kanıt adı, olmayan şablon,
+   yeri olmayan check varsa **açılmaz** ve nedenini söyler.
+
+### Kanıta kırpma kuralı eklemek
+Profildeki o kanıdın `rules` listesine ekle; sırayla uygulanır.
+
+| kural | ne yapar |
+|---|---|
+| `keep_scenario_section` | job log'undan yalnız o senaryonun bölümünü keser |
+| `strip_tags` | verilen etiketleri içeriğiyle birlikte atar (`tags: [...]`) |
+| `keep_attributes` | sayılanlar dışındaki öznitelikleri atar (`keep: [...]`, `*` ile önek) |
+| `strip_base64` | uzun base64 dizisini `[base64 N karakter]` notuyla değiştirir (`min_chars`) |
+| `collapse_whitespace` | boşluk ve boş satır yığınlarını daraltır |
+
+Kesemeyen kural hata verir: o senaryo kapanır, **koşum devam eder**, sebep satırda yazar.
+
+### Bilinen bir hataya hazır cevap koymak
+`config/known_errors.json`'a satır ekle: `step` · `error` · `answer` · `verdict` ·
+`confidence`. Eşleşme **birebir**; eşleşirse hiçbir dosya okunmadan cevap döner, model
+çağrılmaz. Adımı ya da hata mesajı boş olan senaryo hiç eşleşmez.
+
+### Bir şey ters gittiğinde nereye bakılır
+| nereye | ne söyler |
+|---|---|
+| koşumun `note` alanı | profil zorlandı mı, kaç gruba indi, iz yazılamadı mı, check patladı mı |
+| satırın `failure_reason` | o senaryo neden teşhis alamadı |
+| satırın `meta.answered_by` | `llm` · `group` · `known_errors` |
+| `TRACE_DIR` altındaki dosyalar | modele **tam olarak** ne gitti, **tam olarak** ne geldi |
+| koşumun `build_log_error` | build log inemediyse sebebi |
+
+## Bilinen sınırlar
+
+- **Tek süreç.** `--workers 2` ile iki süreç de açılışta aynı yarım koşumu devam ettirir.
+- **Kırpma eksik:** `test.log` ve `browser.default.log` ham gidiyor (base64 dışında),
+  mobil arayüz ağacı da öyle. `error` profilinde build log'un tamamı gidiyor.
+- **finart'ta son senaryo fazla alıyor:** bitiş işareti olmadığı için koşum kuyruğu
+  (`Failed scenarios:` listesi, Gradle çıktısı) onun bölümüne giriyor.
+- **Yalnız `FAILED` senaryolar analiz edilir**; `UNSTABLE` olanlar dışarıda.
+- **`previousRetries` okunmuyor** — bir senaryonun önceki denemesi değerlendirilmiyor.
+- **Mobil ağaca kırpma kuralı uygulanamaz:** `strip_tags` ve `keep_attributes` HTML
+  ayrıştırıcısı kullanıyor ve etiket adlarını küçültüyor; XML büyük/küçük harfe duyarlı.
+
 ## Yapılandırma
 
 Bütün ayarlar `.env` dosyasındadır, açıklamaları `.env.example` içindedir. En çok
