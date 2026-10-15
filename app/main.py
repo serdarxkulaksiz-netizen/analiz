@@ -10,7 +10,10 @@ from typing import TypeVar
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, model_validator
 
-import app.checks  # noqa: F401  (import kayıt için: @check süslemeleri burada koşar)
+# Kayıt için içe alınır: @check süslemeleri bu import'ta koşar. `import app.checks`
+# DEĞİL — o, bu modülde `app` adını paketle doldurur ve `app.main:app` FastAPI
+# nesnesi yerine paketi döndürür (uvicorn "module object is not callable" der).
+from app import checks as _checks  # noqa: F401
 from app.config import Settings, get_settings
 from app.domain.api import RunView, build_run_view
 from app.domain.enums import RunStatus
