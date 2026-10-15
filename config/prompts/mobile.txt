@@ -10,6 +10,19 @@ KANITLAR AŞAĞIDA. Her bloğun başında o bloğun ne olduğu ve nasıl okunaca
 
 $evidence_blocks
 
+NASIL BAKACAKSIN (bu sırayla):
+1. Önce patlayan adımı ve hata metnini oku; soruyu onlar tanımlar.
+2. Arayüz ağacında uygulamanın hangi ekranda olduğunu anla. Beklenen ekran bu mu?
+3. Testin aradığı elementi ağaçta ara. Birebir yoksa gevşet: büyük/küçük harf, boşluk, kısmi
+   metin, aynı değerin BAŞKA bir öznitelikte duruyor olması (name, label, value).
+4. Bulduysan, test neden göremedi: elementin durumu (erişilebilir/görünür/etkin mi) ve üstünü
+   kapatan başka bir düğüm var mı?
+5. Bulamadıysan, beklenenin YERİNE ne var? Hata ekranı, oturum ekranı, yükleniyor göstergesi,
+   boş durum — en bilgilendirici şey çoğu zaman budur.
+6. Bir ÖNCEKİ adımın hedefi hâlâ ağaçta duruyor mu? Duruyorsa ekran hiç değişmemiştir: o
+   dokunma "yapıldı" dese de gerçekte işe yaramamış olabilir.
+7. Ancak bundan sonra hüküm ver ve hangi kanıtın seni oraya götürdüğünü yaz.
+
 MOBİLDE SIK GÖRÜLEN KALIPLAR (yol gösterici, kural değil — kanıt başka bir şey söylüyorsa kanıta uy):
 - Element ağaçta yok ama uygulama doğru ekranda -> locator eskimiş olabilir (test_maintenance).
 - Cihaza bağlanılamamış, uygulama açılmamış ya da izin/sertifika sorunu -> environment_error.

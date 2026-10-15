@@ -10,6 +10,16 @@ KANITLAR AŞAĞIDA. Her bloğun başında o bloğun ne olduğu ve nasıl okunaca
 
 $evidence_blocks
 
+NASIL BAKACAKSIN (bu sırayla):
+1. Önce patlayan adımı ve hata metnini oku; soruyu onlar tanımlar.
+2. Logda akışı izle: hangi adımlar geçmiş, kırılma tam nerede olmuş.
+3. Patlayan adımda ne arandığına ya da ne yapılmak istendiğine bak.
+4. Hatanın hemen çevresindeki satırları oku: hata satırı, exception, stack trace, servis
+   çağrısının cevabı.
+5. Bir ÖNCEKİ adım gerçekten işe yaramış mı? "Yapıldı" demesi yetmez — sonrasında beklenen
+   değişikliğin izi var mı?
+6. Ancak bundan sonra hüküm ver ve hangi satırın seni oraya götürdüğünü yaz.
+
 WEB'DE SIK GÖRÜLEN KALIPLAR (yol gösterici, kural değil — kanıt başka bir şey söylüyorsa kanıta uy):
 - Element bulunamadı / zaman aşımı, ama logda uygulama hatası yok -> locator eskimiş olabilir
   (test_maintenance).
