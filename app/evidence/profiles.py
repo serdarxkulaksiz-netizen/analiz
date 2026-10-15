@@ -14,11 +14,17 @@ ERROR_PROFILE_NAME = "error"
 
 
 class EvidenceRow(BaseModel):
-    """One evidence in a profile: who goes to the LLM, and how it is shaped."""
+    """One evidence in a profile: whether it is fetched, shown, and how shaped.
+
+    Being in the list means the file is FETCHED. Whether it also reaches the
+    prompt is `prompt`: a file can be worth downloading for a check to read
+    without being worth the tokens it would cost in the prompt.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    prompt: bool = True
     #: Overrides the evidence class's own sentence in the prompt. Needed when
     #: one class carries different things in different profiles.
     description: str = ""
@@ -33,6 +39,9 @@ class ProfileConfig(BaseModel):
     evidence: list[EvidenceRow] = []
     prompt: str
     extra_context: str = ""
+    #: Names of the computed checks this profile runs. Each one must also appear
+    #: in this profile's template as `$<name>`, which is where its text lands.
+    checks: list[str] = []
     #: True when the question belongs to the RUN, not to its scenarios: the run
     #: never got as far as running them. One diagnosis is produced for the run
     #: itself and scenario rows are not read at all.
@@ -51,7 +60,9 @@ class Profile:
                 "aynı kanıt prompt'a iki blok olarak girerdi."
             )
         self.name = name
-        self.evidence_to_llm = names
+        self.evidence_to_fetch = names
+        self.evidence_to_llm = [row.name for row in config.evidence if row.prompt]
+        self.checks = list(config.checks)
         self.prompt = config.prompt
         self.extra_context = config.extra_context
         self.run_level = config.run_level
@@ -97,8 +108,12 @@ class ProfileRegistry:
         """Every evidence name the profiles mention (startup validation)."""
         names: set[str] = set()
         for profile in self._profiles.values():
-            names |= set(profile.evidence_to_llm)
+            names |= set(profile.evidence_to_fetch)
         return names
+
+    def all_profiles(self) -> list[Profile]:
+        """Every loaded profile (startup validation)."""
+        return list(self._profiles.values())
 
     def prompt_names(self) -> set[str]:
         """Every prompt template name the profiles ask for (startup check)."""

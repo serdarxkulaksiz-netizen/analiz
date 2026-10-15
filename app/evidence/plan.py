@@ -11,14 +11,15 @@ class AnalysisPlan:
 
     def __init__(self, profile: Profile) -> None:
         self.profile = profile
-        self._wanted = set(profile.evidence_to_llm)
+        self._wanted = set(profile.evidence_to_fetch)
 
     def wants(self, attachment: Attachment) -> bool:
         """Should this attachment be downloaded at all?
 
         A file that maps to no evidence class is not downloaded either: nothing
         would read it, and the profile's list is the whole answer to "what do we
-        fetch".
+        fetch". Listed is enough — a file may be fetched for a check to read
+        without ever reaching the prompt.
         """
         return evidence_name_for(attachment) in self._wanted
 

@@ -423,6 +423,7 @@ class AnalyzerService:
             if _identity(group[0].scenario_id, group[0].scenario_name) not in done
         ]
         trace_errors: list[str] = []
+        check_errors: list[str] = []
         outcomes = await asyncio.gather(
             *(
                 self._analyze_scenario(
@@ -432,6 +433,7 @@ class AnalyzerService:
                     plan=plan,
                     job_log=job.job_log,
                     trace_errors=trace_errors,
+                    check_errors=check_errors,
                 )
                 for group in pending
             ),
@@ -458,6 +460,11 @@ class AnalyzerService:
 
         run = self._repo.get(settings.table_runs, run["analyzer_run_id"]) or run
         notes = list(run_notes)
+        if check_errors:
+            notes.append(
+                f"{len(check_errors)} hesaplanan bilgi üretilemedi "
+                f"({'; '.join(sorted(set(check_errors)))}) — teşhis bunlarsız yapıldı"
+            )
         if trace_errors:
             kinds = ", ".join(sorted(set(trace_errors)))
             notes.append(
@@ -530,6 +537,7 @@ class AnalyzerService:
         plan: AnalysisPlan,
         job_log: JobLog,
         trace_errors: list[str],
+        check_errors: list[str],
     ) -> AnalysisResult:
         """Analyze one failed scenario; never raises.
 
@@ -572,6 +580,11 @@ class AnalyzerService:
                         scenario,
                         profile=plan.profile,
                         job_log=job_log,
+                    )
+
+                    check_errors.extend(
+                        f"{scenario.scenario_name}: {reason}"
+                        for reason in findings.evidence_report.check_errors
                     )
 
                     if findings.evidence_report.rule_errors:

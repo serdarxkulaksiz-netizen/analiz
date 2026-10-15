@@ -118,6 +118,59 @@ Profili **isteği atan seçer**. İçerikleri `config/profiles.json` dosyasında
   istensin `error`'u uygular ve bunu koşum notuna yazar.
 - Listede olmayan kanıt **hiç indirilmez**. Ekran görüntüleri hiçbir profilde gitmez.
 
+## Hesaplanan bilgiler (checks)
+
+Modelin kendi başına güvenilir çıkaramayacağı, ama koddan **kesin** hesaplanabilen bir
+bilgiyi prompt'a koymak için. Kanıtın yerine geçmez, yanına girer.
+
+Üç parça birbirini kilitler:
+
+**1 · Method** — `app/checks/` altında, adıyla kaydedilir:
+```python
+@check("dom_kontrolu")
+def dom_kontrolu(facts) -> str:
+    if not facts.has("HtmlEvidence"):
+        return ""  # boş dönerse prompt'a hiçbir şey girmez
+    return f"Aranan element sayfada {facts.raw('HtmlEvidence').count('Hesap Aç')} kez geçiyor."
+```
+
+**2 · Profil** — hangi profilde çalışacağı (`config/profiles.json`):
+```json
+"web": { "prompt": "web", "evidence": [ ... ], "checks": ["dom_kontrolu"] }
+```
+
+**3 · Şablon** — çıktısının **nereye** gireceği (`config/prompts/web.txt`):
+```
+$dom_kontrolu
+```
+
+Bir profil birden çok check çalıştırabilir ve her birinin metni şablonda ayrı bir yere
+konabilir — başa, ortaya, sona.
+
+`facts` içinde: `scenario_name` · `scenario_id` · `failed_step` · `error_text` ·
+`profile_name` · `job_log` · `raw(ad)` · `shaped(ad)` · `has(ad)`.
+**Arama `raw()` üzerinde yapılmalı:** `shaped()` kırpma kurallarından geçmiştir, orada
+bulunamayan şey bizim sildiğimiz için bulunamıyor olabilir.
+
+Üç kural:
+- Dönen metne dokunulmaz, olduğu gibi girer — başlık da senin metninin parçasıdır.
+- Boş dönerse prompt, check hiç yokmuş gibi kalır.
+- Patlarsa senaryo ölmez: metin basılmaz, sebebi koşumun `note` alanına yazılır.
+
+Üçünden biri eksikse uygulama **açılmaz**: kayıtsız ad, şablonda yeri olmayan check, ya da
+profilin çalıştırmadığı bir `$ad` — üçü de açılışta hata verir.
+
+### Kanıtı modele göstermeden check'te kullanmak
+
+`evidence` listesinde olmak "indirilir" demektir; prompt'a girmesi ayrı bir bayraktır:
+
+```json
+{ "name": "HtmlEvidence", "prompt": false }
+```
+
+Dosya iner, check `facts.raw("HtmlEvidence")` ile okur, ama prompt'ta blok olarak
+görünmez. Varsayılan `prompt: true`.
+
 ## Nasıl çalışır
 
 1. **Koşum seçilir** — `run_id` verildiyse o, yoksa job'un en yeni bitmiş koşumu.
@@ -130,12 +183,14 @@ Profili **isteği atan seçer**. İçerikleri `config/profiles.json` dosyasında
 5. **Kanıt okunur** — yalnız grup temsilcisinin, yalnız profilin istediği dosyalar.
 6. **Kırpma** — profildeki kurallar sırayla uygulanır. Kesemeyen kural hata verir; o
    senaryo kapanır, koşum devam eder.
-7. **Prompt** — her kanıt kendi bloğunda, başında ne olduğu yazılı. Gelmeyen kanıttan
+7. **Hesaplanan bilgiler** — profilin `checks` listesi çalışır, metinleri şablondaki
+   kendi yerlerine girer.
+8. **Prompt** — her kanıt kendi bloğunda, başında ne olduğu yazılı. Gelmeyen kanıttan
    prompt'ta hiç söz edilmez.
-8. **Model** — tek atış. Cevap JSON şemasına uymazsa satır `analysis_failed` olur ve
+9. **Model** — tek atış. Cevap JSON şemasına uymazsa satır `analysis_failed` olur ve
    sebebi yazılır.
-9. **Kayıt** — teşhisler `DATABASE_DIR` altına, modele giden/gelen metin `TRACE_DIR`
-   altına yazılır.
+10. **Kayıt** — teşhisler `DATABASE_DIR` altına, modele giden/gelen metin `TRACE_DIR`
+    altına yazılır.
 
 Süreç analiz sırasında ölürse uygulama açılışta o koşumu bulur ve **kaldığı yerden**
 devam eder: tamamlanmış teşhisler korunur, model onlar için yeniden çağrılmaz.

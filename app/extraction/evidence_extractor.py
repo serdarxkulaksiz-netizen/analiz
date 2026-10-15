@@ -7,6 +7,8 @@ from app.domain.findings import (
     Findings,
     JobLogReport,
 )
+from app.evidence.base import TextEvidence
+from app.evidence.checks import CheckFacts, run_checks
 from app.evidence.profiles import Profile
 from app.evidence.registry import EvidenceRegistry, evidence_name_for
 from app.evidence.rules import RuleContext, RuleError
@@ -51,11 +53,32 @@ class EvidenceExtractor(Extractor):
         order = {name: index for index, name in enumerate(profile.evidence_to_llm)}
         evidence_blocks.sort(key=lambda block: order.get(block.evidence_name, len(order)))
 
+        # Checks read the evidence, so they run after it is built — and they
+        # read it RAW, which is why they are given the objects and not the
+        # blocks: a block has already been through the profile's rules.
+        check_texts, check_errors = run_checks(
+            profile.checks,
+            CheckFacts(
+                scenario_name=scenario.scenario_name,
+                scenario_id=scenario.scenario_id,
+                failed_step=scenario.failed_step,
+                error_text=scenario.error_text,
+                profile_name=profile.name,
+                job_log=job_log.text,
+                evidences={
+                    type(evidence).evidence_name: evidence
+                    for evidence in evidences
+                    if isinstance(evidence, TextEvidence)
+                },
+            ),
+        )
+
         report = _build_report(
             scenario,
             profile,
             job_log=job_log,
             rule_errors=rule_errors,
+            check_errors=check_errors,
         )
 
         return Findings(
@@ -64,6 +87,7 @@ class EvidenceExtractor(Extractor):
             profile_name=profile.name,
             prompt_template=profile.prompt,
             extra_context=profile.extra_context,
+            check_texts=check_texts,
             evidence_report=report,
         )
 
@@ -74,6 +98,7 @@ def _build_report(
     *,
     job_log: JobLog,
     rule_errors: list[str] | None = None,
+    check_errors: list[str] | None = None,
 ) -> EvidenceReport:
     """Record what arrived and what reached the prompt."""
     attachments = []
@@ -95,6 +120,7 @@ def _build_report(
         error_text=scenario.error_text,
         failed_step=scenario.failed_step,
         rule_errors=rule_errors or [],
+        check_errors=check_errors or [],
         job_log=JobLogReport(
             goes_to_llm=build_log_name in profile.evidence_to_llm,
             chars=len(job_log.text),

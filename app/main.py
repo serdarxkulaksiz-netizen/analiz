@@ -10,9 +10,11 @@ from typing import TypeVar
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, model_validator
 
+import app.checks  # noqa: F401  (import kayıt için: @check süslemeleri burada koşar)
 from app.config import Settings, get_settings
 from app.domain.api import RunView, build_run_view
 from app.domain.enums import RunStatus
+from app.evidence.checks import known_check_names
 from app.evidence.profiles import ProfileRegistry
 from app.evidence.registry import EvidenceRegistry, known_evidence_names
 from app.extraction.evidence_extractor import EvidenceExtractor
@@ -112,6 +114,7 @@ def build_service(settings: Settings) -> AnalyzerService:
         raise ValueError(
             f"Profile(s) ask for unknown evidence: {', '.join(unknown)}. Known: {known}."
         )
+    _validate_checks(profiles, prompt_builder)
 
     return AnalyzerService(
         settings=settings,
@@ -126,6 +129,37 @@ def build_service(settings: Settings) -> AnalyzerService:
         precheck=_select(PRECHECK_REGISTRY, settings.precheck_provider, "precheck")(settings),
         profiles=profiles,
     )
+
+
+def _validate_checks(profiles: ProfileRegistry, prompt_builder: PromptBuilder) -> None:
+    """A check must be registered, listed by the profile AND placed in its template.
+
+    All three or none: a check nobody placed would compute text that goes
+    nowhere, and a placeholder no profile listed would stay empty forever.
+    Neither failure announces itself at run time, so both are refused here.
+    """
+    for profile in profiles.all_profiles():
+        listed = set(profile.checks)
+        unknown = sorted(listed - known_check_names())
+        if unknown:
+            known = ", ".join(sorted(known_check_names())) or "<none>"
+            raise ValueError(
+                f"profile {profile.name!r} asks for unknown check(s): "
+                f"{', '.join(unknown)}. Known checks: {known}."
+            )
+        placed = prompt_builder.checks_in(profile.prompt)
+        if listed - placed:
+            missing = ", ".join(f"${name}" for name in sorted(listed - placed))
+            raise ValueError(
+                f"profile {profile.name!r} runs check(s) its template never places: "
+                f"{missing} missing from {profile.prompt}.txt."
+            )
+        if placed - listed:
+            extra = ", ".join(f"${name}" for name in sorted(placed - listed))
+            raise ValueError(
+                f"{profile.prompt}.txt places check(s) profile {profile.name!r} does not "
+                f"run: {extra}. Add them to the profile's `checks` or remove them."
+            )
 
 
 def _version() -> str:

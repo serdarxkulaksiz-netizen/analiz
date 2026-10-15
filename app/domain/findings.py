@@ -45,6 +45,7 @@ class EvidenceReport(BaseModel):
     error_text: str = ""
     failed_step: str = ""
     rule_errors: list[str] = []
+    check_errors: list[str] = []
 
 
 class Findings(BaseModel):
@@ -55,6 +56,9 @@ class Findings(BaseModel):
     profile_name: str = ""
     prompt_template: str = ""
     extra_context: str = ""
+    #: Computed check name -> the text it produced. A name that is missing, or
+    #: whose text is empty, puts nothing in the prompt.
+    check_texts: dict[str, str] = {}
     evidence_report: EvidenceReport = EvidenceReport()
 
     @property

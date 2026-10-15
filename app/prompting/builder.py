@@ -7,6 +7,7 @@ from pathlib import Path
 from string import Template
 
 from app.domain.findings import Findings
+from app.evidence.checks import known_check_names
 
 CONTRACT_FILE = "_contract.txt"
 TEMPLATE_SUFFIX = ".txt"
@@ -27,7 +28,8 @@ def _section(label: str, description: str, content: str) -> str:
     return f"{head}\n{description}\n\n{content}" if description else f"{head}\n{content}"
 
 
-KNOWN_PLACEHOLDERS = frozenset(
+#: Always available, whatever the profile.
+FIXED_PLACEHOLDERS = frozenset(
     {
         "scenario_name",
         "evidence_blocks",
@@ -35,6 +37,16 @@ KNOWN_PLACEHOLDERS = frozenset(
         "confidence_buckets",
     }
 )
+
+
+def known_placeholders() -> frozenset[str]:
+    """The fixed four plus every registered check name.
+
+    A check's name IS its placeholder: the template writes `$<name>` where the
+    computed text should land, which is how one profile puts three computed
+    lines in three different places.
+    """
+    return FIXED_PLACEHOLDERS | known_check_names()
 
 
 class PromptBuilder:
@@ -55,9 +67,10 @@ class PromptBuilder:
             if path.name == CONTRACT_FILE:
                 continue
             template = Template(f"{path.read_text(encoding='utf-8').rstrip()}\n\n{contract}")
-            unknown = sorted(set(template.get_identifiers()) - KNOWN_PLACEHOLDERS)
+            allowed = known_placeholders()
+            unknown = sorted(set(template.get_identifiers()) - allowed)
             if unknown:
-                known = ", ".join(sorted(KNOWN_PLACEHOLDERS))
+                known = ", ".join(sorted(allowed))
                 raise ValueError(
                     f"Prompt template {path} uses unknown placeholder(s): "
                     f"{', '.join(unknown)}. Known placeholders: {known}."
@@ -70,6 +83,13 @@ class PromptBuilder:
     def version_of(self, name: str) -> str:
         """Short hash of a template's exact text (template + contract)."""
         return self._versions.get(name, "")
+
+    def checks_in(self, template_name: str) -> set[str]:
+        """Which check names this template asks for (startup cross-check)."""
+        template = self._templates.get(template_name)
+        if template is None:
+            return set()
+        return set(template.get_identifiers()) & known_check_names()
 
     def ensure_templates_exist(self, names: Iterable[str]) -> None:
         """Fail at startup if a profile names a template that does not exist."""
@@ -97,10 +117,15 @@ class PromptBuilder:
         )
         buckets_text = " / ".join(str(bucket) for bucket in self._confidence_buckets)
 
+        # A check with no text substitutes to nothing; the blank-run collapse
+        # below closes the gap, so the prompt reads as if it was never there.
+        values: dict[str, str] = dict.fromkeys(known_check_names(), "")
+        values.update(findings.check_texts)
         prompt = template.safe_substitute(
             scenario_name=findings.scenario_name,
             evidence_blocks=evidence_text,
             extra_context=findings.extra_context,
             confidence_buckets=buckets_text,
+            **values,
         )
         return _BLANK_RUN.sub("\n\n", prompt).strip() + "\n"

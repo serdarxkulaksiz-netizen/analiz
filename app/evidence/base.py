@@ -86,6 +86,15 @@ class TextEvidence(Evidence):
         return self._description or type(self).description
 
     @property
+    def raw_content(self) -> str:
+        """The text exactly as it arrived, before any content rule touched it.
+
+        What a check must search: the shaped version has had attributes and
+        sections removed, so "not found" there can mean "we removed it".
+        """
+        return self._content
+
+    @property
     def _is_present(self) -> bool:
         """Did any text actually arrive? (Read only by `to_block`.)"""
         return bool(self._content.strip())
